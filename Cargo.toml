@@ -1,0 +1,20 @@
+[package]
+name = "contextual"
+version = "0.1.0"
+edition = "2021"
+description = "Context bag: multiset of tagged agent instructions, pluggable storage"
+license = "MIT"
+readme = "README.md"
+
+[[bin]]
+name = "cx"
+path = "src/main.rs"
+
+[lib]
+name = "contextual"
+path = "src/lib.rs"
+
+[dependencies]
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
