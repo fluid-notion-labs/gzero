@@ -209,6 +209,36 @@ pub fn search(store: &dyn Storage, needle: &str) -> Result<Vec<(String, Row)>> {
     Ok(items)
 }
 
+/// Alive atom texts closest to `needle` by word overlap — how a failed
+/// removal teaches the caller what to retry with. Score is
+/// |words(needle) ∩ words(entry)| / |words(needle)|; only scores ≥ 0.3,/// best first, at most `limit`.
+pub fn closest_matches(store: &dyn Storage, needle: &str, limit: usize) -> Result<Vec<String>> {
+    let words = |t: &str| -> HashSet<String> {
+        t.split(|c: char| !c.is_alphanumeric())
+            .filter(|w| !w.is_empty())
+            .map(|w| w.to_lowercase())
+            .collect()
+    };
+    let needle_words = words(needle);
+    if needle_words.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut scored: Vec<(usize, String)> = alive(store)?
+        .into_iter()
+        .map(|(text, _)| {
+            let overlap = words(&text).intersection(&needle_words).count();
+            (overlap, text)
+        })
+        .collect();
+    scored.sort_by(|a, b| b.0.cmp(&a.0));
+    Ok(scored
+        .into_iter()
+        .take_while(|(overlap, _)| *overlap * 10 >= needle_words.len() * 3)
+        .take(limit)
+        .map(|(_, text)| text)
+        .collect())
+}
+
 /// Distinct alive atoms, deduplicated by text: duplicate assertions merge
 /// (tags union; scope/node from the first source in storage order).
 /// Tombstoned texts are excluded.
@@ -485,6 +515,23 @@ mod tests {
         assert!(texts.contains(&"tagged global #rust"));
         // and it only adds — tier defaults remain
         assert!(texts.contains(&"project rule"));
+    }
+
+    #[test]
+    fn closest_matches_scores_word_overlap() {
+        let mut store = mem();
+        add_doc(
+            &mut store,
+            "s",
+            "## n\n- user prefers concise responses\n- use cargo test before pushing\n- unrelated\n",
+        )
+        .unwrap();
+        // paraphrased needle still lands on the closest entry
+        let closest = closest_matches(&store, "prefers concise replies", 3).unwrap();
+        assert_eq!(closest[0], "user prefers concise responses");
+        assert!(!closest.contains(&"unrelated".to_string()));
+        // total gibberish scores below the 0.3 floor
+        assert!(closest_matches(&store, "xyzzy plugh", 3).unwrap().is_empty());
     }
 
     #[test]

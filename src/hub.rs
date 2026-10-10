@@ -18,6 +18,10 @@ pub struct Hub {
     token: String,
 }
 
+/// Cap hub calls so an unreachable hub degrades quickly instead of
+/// stalling session start (startup pull is on the critical path).
+const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
 impl Hub {
     pub fn from_env() -> Option<Hub> {
         let base = std::env::var("CX_HUB_URL").ok().filter(|u| !u.is_empty())?;
@@ -26,7 +30,10 @@ impl Hub {
     }
 
     fn post_json(&self, path: &str, body: &serde_json::Value) -> Result<(), String> {
-        let resp = ureq::post(&format!("{base}{path}", base = self.base))
+        let resp = ureq::AgentBuilder::new()
+            .timeout(TIMEOUT)
+            .build()
+            .post(&format!("{base}{path}", base = self.base))
             .set("Authorization", &format!("Bearer {}", self.token))
             .send_json(body.clone())
             .map_err(|e| format!("hub {path}: {e}"))?;
@@ -46,7 +53,10 @@ impl Hub {
 
     /// Fetch the hub's merged snapshot.
     pub fn fetch_snapshot(&self) -> Result<Snapshot, String> {
-        let resp = ureq::get(&format!("{}/snapshot", self.base))
+        let resp = ureq::AgentBuilder::new()
+            .timeout(TIMEOUT)
+            .build()
+            .get(&format!("{}/snapshot", self.base))
             .set("Authorization", &format!("Bearer {}", self.token))
             .call()
             .map_err(|e| format!("hub /snapshot: {e}"))?;
