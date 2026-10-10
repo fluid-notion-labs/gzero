@@ -89,7 +89,9 @@ pub fn parse(input: &str) -> Vec<ParsedAtom> {
             let (slug, tags) = heading(rest);
             node = slug;
             node_tags = tags;
-        } else if let Some(rest) = t.strip_prefix("- ") {
+        } else if let Some(rest) = t.strip_prefix("- ").or_else(|| t.strip_prefix("* ")) {
+            // both bullet markers: authored files use '-'; wild files
+            // (CLAUDE.md, GEMINI.md, …) frequently use '*'
             let mut tags = node_tags.clone();
             tags.extend(hashtags(rest));
             out.push(ParsedAtom {
@@ -114,24 +116,49 @@ pub fn add_doc(store: &mut dyn Storage, source: &str, input: &str) -> Result<Syn
     store.sync_source(source, &parse(input))
 }
 
-/// Project identity from the current working directory's git repo:
+/// Agent-instruction files contextual harvests from a repo: written for
+/// any agent (pi, Claude Code, Cursor, Copilot, …), imported into the one
+/// bag so every session gets them.
+pub const HARVEST_FILES: &[&str] = &[
+    "AGENTS.md",
+    "CLAUDE.md",
+    "GEMINI.md",
+    ".cursorrules",
+    ".windsurfrules",
+    ".github/copilot-instructions.md",
+];
+
+/// One harvested file's outcome.
+pub struct HarvestResult {
+    pub path: std::path::PathBuf,
+    /// `None` = skipped: the file parsed to zero bullets (pointer stubs
+    /// and prose-only files — a zero-atom sync would wipe the source).
+    pub stats: Option<SyncStats>,
+    /// Parsed atoms (empty when skipped) — for hub Put events.
+    pub atoms: Vec<ParsedAtom>,
+}
+
+/// Project identity from an arbitrary directory's git repo:
 /// normalized `origin` remote URL (e.g. `fluid-notion-labs/context`).
 /// Stable across machines and checkout paths. Falls back to the
-/// working tree's directory basename when there is no remote.
-pub fn repo_identity() -> Option<String> {
-    let top = std::process::Command::new("git")
-        .args(["rev-parse", "--show-toplevel"])
-        .output()
-        .ok()
-        .filter(|o| o.status.success())?;
-    let url = std::process::Command::new("git")
-        .args(["remote", "get-url", "origin"])
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
-    match url {
-        Some(u) => Some(normalize_repo_id(&u)),
+/// repo's directory basename when there is no remote, `None` when the
+/// directory is not a git repo at all.
+pub fn repo_identity_in(dir: &std::path::Path) -> Option<String> {
+    let git = |args: &[&str]| {
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(args)
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+    };
+    let top = git(&["rev-parse", "--show-toplevel"])?;
+    match git(&["remote", "get-url", "origin"]) {
+        Some(url) => {
+            let u = String::from_utf8_lossy(&url.stdout).trim().to_string();
+            Some(normalize_repo_id(&u))
+        }
         None => {
             let path = String::from_utf8_lossy(&top.stdout);
             std::path::Path::new(path.trim())
@@ -139,6 +166,85 @@ pub fn repo_identity() -> Option<String> {
                 .map(|n| n.to_string_lossy().into_owned())
         }
     }
+}
+
+/// Project identity of the current working directory.
+pub fn repo_identity() -> Option<String> {
+    repo_identity_in(std::path::Path::new("."))
+}
+
+/// Import one instruction file into the store: scope forced to `scope`
+/// (project tier), source = the file's canonical path.
+pub fn harvest_file(
+    store: &mut dyn Storage,
+    path: &std::path::Path,
+    scope: &str,
+) -> Result<HarvestResult> {
+    let text = std::fs::read_to_string(path)?;
+    let mut atoms = parse(&text);
+    if atoms.is_empty() {
+        return Ok(HarvestResult {
+            path: path.to_path_buf(),
+            stats: None,
+            atoms,
+        });
+    }
+    for a in &mut atoms {
+        a.scope = scope.to_string();
+    }
+    let source = path
+        .canonicalize()
+        .unwrap_or_else(|_| path.to_path_buf())
+        .to_string_lossy()
+        .into_owned();
+    let stats = store.sync_source(&source, &atoms)?;
+    Ok(HarvestResult {
+        path: path.to_path_buf(),
+        stats: Some(stats),
+        atoms,
+    })
+}
+
+/// Harvest every candidate instruction file found at `dir`'s repo root
+/// (and at `dir` itself, when deeper), all scoped to the repo identity.
+/// Scope falls back to the directory basename outside git.
+pub fn harvest_dir(store: &mut dyn Storage, dir: &std::path::Path) -> Result<Vec<HarvestResult>> {
+    let root = std::process::Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["rev-parse", "--show-toplevel"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| {
+            let p = String::from_utf8_lossy(&o.stdout).trim().to_string();
+            if p.is_empty() {
+                None
+            } else {
+                Some(std::path::PathBuf::from(p))
+            }
+        })
+        .unwrap_or_else(|| dir.to_path_buf());
+    let scope = repo_identity_in(&root)
+        .or_else(|| root.file_name().map(|n| n.to_string_lossy().into_owned()))
+        .unwrap_or_else(|| "harvest".to_string());
+
+    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+    for base in [&root, dir] {
+        for name in HARVEST_FILES {
+            let p = base.join(name);
+            if p.is_file() && !candidates.contains(&p) {
+                candidates.push(p);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    for path in candidates {
+        if let Ok(r) = harvest_file(store, &path, &scope) {
+            out.push(r);
+        }
+    }
+    Ok(out)
 }
 
 /// `git@host:owner/repo.git`, `https://host/owner/repo.git`,
@@ -533,6 +639,58 @@ mod tests {
         let expect: BTreeSet<String> =
             ["api", "design", "rust"].iter().map(|s| s.to_string()).collect();
         assert_eq!(tags, expect);
+    }
+
+    #[test]
+    fn parse_accepts_star_bullets() {
+        let atoms = parse("# Claude\n\n## build\n* star bullet\n  continuation\n- dash bullet\n");
+        assert_eq!(atoms.len(), 2);
+        assert_eq!(atoms[0].text, "star bullet continuation");
+        assert_eq!(atoms[1].text, "dash bullet");
+    }
+
+    #[test]
+    fn harvest_forces_scope_and_syncs() {
+        let dir = std::env::temp_dir().join("cx-harvest-a");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("CLAUDE.md"),
+            "# Claude instructions\n\n## build\n- run the tests before done\n",
+        )
+        .unwrap();
+        let mut store = mem();
+        let results = harvest_dir(&mut store, &dir).unwrap();
+        assert_eq!(results.len(), 1);
+        let r = &results[0];
+        assert!(r.stats.as_ref().unwrap().added == 1);
+        // scope falls back to the dir basename (no git repo) and is forced
+        // onto the atom regardless of the file's own H1
+        let atom = &r.atoms[0];
+        assert_eq!(atom.scope, "cx-harvest-a");
+        assert_eq!(atom.text, "run the tests before done");
+    }
+
+    #[test]
+    fn harvest_skips_zero_bullet_files_and_protects_existing_rows() {
+        let dir = std::env::temp_dir().join("cx-harvest-b");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // pointer stub: prose only, no bullets
+        std::fs::write(dir.join("AGENTS.md"), "# Context\n\nThis file is a pointer.\n").unwrap();
+        let mut store = mem();
+        // the stub's source already has rows (the pre-P4 import)
+        add_doc(
+            &mut store,
+            dir.join("AGENTS.md").canonicalize().unwrap().to_str().unwrap(),
+            "# Context — global\n\n## n\n- real atom\n",
+        )
+        .unwrap();
+        let results = harvest_dir(&mut store, &dir).unwrap();
+        assert_eq!(results.len(), 1);
+        assert!(results[0].stats.is_none(), "stub must be skipped");
+        // and the skip must not wipe the source's rows
+        assert_eq!(alive(&store).unwrap().len(), 1);
     }
 
     #[test]

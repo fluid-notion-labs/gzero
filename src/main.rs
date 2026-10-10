@@ -3,6 +3,7 @@
 //! `cx`                 print default context (untagged atoms)
 //! `cx #tag ...`        default plus tagged atoms
 //! `cx add file.md ...` import markdown into the bag (per-source sync)
+//! `cx harvest [dir]`   import agent-instruction files (AGENTS.md, CLAUDE.md, …)
 //! `cx sources`         per-source assertion counts
 //! `cx rm <needle>`     remove atoms whose text contains needle
 //! `cx rm-source <src>`  remove a whole source (tombstoned)
@@ -49,6 +50,8 @@ const USAGE: &str = "cx — context bag
 cx                default context (untagged atoms)
 cx #tag ...       default plus tagged atoms
 cx add file.md    import context markdown (per-source sync; re-run after edits)
+cx harvest [dir]  import agent-instruction files (AGENTS.md, CLAUDE.md, GEMINI.md,
+                  .cursorrules, .windsurfrules, copilot-instructions) as project context
 cx export file    write this machine's snapshot (merge unit)
 cx absorb file... merge other machines' snapshots into this bag
 cx pull           fetch merged snapshot from the hub (CX_HUB_URL) and absorb
@@ -192,6 +195,41 @@ fn main() {
                     );
                 }
                 Err(e) => panic!("cx: {e}"),
+            }
+        }
+        "harvest" => {
+            let dir = match args.get(1) {
+                Some(d) => PathBuf::from(d),
+                None => std::env::current_dir().unwrap_or_else(|e| panic!("cx: {e}")),
+            };
+            let mut store = open_store();
+            let results = contextual::harvest_dir(&mut store, &dir)
+                .unwrap_or_else(|e| panic!("cx: harvest: {e}"));
+            if results.is_empty() {
+                println!("(no instruction files found: {})",
+                    contextual::HARVEST_FILES.join(", "));
+            }
+            for r in results {
+                let rel = r
+                    .path
+                    .strip_prefix(&dir)
+                    .unwrap_or(&r.path)
+                    .display()
+                    .to_string();
+                match r.stats {
+                    None => println!("{rel}: no bullets — skipped (pointer stubs are protected)"),
+                    Some(s) => {
+                        println!("{rel}: +{} -{} (kept {})", s.added, s.removed, s.kept);
+                        let events: Vec<Event> = r
+                            .atoms
+                            .into_iter()
+                            .map(|a| Event::Put {
+                                atom: Atom { text: a.text, scope: a.scope, node: a.node, tags: a.tags },
+                            })
+                            .collect();
+                        try_post_events(&events);
+                    }
+                }
             }
         }
         "rm-source" => {

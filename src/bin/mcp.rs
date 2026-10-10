@@ -139,6 +139,7 @@ fn call_tool(params: &serde_json::Value, store: &mut SqliteStore) -> Result<serd
         "add" => tool_add(&args, store)?,
         "remove" => tool_remove(&args, store)?,
         "tags" => tool_tags(store)?,
+        "harvest" => tool_harvest(&args, store)?,
         other => return Err(format!("unknown tool: {other}")),
     };
     Ok(serde_json::json!({
@@ -284,6 +285,46 @@ fn parse_ops(args: &serde_json::Value) -> Result<Vec<Op>, String> {
         node: args.get("node").and_then(|v| v.as_str()).map(str::to_string),
         tags: arg_tags(args),
     }])
+}
+
+fn tool_harvest(args: &serde_json::Value, store: &mut SqliteStore) -> Result<String, String> {
+    let dir = match args.get("path").and_then(|p| p.as_str()) {
+        Some(p) => std::path::PathBuf::from(p),
+        None => std::env::current_dir().map_err(|e| e.to_string())?,
+    };
+    let results = contextual::harvest_dir(store, &dir).map_err(|e| e.to_string())?;
+    if results.is_empty() {
+        return Ok(format!(
+            "(no instruction files found: {})",
+            contextual::HARVEST_FILES.join(", ")
+        ));
+    }
+    let mut out = String::new();
+    let mut events: Vec<Event> = Vec::new();
+    for r in results {
+        match r.stats {
+            None => {
+                out.push_str(&format!(
+                    "{}: no bullets — skipped (pointer stubs are protected)\n",
+                    r.path.display()
+                ));
+            }
+            Some(s) => {
+                out.push_str(&format!(
+                    "{}: +{} -{} (kept {})\n",
+                    r.path.display(),
+                    s.added,
+                    s.removed,
+                    s.kept
+                ));
+                events.extend(r.atoms.into_iter().map(|a| Event::Put {
+                    atom: Atom { text: a.text, scope: a.scope, node: a.node, tags: a.tags },
+                }));
+            }
+        }
+    }
+    try_post(events);
+    Ok(out.trim_end().to_string())
 }
 
 fn tool_add(args: &serde_json::Value, store: &mut SqliteStore) -> Result<String, String> {
@@ -455,6 +496,16 @@ const TOOLS: &str = r#"[
         "text": { "type": "string", "description": "Short unique substring identifying the atom to remove." }
       },
       "required": ["text"]
+    }
+  },
+  {
+    "name": "harvest",
+    "description": "Import agent-instruction files from the repo into the bag as project context — instructions written for ANY agent (AGENTS.md, CLAUDE.md, GEMINI.md, .cursorrules, .windsurfrules, .github/copilot-instructions.md) become one shared store, injected automatically in that repo from then on. WHEN: once when you start working in a repo whose instructions are not yet in the resolved context; re-run after those files change (per-source sync: edits propagate, removals of lines propagate). Files with no bullets are skipped (pointer stubs are protected). Optional 'path' defaults to the current directory.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": { "type": "string", "description": "Directory whose repo to harvest (default: cwd)." }
+      }
     }
   },
   {
@@ -657,6 +708,37 @@ mod tests {
         )
         .unwrap();
         assert!(!res.contains("same text"), "re-assertion replaces the mcp row's tags");
+    }
+
+    #[test]
+    fn harvest_tool_roundtrip() {
+        let dir = std::env::temp_dir().join("cx-harvest-mcp");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("GEMINI.md"),
+            "# Gemini\n\n## style\n- prefer short answers\n",
+        )
+        .unwrap();
+        let mut s = store();
+        let reply = handle_line(
+            &format!(
+                "{{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{{\"name\":\"harvest\",\"arguments\":{{\"path\":\"{}\"}}}}}}",
+                dir.display()
+            ),
+            &mut s,
+        )
+        .unwrap();
+        assert!(reply.contains("+1"), "harvest reply: {reply}");
+        // the atom lands in the project tier of that (non-git) dir scope
+        let res = handle_line(
+            &format!(
+                "{{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{{\"name\":\"search\",\"arguments\":{{\"text\":\"short answers\"}}}}}}"
+            ),
+            &mut s,
+        )
+        .unwrap();
+        assert!(res.contains("prefer short answers"));
     }
 
     #[test]

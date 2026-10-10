@@ -22,8 +22,8 @@ Companions: `research/context/lattice.md` (merge math), `sync.md`
 
 | component     | crate     | role                                            |
 |---------------|-----------|-------------------------------------------------|
-| `cx`          | contextual| CLI: add/resolve/rm/tags/export/absorb/push/pull |
-| `cx-mcp`      | contextual| MCP stdio server: resolve/search/add/remove/tags for agents (pi) |
+| `cx`          | contextual| CLI: add/resolve/rm/tags/export/absorb/push/pull/harvest |
+| `cx-mcp`      | contextual| MCP stdio server: resolve/search/add/remove/tags/harvest for agents (pi) |
 | `SqliteStore` | contextual| ledger backend behind the `Storage` trait       |
 | snapshot JSON | (format)  | the contract — identical shape in both crates   |
 | `bagflow`     | bagflow   | lattice engine prototype: DFIR dataflow, persistence, merge |
@@ -237,6 +237,11 @@ the file is the wire format. Until then:
   real session)
 - ✅ P4 migration: global `AGENTS.md` + explorations `CONTEXT.md` are
   pointer stubs — the bag is the sole authority, injected per session
+- ✅ harvest: `cx harvest` + MCP `harvest` tool import AGENTS.md /
+  CLAUDE.md / GEMINI.md / .cursorrules / .windsurfrules /
+  copilot-instructions from any repo as project context (scope = repo
+  identity, `*` bullets accepted, zero-bullet stubs protected) —
+  contextual as the cross-agent context layer
 - ⬜ Cloudflare Artifacts backend (planned — see "host-agnostic" above)
 - ⬜ hub: live push (DO websockets) so pulls aren't per-session
 - ⬜ chaos harness (compose + syncd, see `distributed-chaos-plan.md`)
