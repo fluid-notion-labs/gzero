@@ -6,7 +6,6 @@
 //! `cx sources`         per-source assertion counts
 //! `cx rm <needle>`     remove atoms whose text contains needle
 //! `cx tags`            tag vocabulary with counts
-//! `cx recommend`       suggest packs for this directory (rust/npm)
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -56,7 +55,6 @@ cx push           post this bag's atoms + tombstones to the hub as events
 cx sources        per-source assertion counts
 cx rm <needle>    remove matching atoms (records tombstones)
 cx tags           tag vocabulary with counts
-cx recommend      suggest packs for this directory (rust/npm)
 env: CX_DB        bag location (default ~/.pi/agent/context.db)";
 
 fn main() {
@@ -200,7 +198,11 @@ fn main() {
                 println!("#{tag} {n}");
             }
         }
-        "recommend" => exit(recommend()),
+        "recommend" => {
+            eprintln!("cx: recommend is gone — packs were dissolved (tagged atoms replace them; see plan.md M4)");
+            eprintln!("pull build/workflow conventions via: cx '#rust' / cx '#npm'");
+            exit(2);
+        }
         other => {
             let mut tags = BTreeSet::new();
             for arg in &args {
@@ -261,21 +263,4 @@ fn source_path(p: &Path) -> String {
     p.canonicalize().unwrap_or_else(|_| p.to_path_buf())
         .to_string_lossy()
         .into_owned()
-}
-
-/// Suggest context packs for the current directory's ecosystem manifests.
-fn recommend() -> i32 {
-    let mut tags: Vec<&str> = Vec::new();
-    if Path::new("Cargo.toml").exists() {
-        tags.push("#rust");
-    }
-    if Path::new("package.json").exists() {
-        tags.push("#npm");
-    }
-    if tags.is_empty() {
-        println!("(no recognized manifest: Cargo.toml, package.json)");
-        return 1;
-    }
-    println!("{}", tags.join(" "));
-    0
 }

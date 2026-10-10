@@ -230,8 +230,9 @@ the file is the wire format. Until then:
   `operations`, self-healing `remove`; `curation.md`) — 5s cap on hub calls
 - ✅ pi plugin P1+P2 (`pi-plugin.md`): per-turn `<context>` injection,
   install offer, `/context` commands, stale-binary check
-- ⬜ packs dissolved in decision — seed atoms, delete `packs/` +
-  `recommend` (`plan.md` M4 work-list)
+- ✅ packs dissolved: atoms seeded, `packs/` + `recommend` deleted,
+  project-relevance atoms in place (`plan.md` M4); hub push of the
+  new atoms pending
 - ⬜ Cloudflare Artifacts backend (planned — see "host-agnostic" above)
 - ⬜ hub: live push (DO websockets) so pulls aren't per-session
 - ⬜ chaos harness (compose + syncd, see `distributed-chaos-plan.md`)
