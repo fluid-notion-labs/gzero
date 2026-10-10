@@ -114,6 +114,101 @@ pub fn add_doc(store: &mut dyn Storage, source: &str, input: &str) -> Result<Syn
     store.sync_source(source, &parse(input))
 }
 
+/// Project identity from the current working directory's git repo:
+/// normalized `origin` remote URL (e.g. `fluid-notion-labs/context`).
+/// Stable across machines and checkout paths. Falls back to the
+/// working tree's directory basename when there is no remote.
+pub fn repo_identity() -> Option<String> {
+    let top = std::process::Command::new("git")
+        .args(["rev-parse", "--show-toplevel"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())?;
+    let url = std::process::Command::new("git")
+        .args(["remote", "get-url", "origin"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+    match url {
+        Some(u) => Some(normalize_repo_id(&u)),
+        None => {
+            let path = String::from_utf8_lossy(&top.stdout);
+            std::path::Path::new(path.trim())
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+        }
+    }
+}
+
+/// `git@host:owner/repo.git`, `https://host/owner/repo.git`,
+/// `ssh://git@host/owner/repo` → `owner/repo`.
+pub fn normalize_repo_id(url: &str) -> String {
+    let mut s = url.trim().to_string();
+    if let Some(i) = s.find("://") {
+        s = s[i + 3..].to_string();
+    }
+    if let Some(stripped) = s.strip_prefix("git@") {
+        s = stripped.replacen(':', "/", 1);
+    }
+    // Drop the host segment (distinguished by containing a dot).
+    if let Some(i) = s.find('/') {
+        if s[..i].contains('.') {
+            s = s[i + 1..].to_string();
+        }
+    }
+    if let Some(stripped) = s.strip_suffix(".git") {
+        s = stripped.to_string();
+    }
+    s
+}
+
+/// Scopes that count as the project tier for a repo identity: the full
+/// `owner/repo` and its last segment (legacy scopes were dir names).
+fn project_scopes(project: &str) -> Vec<String> {
+    let mut scopes = vec![project.to_string()];
+    if let Some((_owner, name)) = project.rsplit_once('/') {
+        scopes.push(name.to_string());
+    }
+    scopes
+}
+
+/// Resolved context with tiered defaults: untagged atoms of the global
+/// and project scopes are always in; referenced tags pull atoms from any
+/// scope (the repository). See `research/context/architecture.md`.
+pub fn resolve_tiers(
+    store: &dyn Storage,
+    project: Option<&str>,
+    referenced: &[&str],
+) -> Result<Vec<(String, Row)>> {
+    let mut tiers: HashSet<String> = HashSet::from(["global".to_string()]);
+    if let Some(p) = project {
+        tiers.extend(project_scopes(p));
+    }
+    let referenced: HashSet<&str> = referenced.iter().copied().collect();
+    let mut items: Vec<(String, Row)> = alive(store)?
+        .into_iter()
+        .filter(|(_, r)| {
+            (tiers.contains(&r.scope) && r.tags.is_empty())
+                || r.tags.iter().any(|t| referenced.contains(t.as_str()))
+        })
+        .collect();
+    items.sort_by(|a, b| (&a.1.scope, &a.1.node, &a.0).cmp(&(&b.1.scope, &b.1.node, &b.0)));
+    Ok(items)
+}
+
+/// Find alive atoms by case-insensitive text match — how an agent
+/// discovers which hashtags exist when the user names a technology.
+pub fn search(store: &dyn Storage, needle: &str) -> Result<Vec<(String, Row)>> {
+    let needle = needle.to_lowercase();
+    let mut items: Vec<(String, Row)> = alive(store)?
+        .into_iter()
+        .filter(|(text, _)| text.to_lowercase().contains(&needle))
+        .collect();
+    items.sort_by(|a, b| (&a.1.scope, &a.1.node, &a.0).cmp(&(&b.1.scope, &b.1.node, &b.0)));
+    Ok(items)
+}
+
 /// Distinct alive atoms, deduplicated by text: duplicate assertions merge
 /// (tags union; scope/node from the first source in storage order).
 /// Tombstoned texts are excluded.
@@ -333,6 +428,73 @@ mod tests {
         add_doc(&mut store, "s", DOC).unwrap();
         assert_eq!(store.remove_matching("always").unwrap(), 1);
         assert_eq!(alive(&store).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn normalize_repo_id_handles_all_remote_forms() {
+        assert_eq!(
+            normalize_repo_id("git@github.com:fluid-notion-labs/context.git"),
+            "fluid-notion-labs/context"
+        );
+        assert_eq!(
+            normalize_repo_id("https://github.com/fluid-notion-labs/context.git"),
+            "fluid-notion-labs/context"
+        );
+        assert_eq!(
+            normalize_repo_id("ssh://git@git.example.com/team/repo"),
+            "team/repo"
+        );
+        assert_eq!(normalize_repo_id("owner/repo"), "owner/repo");
+    }
+
+    #[test]
+    fn resolve_tiers_defaults_and_pulls() {
+        let mut store = mem();
+        // DOC: scope "Context — test"? No — H1 is "Context — test" so
+        // scope is "Context — test"; add explicit tiered atoms instead.
+        add_doc(
+            &mut store,
+            "g.md",
+            "# global\n\n## always\n- global rule\n- tagged global #rust\n",
+        )
+        .unwrap();
+        add_doc(
+            &mut store,
+            "p.md",
+            "# owner/repo\n\n## local\n- project rule\n",
+        )
+        .unwrap();
+        add_doc(
+            &mut store,
+            "repo-pack.md",
+            "# packs\n\n## build #rust\n- pull me by tag\n",
+        )
+        .unwrap();
+
+        // default: global + project untagged only
+        let items = resolve_tiers(&store, Some("owner/repo"), &[]).unwrap();
+        let texts: Vec<&str> = items.iter().map(|(t, _)| t.as_str()).collect();
+        assert_eq!(texts, ["global rule", "project rule"]);
+
+        // legacy dir-name scope still matches the project tier
+        let items = resolve_tiers(&store, Some("owner/repo"), &["rust"]).unwrap();
+        let texts: Vec<&str> = items.iter().map(|(t, _)| t.as_str()).collect();
+        assert!(texts.contains(&"pull me by tag"));
+        assert!(texts.contains(&"global rule"));
+        // hashtag pull works from any scope, global included
+        assert!(texts.contains(&"tagged global #rust"));
+        // and it only adds — tier defaults remain
+        assert!(texts.contains(&"project rule"));
+    }
+
+    #[test]
+    fn search_finds_by_text_case_insensitive() {
+        let mut store = mem();
+        add_doc(&mut store, "s", "# packs\n\n## build #rust\n- Cargo before answers\n").unwrap();
+        let items = search(&store, "cargo").unwrap();
+        assert_eq!(items.len(), 1);
+        assert!(items[0].1.tags.contains("rust"));
+        assert!(search(&store, "nothing-matches").unwrap().is_empty());
     }
 
     #[test]

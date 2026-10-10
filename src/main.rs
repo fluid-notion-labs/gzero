@@ -14,7 +14,7 @@ use std::process::exit;
 
 use contextual::hub::{events_for_snapshot, Event, Hub};
 use contextual::snapshot::Atom;
-use contextual::{resolve, source_counts, tag_counts, SqliteStore, Storage};
+use contextual::{source_counts, tag_counts, SqliteStore, Storage};
 
 /// Post events to the hub if configured; warn (don't fail) otherwise.
 fn try_post_events(events: &[Event]) {
@@ -222,7 +222,10 @@ fn main() {
 
 fn show(tags: &BTreeSet<String>) {
     let store = open_store();
-    let items = resolve(&store, tags).unwrap_or_else(|e| panic!("cx: {e}"));
+    let refs: Vec<&str> = tags.iter().map(String::as_str).collect();
+    let project = contextual::repo_identity();
+    let items =
+        contextual::resolve_tiers(&store, project.as_deref(), &refs).unwrap_or_else(|e| panic!("cx: {e}"));
     if items.is_empty() {
         println!("(no matching context)");
         return;

@@ -221,9 +221,11 @@ the file is the wire format. Until then:
 - ✅ hub: Cloudflare Worker in server mode (events in, snapshot out,
   `cx push` / `cx pull` / auto-post in `cx-mcp`) — multi-machine works
 - ✅ engine: lattice, persistence, HTTP replication demo
-- ⬜ MCP rename to context tiers (`bag_*` → `resolve/add/remove/tags`),
+- ✅ MCP tools renamed (`mcp__context__resolve/search/add/remove/tags`),
   tiered resolve with **repo-URL project identity** (git origin,
-  normalized; cwd fallback), `search` tool
+  normalized; dir-name fallback + legacy scope match), `search` tool;
+  verified live: tiers resolve per cwd, `add` lands in
+  `fluid-notion-labs/explorations`
 - ⬜ Cloudflare Artifacts backend (planned — see "host-agnostic" above)
 - ⬜ hub: live push (DO websockets) so pulls aren't per-session
 - ⬜ chaos harness (compose + syncd, see `distributed-chaos-plan.md`)
