@@ -1,0 +1,53 @@
+# skills.yaml — which skills to pull from which vendored repos.
+#
+# Each entry: repo (cloned to ../vendor/<basename> if missing), and either
+# an explicit skill list or nothing (= import every SKILL.md found).
+# Every generated atom gets the entry's tags as hashtags, so `resolve`
+# pulls them from the repository tier. Generated packs land in
+# ../packs/skills-<vendor>.md and are imported via `cx add` (per-source
+# sync — re-running this script is idempotent).
+#
+scope_prefix: skills
+
+repos:
+  - repo: obra/superpowers
+    skills:
+      - { path: test-driven-development, tags: [testing] }
+      - { path: systematic-debugging, tags: [debugging] }
+      - { path: requesting-code-review, tags: [code-review] }
+      - { path: receiving-code-review, tags: [code-review] }
+      - { path: writing-plans, tags: [planning] }
+      - { path: executing-plans, tags: [planning] }
+      - { path: verification-before-completion, tags: [verification] }
+      - { path: using-git-worktrees, tags: [git] }
+
+  - repo: addyosmani/agent-skills
+    skills:
+      - { path: api-and-interface-design, tags: [api, design] }
+      - { path: spec-driven-development, tags: [planning, spec] }
+      - { path: test-driven-development, tags: [testing] }
+      - { path: debugging-and-error-recovery, tags: [debugging] }
+      - { path: code-review-and-quality, tags: [code-review] }
+      - { path: performance-optimization, tags: [performance] }
+      - { path: security-and-hardening, tags: [security] }
+      - { path: ci-cd-and-automation, tags: [ci] }
+      - { path: frontend-ui-engineering, tags: [frontend] }
+
+  - repo: Jeffallan/claude-skills
+    skills:
+      - { path: api-designer, tags: [api, design] }
+      - { path: architecture-designer, tags: [architecture] }
+      - { path: code-reviewer, tags: [code-review] }
+      - { path: database-optimizer, tags: [database] }
+      - { path: debugging-wizard, tags: [debugging] }
+      - { path: cli-developer, tags: [cli] }
+      - { path: devops-engineer, tags: [devops] }
+      - { path: fastapi-expert, tags: [python, api] }
+      - { path: django-expert, tags: [python] }
+
+  - repo: anthropics/skills
+    skills:
+      - { path: mcp-builder, tags: [mcp] }
+      - { path: webapp-testing, tags: [testing, web] }
+      - { path: frontend-design, tags: [frontend, design] }
+      - { path: skill-creator, tags: [skills, meta] }
