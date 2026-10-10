@@ -235,6 +235,8 @@ the file is the wire format. Until then:
   new `cx rm-source` (`plan.md` M4); hub push of the new events pending
 - ✅ pi plugin installed and verified live (injection + MCP tools in a
   real session)
+- ✅ P4 migration: global `AGENTS.md` + explorations `CONTEXT.md` are
+  pointer stubs — the bag is the sole authority, injected per session
 - ⬜ Cloudflare Artifacts backend (planned — see "host-agnostic" above)
 - ⬜ hub: live push (DO websockets) so pulls aren't per-session
 - ⬜ chaos harness (compose + syncd, see `distributed-chaos-plan.md`)
