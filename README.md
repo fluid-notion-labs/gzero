@@ -16,5 +16,6 @@ plan at `research/context/plan.md`.
 
 ## Status
 
-Sketch stage: parser + resolve logic exist in `src/`; storage is being moved
-to the `Storage` trait + SQLite backend (see plan, M1).
+Parser, resolve, `Storage` trait, and SQLite backend done (M0–M2 of the
+plan). Live: project + global context and two packs in the bag. Next:
+re-import discipline after edits, pi integration (M3).

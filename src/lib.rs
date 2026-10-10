@@ -127,15 +127,21 @@ pub fn tag_counts(store: &dyn Storage) -> Result<Vec<(String, usize)>> {
 
 /// Scope slug from a `# ` title: lowercase, `context`/`pack` words and
 /// separators stripped. `Context — global` → `global`; `rust pack` → `rust`.
+/// Only whole words: `Contextual — plan` keeps its prefix.
 fn title_scope(title: &str) -> String {
+    let is_sep = |c: char| matches!(c, '—' | '–' | '-' | ':' | ' ');
     let mut s = title.trim().to_ascii_lowercase();
     if let Some(rest) = s.strip_prefix("context") {
-        s = rest.to_string();
+        if rest.starts_with(is_sep) {
+            s = rest.to_string();
+        }
     }
     if let Some(rest) = s.strip_suffix("pack") {
-        s = rest.to_string();
+        if s[..s.len() - "pack".len()].ends_with(is_sep) {
+            s = rest.to_string();
+        }
     }
-    s.trim_matches(|c: char| matches!(c, '—' | '–' | '-' | ':' | ' ')).to_string()
+    s.trim_matches(is_sep).to_string()
 }
 
 /// Node slug and tags from a `## ` heading: leading non-`#` tokens become
@@ -217,6 +223,15 @@ mod tests {
         assert_eq!(all.len(), 1);
         assert_eq!(all[0].1.count, 2);
         assert!(all[0].1.tags.contains("a") && all[0].1.tags.contains("b"));
+    }
+
+    #[test]
+    fn title_scope_whole_words_only() {
+        assert_eq!(title_scope("Context — global"), "global");
+        assert_eq!(title_scope("Rust pack"), "rust");
+        assert_eq!(title_scope("Contextual — implementation plan"),
+                   "contextual — implementation plan");
+        assert_eq!(title_scope("Style"), "style");
     }
 
     #[test]
