@@ -1,30 +1,33 @@
 //! SQLite storage backend for the context bag.
 //!
-//! One table, WAL mode, upsert = read-merge-write (count + 1, tag union).
-//! `:memory:` opens an in-memory database for tests.
+//! One table, WAL mode. Rows are (text, source) assertions; sync replaces
+//! all rows for a source in one transaction. `:memory:` opens an in-memory
+//! database for tests. Schema v1 (count column) is detected and replaced.
 
-use std::collections::BTreeSet;
+use std::collections::HashSet;
 
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection};
 
-use crate::{Entry, Result, Storage};
+use crate::{ParsedAtom, Result, Row, Storage, SyncStats};
 
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS atoms (
-    text  TEXT PRIMARY KEY,
-    count INTEGER NOT NULL DEFAULT 1,
-    scope TEXT NOT NULL,
-    node  TEXT NOT NULL,
-    tags  TEXT NOT NULL DEFAULT '[]'
+    text   TEXT NOT NULL,
+    source TEXT NOT NULL,
+    scope  TEXT NOT NULL,
+    node   TEXT NOT NULL,
+    tags   TEXT NOT NULL DEFAULT '[]',
+    PRIMARY KEY (text, source)
 );";
 
-/// SQLite-backed bag. One row per distinct atom text.
+/// SQLite-backed bag. One row per (text, source) assertion.
 pub struct SqliteStore {
     conn: Connection,
 }
 
 impl SqliteStore {
-    /// Open (creating the schema if needed). `:memory:` is supported.
+    /// Open (creating or migrating the schema if needed). `:memory:` is
+    /// supported.
     pub fn open(path: &str) -> Result<Self> {
         let conn = if path == ":memory:" {
             Connection::open_in_memory()?
@@ -33,8 +36,23 @@ impl SqliteStore {
             conn.pragma_update(None, "journal_mode", "WAL")?;
             conn
         };
-        conn.execute_batch(SCHEMA)?;
+        Self::ensure_schema(&conn)?;
         Ok(Self { conn })
+    }
+
+    /// Create the schema; replace pre-`source` (v1) tables, whose contents
+    /// are re-importable from markdown.
+    fn ensure_schema(conn: &Connection) -> Result<()> {
+        let has_source: bool = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('atoms') WHERE name = 'source'",
+            [],
+            |r| r.get::<_, i64>(0).map(|n| n > 0),
+        )?;
+        if !has_source {
+            conn.execute("DROP TABLE IF EXISTS atoms", [])?;
+        }
+        conn.execute_batch(SCHEMA)?;
+        Ok(())
     }
 
     /// In-memory store for tests.
@@ -44,47 +62,43 @@ impl SqliteStore {
 }
 
 impl Storage for SqliteStore {
-    fn upsert(
-        &mut self,
-        text: &str,
-        scope: &str,
-        node: &str,
-        tags: &BTreeSet<String>,
-    ) -> Result<u64> {
-        let existing: Option<(i64, String)> = self
+    fn sync_source(&mut self, source: &str, atoms: &[ParsedAtom]) -> Result<SyncStats> {
+        let before: HashSet<String> = self
             .conn
-            .query_row(
-                "SELECT count, tags FROM atoms WHERE text = ?1",
-                params![text],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
-            .optional()?;
-        let (count, merged) = match existing {
-            Some((c, tags_json)) => {
-                let mut merged: BTreeSet<String> = serde_json::from_str(&tags_json)?;
-                merged.extend(tags.iter().cloned());
-                (c as u64 + 1, merged)
-            }
-            None => (1, tags.clone()),
-        };
-        let tags_json = serde_json::to_string(&merged)?;
-        self.conn.execute(
-            "INSERT INTO atoms (text, count, scope, node, tags)
-             VALUES (?1, ?2, ?3, ?4, ?5)
-             ON CONFLICT(text) DO UPDATE SET count = ?2, scope = ?3, node = ?4, tags = ?5",
-            params![text, count, scope, node, tags_json],
-        )?;
-        Ok(count)
+            .prepare("SELECT text FROM atoms WHERE source = ?1")?
+            .query_map(params![source], |r| r.get(0))?
+            .collect::<std::result::Result<HashSet<_>, _>>()?;
+
+        let tx = self.conn.transaction()?;
+        tx.execute("DELETE FROM atoms WHERE source = ?1", params![source])?;
+        let mut now = HashSet::new();
+        for a in atoms {
+            let tags = serde_json::to_string(&a.tags)?;
+            tx.execute(
+                "INSERT OR REPLACE INTO atoms (text, source, scope, node, tags)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![a.text, source, a.scope, a.node, tags],
+            )?;
+            now.insert(a.text.clone());
+        }
+        tx.commit()?;
+
+        let kept = before.intersection(&now).count();
+        Ok(SyncStats {
+            added: now.len() - kept,
+            removed: before.len() - kept,
+            kept,
+        })
     }
 
-    fn all(&self) -> Result<Vec<(String, Entry)>> {
+    fn all(&self) -> Result<Vec<Row>> {
         let mut stmt = self
             .conn
-            .prepare("SELECT text, count, scope, node, tags FROM atoms")?;
+            .prepare("SELECT text, source, scope, node, tags FROM atoms ORDER BY source, text")?;
         let rows = stmt.query_map([], |r| {
             Ok((
                 r.get::<_, String>(0)?,
-                r.get::<_, i64>(1)? as u64,
+                r.get::<_, String>(1)?,
                 r.get::<_, String>(2)?,
                 r.get::<_, String>(3)?,
                 r.get::<_, String>(4)?,
@@ -92,16 +106,14 @@ impl Storage for SqliteStore {
         })?;
         let mut out = Vec::new();
         for row in rows {
-            let (text, count, scope, node, tags_json) = row?;
-            out.push((
+            let (text, source, scope, node, tags_json) = row?;
+            out.push(Row {
                 text,
-                Entry {
-                    count,
-                    scope,
-                    node,
-                    tags: serde_json::from_str(&tags_json)?,
-                },
-            ));
+                source,
+                scope,
+                node,
+                tags: serde_json::from_str(&tags_json)?,
+            });
         }
         Ok(out)
     }
@@ -110,12 +122,13 @@ impl Storage for SqliteStore {
         let matches: Vec<String> = self
             .all()?
             .into_iter()
-            .filter(|(text, _)| text.contains(needle))
-            .map(|(text, _)| text)
+            .filter(|row| row.text.contains(needle))
+            .map(|row| row.text)
             .collect();
         let mut removed = 0;
         for text in &matches {
-            removed += self.conn.execute("DELETE FROM atoms WHERE text = ?1", params![text])?;
+            removed +=
+                self.conn.execute("DELETE FROM atoms WHERE text = ?1", params![text])?;
         }
         Ok(removed)
     }
@@ -124,17 +137,49 @@ impl Storage for SqliteStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{add_doc, alive};
+    use std::collections::BTreeSet;
+
+    fn tags(list: &[&str]) -> BTreeSet<String> {
+        list.iter().map(|s| s.to_string()).collect()
+    }
 
     #[test]
-    fn roundtrip() {
+    fn roundtrip_row() {
         let mut store = SqliteStore::in_memory().unwrap();
-        let mut tags = BTreeSet::new();
-        tags.insert("rust".to_string());
-        store.upsert("keep it terse", "global", "style", &tags).unwrap();
+        let atoms = vec![ParsedAtom {
+            text: "keep it terse".into(),
+            scope: "global".into(),
+            node: "style".into(),
+            tags: tags(&["rust"]),
+        }];
+        let stats = store.sync_source("a.md", &atoms).unwrap();
+        assert_eq!(stats.added, 1);
         let all = store.all().unwrap();
-        assert_eq!(all[0].0, "keep it terse");
-        assert_eq!(all[0].1.scope, "global");
-        assert_eq!(all[0].1.count, 1);
-        assert!(all[0].1.tags.contains("rust"));
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].text, "keep it terse");
+        assert_eq!(all[0].source, "a.md");
+        assert_eq!(all[0].tags, tags(&["rust"]));
+    }
+
+    #[test]
+    fn sync_stats_and_dedup() {
+        let mut store = SqliteStore::in_memory().unwrap();
+        let doc = "## a\n- x\n- y\n";
+        assert_eq!(add_doc(&mut store, "a", doc).unwrap().added, 2);
+        // same text from another source: new row, same text
+        add_doc(&mut store, "b", "## a\n- x\n").unwrap();
+        assert_eq!(store.all().unwrap().len(), 3);
+        assert_eq!(alive(&store).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn parse_and_alive_integration() {
+        let mut store = SqliteStore::in_memory().unwrap();
+        add_doc(&mut store, "s", "# Context — demo\n\n## n\n- hello #w\n").unwrap();
+        let rows = alive(&store).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, "hello #w");
+        assert!(rows[0].1.tags.contains("w"));
     }
 }

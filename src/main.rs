@@ -2,7 +2,8 @@
 //!
 //! `cx`                 print default context (untagged atoms)
 //! `cx #tag ...`        default plus tagged atoms
-//! `cx add file.md ...` import markdown into the bag
+//! `cx add file.md ...` import markdown into the bag (per-source sync)
+//! `cx sources`         per-source assertion counts
 //! `cx rm <needle>`     remove atoms whose text contains needle
 //! `cx tags`            tag vocabulary with counts
 //! `cx recommend`       suggest packs for this directory (rust/npm)
@@ -11,12 +12,13 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::exit;
 
-use contextual::{add_doc, resolve, tag_counts, SqliteStore, Storage};
+use contextual::{resolve, source_counts, tag_counts, SqliteStore, Storage};
 
 const USAGE: &str = "cx — context bag
 cx                default context (untagged atoms)
 cx #tag ...       default plus tagged atoms
-cx add file.md    import context markdown into the bag
+cx add file.md    import context markdown (per-source sync; re-run after edits)
+cx sources        per-source assertion counts
 cx rm <needle>    remove matching atoms
 cx tags           tag vocabulary with counts
 cx recommend      suggest packs for this directory (rust/npm)
@@ -39,13 +41,22 @@ fn main() {
                 exit(2);
             }
             let mut store = open_store();
-            let mut total = 0;
             for f in &args[1..] {
-                let text = std::fs::read_to_string(f)
-                    .unwrap_or_else(|e| panic!("cx: {}: {e}", f));
-                total += add_doc(&mut store, &text).unwrap_or_else(|e| panic!("cx: {e}"));
+                let text = std::fs::read_to_string(f).unwrap_or_else(|e| panic!("cx: {}: {e}", f));
+                let source = source_path(Path::new(f));
+                let stats =
+                    contextual::add_doc(&mut store, &source, &text).unwrap_or_else(|e| panic!("cx: {e}"));
+                println!(
+                    "{f}: +{} -{} ={} (kept {})",
+                    stats.added, stats.removed, stats.kept, stats.kept
+                );
             }
-            println!("imported {total} atoms (bag: {})", store.all().unwrap().len());
+        }
+        "sources" => {
+            let store = open_store();
+            for (source, n) in source_counts(&store).unwrap_or_else(|e| panic!("cx: {e}")) {
+                println!("{n}\t{source}");
+            }
         }
         "rm" => {
             if args.len() < 2 {
@@ -94,8 +105,8 @@ fn show(tags: &BTreeSet<String>) {
         return;
     }
     let mut current = String::new();
-    for (text, e) in items {
-        let key = format!("{}/{}", e.scope, e.node);
+    for (text, r) in items {
+        let key = format!("{}/{}", r.scope, r.node);
         if key != current {
             println!("\n# {key}");
             current = key;
@@ -117,6 +128,13 @@ fn bag_path() -> PathBuf {
         return Path::new(&home).join(".pi/agent/context.db");
     }
     PathBuf::from("context.db")
+}
+
+/// Canonical path used as a stable source identifier.
+fn source_path(p: &Path) -> String {
+    p.canonicalize().unwrap_or_else(|_| p.to_path_buf())
+        .to_string_lossy()
+        .into_owned()
 }
 
 /// Suggest context packs for the current directory's ecosystem manifests.
