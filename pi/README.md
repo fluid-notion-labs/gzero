@@ -5,7 +5,11 @@ contextual only via MCP — no direct SQLite or hub access.
 
 - registers `cx-mcp` so the model gets the `mcp__context__*` tools
 - injects the resolved default context (global + project tiers) into the
-  system prompt at the first prompt of each session
+  system prompt on every turn
+- `/context` shows the injected context (scrollable overlay in the TUI);
+  `/context reload` re-resolves it; `/context add <text>` saves an atom
+  with a confirm dialog
+- warns on a stale `cx-mcp` (missing tools via `tools/list`)
 - offers to install contextual on first run if `cx-mcp` is missing
 
 Spec: `research/context/pi-plugin.md` (in the explorations repo);

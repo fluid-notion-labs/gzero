@@ -1,17 +1,31 @@
 // contextual pi plugin — connects the context system to pi sessions.
 //
 // Speaks to contextual only via MCP: registers cx-mcp for the model's
-// tools, and injects the resolved default context (global + project
-// tiers) into the system prompt at the first prompt of a session.
+// tools, injects the resolved default context (global + project tiers)
+// into the system prompt on every turn, and adds /context commands.
 //
 // Spec: research/context/pi-plugin.md. Curation policy:
 // research/context/curation.md.
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionCommandContext,
+  Theme,
+} from "@earendil-works/pi-coding-agent";
+import {
+  ScrollView,
+  Text,
+  matchesKey,
+  type Component,
+  type Focusable,
+} from "@earendil-works/pi-tui";
 import { execFile, spawn } from "node:child_process";
 
 const REPO = "https://github.com/fluid-notion-labs/contextual";
 const INSTALL_CMD = `cargo install --git ${REPO}`;
+
+/** Tools every cx-mcp must expose; a stale install warns instead of failing. */
+const EXPECTED_TOOLS = ["resolve", "search", "add", "remove", "tags"];
 
 /** Look up a binary on PATH (a lookup, not a long-running process). */
 function which(bin: string): Promise<string | null> {
@@ -24,46 +38,47 @@ function which(bin: string): Promise<string | null> {
 }
 
 /**
- * One-shot MCP stdio session against cx-mcp: initialize, call one tool,
- * return its text. Needed because event handlers get plain
- * ExtensionContext — no executeTool — so injection cannot go through
- * pi's own MCP connection. Same server, same protocol, no logic duplication.
+ * One MCP request over a fresh stdio session: spawn cx-mcp, initialize,
+ * send one request, resolve with its result. Needed because event and
+ * command handlers get no executeTool — a session of our own is the only
+ * way to speak MCP. Same server, same protocol, no logic duplication.
  */
-function mcpCall(cxMcp: string, tool: string, args: unknown, timeoutMs = 15_000): Promise<string> {
+function mcpRequest(cxMcp: string, method: string, params: unknown, timeoutMs = 15_000): Promise<any> {
   return new Promise((resolve, reject) => {
     const child = spawn(cxMcp, [], { stdio: ["pipe", "pipe", "ignore"] });
     let buf = "";
-    const done = (fn: () => void) => {
+    const requestId = 2; // 1 is the initialize reply
+    const finish = (fn: () => void) => {
       clearTimeout(timer);
       child.kill();
       fn();
     };
     const timer = setTimeout(
-      () => done(() => reject(new Error(`cx-mcp ${tool}: timed out`))),
+      () => finish(() => reject(new Error(`cx-mcp ${method}: timed out`))),
       timeoutMs,
     );
-    child.on("error", (e) => done(() => reject(e)));
+    child.on("error", (e) => finish(() => reject(e)));
     child.stdout.on("data", (d) => {
       buf += d;
       const nl = buf.indexOf("\n");
       if (nl === -1) return;
       const line = buf.slice(0, nl);
       buf = "";
-      let msg: {
-        id?: number;
-        result?: { content?: { type: string; text?: string }[] };
-      };
+      let msg: { id?: number; result?: unknown; error?: unknown };
       try {
         msg = JSON.parse(line);
       } catch {
         return;
       }
-      if (msg.id !== 2) return; // initialize reply or notification
-      const text = (msg.result?.content ?? [])
-        .filter((c) => c.type === "text")
-        .map((c) => c.text ?? "")
-        .join("\n");
-      done(() => resolve(text));
+      if (msg.id !== requestId) return; // initialize reply or notification
+      if (msg.error) {
+        const m = typeof msg.error === "object" && msg.error !== null && "message" in msg.error
+          ? String((msg.error as { message: unknown }).message)
+          : JSON.stringify(msg.error);
+        finish(() => reject(new Error(`cx-mcp ${method}: ${m}`)));
+        return;
+      }
+      finish(() => resolve(msg.result));
     });
     const send = (m: unknown) => child.stdin.write(JSON.stringify(m) + "\n");
     send({
@@ -77,20 +92,71 @@ function mcpCall(cxMcp: string, tool: string, args: unknown, timeoutMs = 15_000)
       },
     });
     send({ jsonrpc: "2.0", method: "notifications/initialized" });
-    send({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: tool, arguments: args } });
+    send({ jsonrpc: "2.0", id: requestId, method, params });
   });
+}
+
+/** Tool text from a one-shot tools/call. */
+async function mcpCall(cxMcp: string, tool: string, args: unknown): Promise<string> {
+  const result = await mcpRequest(cxMcp, "tools/call", { name: tool, arguments: args });
+  const content = (result as { content?: { type: string; text?: string }[] } | undefined)?.content ?? [];
+  return content.filter((c) => c.type === "text").map((c) => c.text ?? "").join("\n");
+}
+
+/** Tool names from a one-shot tools/list. */
+async function mcpTools(cxMcp: string): Promise<string[]> {
+  const result = await mcpRequest(cxMcp, "tools/list", {});
+  return ((result as { tools?: { name: string }[] } | undefined)?.tools ?? []).map((t) => t.name);
 }
 
 /** Framing block injected before the resolved atoms (curation.md §4). */
 const PREAMBLE = `The context below is persistent memory: carried across sessions and machines, present in every session. Tagged knowledge is not shown here — when the user names technologies or domains, pull it via mcp__context__resolve with tags; discover hashtags with search. Facts that belong here apply to every session; task-specific learnings get tags instead. When saving: declarative facts, never imperatives to yourself; batch changes; consolidate rather than skip.`;
 
+/** Read-only overlay viewer for the injected context. */
+class ContextViewer implements Focusable {
+  readonly width = 84;
+  focused = false;
+  private scroll: ScrollView;
+
+  constructor(text: string, private done: () => void) {
+    this.scroll = new ScrollView(new Text(text, 1, 1), { scrollbar: "auto" });
+  }
+
+  handleInput(data: string): void {
+    if (matchesKey(data, "escape") || matchesKey(data, "return") || matchesKey(data, "q")) {
+      this.done();
+    } else if (matchesKey(data, "up") || matchesKey(data, "k")) {
+      this.scroll.scrollBy(-3);
+    } else if (matchesKey(data, "down") || matchesKey(data, "j")) {
+      this.scroll.scrollBy(3);
+    } else if (matchesKey(data, "home")) {
+      this.scroll.scrollToStart();
+    } else if (matchesKey(data, "end") || matchesKey(data, "g")) {
+      this.scroll.scrollToEnd();
+    }
+  }
+
+  render(width: number): string[] {
+    return this.scroll.render(width);
+  }
+}
+
 export default function (pi: ExtensionAPI) {
-  let injected = false;
   let cxMcpPath: string | null | undefined;
+  /** Resolved default context for this session; injected every turn. */
+  let resolvedBody: string | null = null;
 
   const findCxMcp = async (): Promise<string | null> => {
     if (cxMcpPath === undefined) cxMcpPath = await which("cx-mcp");
     return cxMcpPath;
+  };
+
+  /** Resolve once and cache; returns null when nothing usable came back. */
+  const resolveContext = async (cxMcp: string): Promise<string | null> => {
+    const text = await mcpCall(cxMcp, "resolve", {});
+    const body = text.trim();
+    if (!body || body === "(no matching context)") return null;
+    return body;
   };
 
   // The model's MCP tools. Registered in the factory; pi connects the
@@ -106,53 +172,149 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("session_start", async (_event, ctx) => {
-    injected = false; // fresh session → inject again
-    if (await findCxMcp()) return;
-    if (!ctx.hasUI) {
-      console.error(`contextual pi plugin: cx-mcp not found; install with: ${INSTALL_CMD}`);
+    resolvedBody = null; // fresh session → resolve again
+    const cxMcp = await findCxMcp();
+    if (!cxMcp) {
+      if (!ctx.hasUI) {
+        console.error(`contextual pi plugin: cx-mcp not found; install with: ${INSTALL_CMD}`);
+        return;
+      }
+      if (!(await which("cargo"))) {
+        ctx.ui.notify(
+          `contextual is not installed and cargo is unavailable. Install manually from ${REPO}`,
+          "warning",
+        );
+        return;
+      }
+      const ok = await ctx.ui.confirm(
+        "contextual is not installed",
+        `Install it now? Runs: ${INSTALL_CMD} (provides cx and cx-mcp).`,
+      );
+      if (!ok) return;
+      ctx.ui.notify("Installing contextual in the background…", "info");
+      // Detached so the install survives the session; notified on completion.
+      const child = spawn("cargo", ["install", "--git", REPO], {
+        stdio: "ignore",
+        detached: true,
+      });
+      child.on("exit", (code) => {
+        ctx.ui.notify(
+          code === 0
+            ? "contextual installed — restart pi to connect it"
+            : `contextual install failed (exit ${code})`,
+          code === 0 ? "info" : "error",
+        );
+      });
+      child.unref();
       return;
     }
-    if (!(await which("cargo"))) {
-      ctx.ui.notify(
-        `contextual is not installed and cargo is unavailable. Install manually from ${REPO}`,
-        "warning",
-      );
-      return;
+    // Stale-install check: tools/list must show the full surface.
+    try {
+      const tools = await mcpTools(cxMcp);
+      const missing = EXPECTED_TOOLS.filter((t) => !tools.includes(t));
+      if (missing.length > 0) {
+        ctx.ui.notify(
+          `cx-mcp is missing tools: ${missing.join(", ")}. Update with: ${INSTALL_CMD}`,
+          "warning",
+        );
+      }
+    } catch {
+      // tools/list failure shouldn't block the session; injection degrades anyway.
     }
-    const ok = await ctx.ui.confirm(
-      "contextual is not installed",
-      `Install it now? Runs: ${INSTALL_CMD} (provides cx and cx-mcp).`,
-    );
-    if (!ok) return;
-    ctx.ui.notify("Installing contextual in the background…", "info");
-    // Detached so the install survives the session; notified on completion.
-    const child = spawn("cargo", ["install", "--git", REPO], {
-      stdio: "ignore",
-      detached: true,
-    });
-    child.on("exit", (code) => {
-      ctx.ui.notify(
-        code === 0
-          ? "contextual installed — restart pi to connect it"
-          : `contextual install failed (exit ${code})`,
-        code === 0 ? "info" : "error",
-      );
-    });
-    child.unref();
   });
 
   pi.on("before_agent_start", async (event) => {
-    if (injected) return;
-    injected = true;
     const cxMcp = await findCxMcp();
     if (!cxMcp) return; // offline degradation: no server, AGENTS.md fallback remains
     try {
-      const text = await mcpCall(cxMcp, "resolve", {});
-      const body = text.trim();
-      if (!body || body === "(no matching context)") return;
-      event.systemPromptOptions.sections["context"] = `<context>\n${PREAMBLE}\n\n${body}\n</context>`;
+      if (resolvedBody === null) resolvedBody = await resolveContext(cxMcp);
+      if (resolvedBody !== null) {
+        // A fresh normalized copy arrives every turn; the returned options
+        // become the turn's system prompt, so the section must be set
+        // every turn or it is dropped from the prompt diff.
+        event.systemPromptOptions.sections["context"] =
+          `<context>\n${PREAMBLE}\n\n${resolvedBody}\n</context>`;
+      }
     } catch {
+      resolvedBody = null; // resolve failed → retry next turn
       // Degrade silently: pi still works without injection.
     }
+  });
+
+  pi.registerCommand("context", {
+    description: "Show the injected context; 'reload' re-resolves it; 'add <text>' saves an atom",
+    handler: async (args: string, ctx: ExtensionCommandContext) => {
+      const cxMcp = await findCxMcp();
+      if (!cxMcp) {
+        ctx.ui.notify(`cx-mcp not found. Install with: ${INSTALL_CMD}`, "error");
+        return;
+      }
+      const [sub, ...rest] = args.trim().split(/\s+/);
+      const argText = rest.join(" ").trim();
+
+      if (sub === "reload") {
+        try {
+          resolvedBody = await resolveContext(cxMcp);
+          ctx.ui.notify(
+            resolvedBody === null
+              ? "Context reloaded: nothing resolved for this project"
+              : `Context reloaded (${resolvedBody.length} chars) — applies to the next turn`,
+            "info",
+          );
+        } catch (e) {
+          ctx.ui.notify(`Reload failed: ${e instanceof Error ? e.message : String(e)}`, "error");
+        }
+        return;
+      }
+
+      if (sub === "add") {
+        const text = argText || (await ctx.ui.input("Add to context", "the terse assertion"));
+        if (!text?.trim()) return;
+        const tags = await ctx.ui.input("Tags (optional)", "comma-separated hashtags");
+        const confirmed = await ctx.ui.confirm(
+          "Add to context",
+          `"${text.trim()}"${tags?.trim() ? `\ntags: ${tags.trim()}` : ""}`,
+        );
+        if (!confirmed) return;
+        try {
+          const result = await mcpCall(cxMcp, "add", {
+            text: text.trim(),
+            tags: tags?.trim() || undefined,
+          });
+          ctx.ui.notify(`Context: ${result}`, "info");
+        } catch (e) {
+          ctx.ui.notify(`Add failed: ${e instanceof Error ? e.message : String(e)}`, "error");
+        }
+        return;
+      }
+
+      if (sub !== undefined && sub !== "") {
+        ctx.ui.notify("Usage: /context [reload|add <text>]", "warning");
+        return;
+      }
+
+      // Plain /context: show what the model is injected. In TUI mode a
+      // scrollable overlay; elsewhere a notification.
+      if (resolvedBody === null) {
+        try {
+          resolvedBody = await resolveContext(cxMcp);
+        } catch {
+          ctx.ui.notify("Could not resolve context", "error");
+          return;
+        }
+      }
+      if (resolvedBody === null) {
+        ctx.ui.notify("Nothing resolved for this project — /context add or tagged pulls", "info");
+        return;
+      }
+      const full = `<context>\n${PREAMBLE}\n\n${resolvedBody}\n</context>`;
+      if (ctx.mode === "tui") {
+        await ctx.ui.custom(
+          (_tui, _theme, _keybindings, done) => new ContextViewer(full, done),
+        );
+      } else {
+        ctx.ui.notify(full.length > 400 ? `${full.slice(0, 400)}…` : full, "info");
+      }
+    },
   });
 }
