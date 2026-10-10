@@ -231,8 +231,10 @@ the file is the wire format. Until then:
 - ✅ pi plugin P1+P2 (`pi-plugin.md`): per-turn `<context>` injection,
   install offer, `/context` commands, stale-binary check
 - ✅ packs dissolved: atoms seeded, `packs/` + `recommend` deleted,
-  project-relevance atoms in place (`plan.md` M4); hub push of the
-  new atoms pending
+  project-relevance atoms in place, junk skills corpus removed via the
+  new `cx rm-source` (`plan.md` M4); hub push of the new events pending
+- ✅ pi plugin installed and verified live (injection + MCP tools in a
+  real session)
 - ⬜ Cloudflare Artifacts backend (planned — see "host-agnostic" above)
 - ⬜ hub: live push (DO websockets) so pulls aren't per-session
 - ⬜ chaos harness (compose + syncd, see `distributed-chaos-plan.md`)

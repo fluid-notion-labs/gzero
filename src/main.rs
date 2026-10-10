@@ -5,6 +5,7 @@
 //! `cx add file.md ...` import markdown into the bag (per-source sync)
 //! `cx sources`         per-source assertion counts
 //! `cx rm <needle>`     remove atoms whose text contains needle
+//! `cx rm-source <src>`  remove a whole source (tombstoned)
 //! `cx tags`            tag vocabulary with counts
 
 use std::collections::BTreeSet;
@@ -54,6 +55,7 @@ cx pull           fetch merged snapshot from the hub (CX_HUB_URL) and absorb
 cx push           post this bag's atoms + tombstones to the hub as events
 cx sources        per-source assertion counts
 cx rm <needle>    remove matching atoms (records tombstones)
+cx rm-source <s>  remove one whole source (tombstoned; substring must match exactly one)
 cx tags           tag vocabulary with counts
 env: CX_DB        bag location (default ~/.pi/agent/context.db)";
 
@@ -190,6 +192,59 @@ fn main() {
                     );
                 }
                 Err(e) => panic!("cx: {e}"),
+            }
+        }
+        "rm-source" => {
+            if args.len() < 2 {
+                eprintln!("usage: cx rm-source <source>  (substring; must match one source)");
+                exit(2);
+            }
+            let needle = args[1..].join(" ");
+            let mut store = open_store();
+            let sources: Vec<String> = source_counts(&store)
+                .unwrap_or_else(|e| panic!("cx: {e}"))
+                .into_iter()
+                .map(|(s, _)| s)
+                .filter(|s| s.contains(&needle))
+                .collect();
+            match sources.as_slice() {
+                [source] => {
+                    // Tombstone first so removal survives hub pulls; then
+                    // drop the rows (sync with nothing = the source asserts nothing).
+                    let victims: Vec<Atom> = store
+                        .all()
+                        .unwrap_or_else(|e| panic!("cx: {e}"))
+                        .into_iter()
+                        .filter(|r| r.source == *source)
+                        .map(|r| Atom {
+                            text: r.text,
+                            scope: r.scope,
+                            node: r.node,
+                            tags: r.tags,
+                        })
+                        .collect();
+                    store
+                        .tombstone(&victims)
+                        .unwrap_or_else(|e| panic!("cx: {e}"));
+                    let stats = store
+                        .sync_source(source, &[])
+                        .unwrap_or_else(|e| panic!("cx: {e}"));
+                    println!("{source}: removed {}", stats.removed);
+                    try_post_events(
+                        &victims.into_iter().map(|atom| Event::Remove { atom }).collect::<Vec<_>>(),
+                    );
+                }
+                [] => {
+                    eprintln!("cx: no source matches {needle:?}");
+                    exit(1);
+                }
+                many => {
+                    eprintln!("cx: {needle:?} is ambiguous:");
+                    for s in many {
+                        eprintln!("  {s}");
+                    }
+                    exit(1);
+                }
             }
         }
         "tags" => {

@@ -60,25 +60,29 @@ function mcpRequest(cxMcp: string, method: string, params: unknown, timeoutMs = 
     child.on("error", (e) => finish(() => reject(e)));
     child.stdout.on("data", (d) => {
       buf += d;
-      const nl = buf.indexOf("\n");
-      if (nl === -1) return;
-      const line = buf.slice(0, nl);
-      buf = "";
-      let msg: { id?: number; result?: unknown; error?: unknown };
-      try {
-        msg = JSON.parse(line);
-      } catch {
+      // A chunk may carry several lines (initialize + call replies often
+      // coalesce); drain the whole buffer, not just the first line.
+      let nl: number;
+      while ((nl = buf.indexOf("\n")) !== -1) {
+        const line = buf.slice(0, nl);
+        buf = buf.slice(nl + 1);
+        let msg: { id?: number; result?: unknown; error?: unknown };
+        try {
+          msg = JSON.parse(line);
+        } catch {
+          continue;
+        }
+        if (msg.id !== requestId) continue; // initialize reply or notification
+        if (msg.error) {
+          const m = typeof msg.error === "object" && msg.error !== null && "message" in msg.error
+            ? String((msg.error as { message: unknown }).message)
+            : JSON.stringify(msg.error);
+          finish(() => reject(new Error(`cx-mcp ${method}: ${m}`)));
+          return;
+        }
+        finish(() => resolve(msg.result));
         return;
       }
-      if (msg.id !== requestId) return; // initialize reply or notification
-      if (msg.error) {
-        const m = typeof msg.error === "object" && msg.error !== null && "message" in msg.error
-          ? String((msg.error as { message: unknown }).message)
-          : JSON.stringify(msg.error);
-        finish(() => reject(new Error(`cx-mcp ${method}: ${m}`)));
-        return;
-      }
-      finish(() => resolve(msg.result));
     });
     const send = (m: unknown) => child.stdin.write(JSON.stringify(m) + "\n");
     send({
@@ -235,7 +239,7 @@ export default function (pi: ExtensionAPI) {
         event.systemPromptOptions.sections["context"] =
           `<context>\n${PREAMBLE}\n\n${resolvedBody}\n</context>`;
       }
-    } catch {
+    } catch (e) {
       resolvedBody = null; // resolve failed → retry next turn
       // Degrade silently: pi still works without injection.
     }

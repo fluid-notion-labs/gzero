@@ -366,12 +366,22 @@ fn heading(line: &str) -> (String, BTreeSet<String>) {
     (slug.join("-").to_ascii_lowercase(), tags)
 }
 
-/// Inline hashtags in atom text: whitespace-delimited tokens starting with `#`.
+/// Inline hashtags in atom text: whitespace-delimited tokens starting
+/// with `#` followed by an alphanumeric. Markdown hashes (`##`, `###`)
+/// and anchors (`#!`) are not tags; trailing punctuation (`#rust,`)
+/// is trimmed.
 fn hashtags(text: &str) -> BTreeSet<String> {
     text.split_whitespace()
         .filter_map(|t| t.strip_prefix('#'))
+        .filter(|t| t.chars().next().is_some_and(|c| c.is_alphanumeric()))
+        .map(|t| {
+            let trimmed: String = t
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '-')
+                .collect();
+            trimmed.to_ascii_lowercase()
+        })
         .filter(|t| !t.is_empty())
-        .map(|t| t.to_ascii_lowercase())
         .collect()
 }
 
@@ -515,6 +525,14 @@ mod tests {
         assert!(texts.contains(&"tagged global #rust"));
         // and it only adds — tier defaults remain
         assert!(texts.contains(&"project rule"));
+    }
+
+    #[test]
+    fn hashtags_reject_markdown_hashes_and_trim_punctuation() {
+        let tags = hashtags("### Hyrum's Law #api #design #rust, keep #!!");
+        let expect: BTreeSet<String> =
+            ["api", "design", "rust"].iter().map(|s| s.to_string()).collect();
+        assert_eq!(tags, expect);
     }
 
     #[test]
