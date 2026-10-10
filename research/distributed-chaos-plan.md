@@ -113,7 +113,9 @@ order is normalized by the canonical sort.
 
 ## Build order
 
-1. `bagflow-serve` (HTTP over Bagflow: put/merge/resolve/snapshot endpoints)
+1. ✅ `bagflow-serve` (HTTP over Bagflow: `PUT /atom`, `POST /merge`,
+   `GET /resolve`, `GET /snapshot`, `DELETE /atom?text=`) — done, with a
+   two-process smoke test (merge + delete propagation over HTTP verified)
 2. compose file + syncd script + T1 happy path
 3. oracle checker + T2, T3
 4. toxiproxy wiring + T4, T5
