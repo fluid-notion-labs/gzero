@@ -105,7 +105,12 @@ flowchart TB
     end
 ```
 
-M4 options (pick when integration pressure forces it):
+M4 decision (2025, revisitable): the unified engine crate will be named
+**`contexture`**. SQLite stays for now — `Storage` is the plug point —
+with a noted no-SQL endgame: one JSON snapshot per machine as the store,
+`flock` + read-merge-write + atomic rename for same-machine races (the
+lattice merge already handles cross-machine), so the lattice state is
+the file is the wire format. Until then:
 
 1. **Engine absorbs ledger**: contextual keeps its CLI/MCP and markdown
    sync, but the bag behind `Storage` becomes the bagflow lattice; SQLite
