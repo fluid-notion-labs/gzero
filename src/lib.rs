@@ -18,10 +18,11 @@
 //! propagate, duplicates don't accumulate. Storage is pluggable via
 //! [`Storage`]; SQLite is the first backend.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
+pub mod snapshot;
 pub mod sqlite;
 pub use sqlite::SqliteStore;
 
@@ -61,8 +62,14 @@ pub trait Storage {
     fn sync_source(&mut self, source: &str, atoms: &[ParsedAtom]) -> Result<SyncStats>;
     /// All assertions, ordered by (source, text).
     fn all(&self) -> Result<Vec<Row>>;
-    /// Remove assertions whose text contains `needle`; returns how many.
+    /// Remove assertions whose text contains `needle`, recording tombstones
+    /// so removals survive export to other machines; returns how many texts.
     fn remove_matching(&mut self, needle: &str) -> Result<usize>;
+    /// All tombstones as full atoms (exact identity is needed to match
+    /// remote replicas), sorted by text.
+    fn tombstones(&self) -> Result<Vec<snapshot::Atom>>;
+    /// Record tombstones (idempotent); returns how many were new.
+    fn tombstone(&mut self, atoms: &[snapshot::Atom]) -> Result<usize>;
 }
 
 /// Parse a context file into atoms. See crate docs for the format.
@@ -108,9 +115,14 @@ pub fn add_doc(store: &mut dyn Storage, source: &str, input: &str) -> Result<Syn
 
 /// Distinct alive atoms, deduplicated by text: duplicate assertions merge
 /// (tags union; scope/node from the first source in storage order).
+/// Tombstoned texts are excluded.
 pub fn alive(store: &dyn Storage) -> Result<Vec<(String, Row)>> {
+    let tombstones: HashSet<String> = store.tombstones()?.into_iter().map(|a| a.text).collect();
     let mut merged: BTreeMap<String, Row> = BTreeMap::new();
     for row in store.all()? {
+        if tombstones.contains(&row.text) {
+            continue;
+        }
         match merged.get_mut(&row.text) {
             Some(kept) => kept.tags.extend(row.tags.iter().cloned()),
             None => {
@@ -132,6 +144,48 @@ pub fn resolve(store: &dyn Storage, referenced: &BTreeSet<String>) -> Result<Vec
         (&a.1.scope, &a.1.node, &a.0).cmp(&(&b.1.scope, &b.1.node, &b.0))
     });
     Ok(items)
+}
+
+/// Build this machine's snapshot: alive atoms plus tombstones. This is the
+/// published, mergeable state (see `snapshot` module and `research/context/sync.md`).
+pub fn export_snapshot(store: &dyn Storage) -> Result<snapshot::Snapshot> {
+    let atoms = alive(store)?
+        .into_iter()
+        .map(|(text, r)| snapshot::Atom {
+            text,
+            scope: r.scope,
+            node: r.node,
+            tags: r.tags,
+        })
+        .collect();
+    let tombstones = store.tombstones()?;
+    Ok(snapshot::Snapshot {
+        version: snapshot::SNAPSHOT_VERSION,
+        atoms,
+        tombstones,
+    })
+}
+
+/// Merge a snapshot into the store: its atoms become assertions sourced as
+/// `source` (the snapshot file), its tombstones are recorded locally.
+pub fn absorb_snapshot(
+    store: &mut dyn Storage,
+    source: &str,
+    snap: &snapshot::Snapshot,
+) -> Result<SyncStats> {
+    let atoms: Vec<ParsedAtom> = snap
+        .atoms
+        .iter()
+        .map(|a| ParsedAtom {
+            text: a.text.clone(),
+            scope: a.scope.clone(),
+            node: a.node.clone(),
+            tags: a.tags.clone(),
+        })
+        .collect();
+    let stats = store.sync_source(source, &atoms)?;
+    store.tombstone(&snap.tombstones)?;
+    Ok(stats)
 }
 
 /// Tag vocabulary with the number of distinct atoms carrying each tag.
@@ -278,5 +332,38 @@ mod tests {
         add_doc(&mut store, "s", DOC).unwrap();
         assert_eq!(store.remove_matching("always").unwrap(), 1);
         assert_eq!(alive(&store).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn export_absorb_roundtrip_between_machines() {
+        // machine A: two atoms, one removed (tombstone)
+        let mut a = mem();
+        add_doc(&mut a, "a.md", "## n\n- shared\n- only a\n- doomed\n").unwrap();
+        a.remove_matching("doomed").unwrap();
+        let snap = export_snapshot(&a).unwrap();
+        assert_eq!(snap.atoms.len(), 2);
+        assert_eq!(snap.tombstones.len(), 1);
+        assert_eq!(snap.tombstones[0].text, "doomed");
+
+        // machine B: has its own atom plus an older copy of "doomed"
+        let mut b = mem();
+        add_doc(&mut b, "b.md", "## n\n- only b\n- doomed\n").unwrap();
+
+        // B absorbs A's snapshot
+        absorb_snapshot(&mut b, "machine-a.json", &snap).unwrap();
+        let texts: Vec<String> = alive(&b).unwrap().into_iter().map(|(t, _)| t).collect();
+        assert!(texts.contains(&"only a".to_string()));
+        assert!(texts.contains(&"only b".to_string()));
+        assert!(texts.contains(&"shared".to_string()));
+        assert!(!texts.contains(&"doomed".to_string()), "tombstone hides doomed");
+
+        // absorbing again is idempotent
+        let before = b.all().unwrap().len();
+        absorb_snapshot(&mut b, "machine-a.json", &snap).unwrap();
+        assert_eq!(b.all().unwrap().len(), before);
+
+        // B's export carries the tombstone forward
+        let b_snap = export_snapshot(&b).unwrap();
+        assert_eq!(b_snap.tombstones.len(), 1);
     }
 }

@@ -18,8 +18,10 @@ const USAGE: &str = "cx — context bag
 cx                default context (untagged atoms)
 cx #tag ...       default plus tagged atoms
 cx add file.md    import context markdown (per-source sync; re-run after edits)
+cx export file    write this machine's snapshot (merge unit)
+cx absorb file... merge other machines' snapshots into this bag
 cx sources        per-source assertion counts
-cx rm <needle>    remove matching atoms
+cx rm <needle>    remove matching atoms (records tombstones)
 cx tags           tag vocabulary with counts
 cx recommend      suggest packs for this directory (rust/npm)
 env: CX_DB        bag location (default ~/.pi/agent/context.db)";
@@ -49,6 +51,41 @@ fn main() {
                 println!(
                     "{f}: +{} -{} ={} (kept {})",
                     stats.added, stats.removed, stats.kept, stats.kept
+                );
+            }
+        }
+        "export" => {
+            if args.len() != 2 {
+                eprintln!("usage: cx export <file>");
+                exit(2);
+            }
+            let store = open_store();
+            let snap = contextual::export_snapshot(&store).unwrap_or_else(|e| panic!("cx: {e}"));
+            let bytes = snap.to_json().unwrap_or_else(|e| panic!("cx: {e}"));
+            std::fs::write(&args[1], bytes).unwrap_or_else(|e| panic!("cx: {}: {e}", args[1]));
+            println!(
+                "exported {} atoms, {} tombstones -> {}",
+                snap.atoms.len(),
+                snap.tombstones.len(),
+                args[1]
+            );
+        }
+        "absorb" => {
+            if args.len() < 2 {
+                eprintln!("usage: cx absorb <file>...");
+                exit(2);
+            }
+            let mut store = open_store();
+            for f in &args[1..] {
+                let bytes = std::fs::read(f).unwrap_or_else(|e| panic!("cx: {}: {e}", f));
+                let snap = contextual::snapshot::Snapshot::from_json(&bytes)
+                    .unwrap_or_else(|e| panic!("cx: {f}: {e}"));
+                let source = source_path(Path::new(f));
+                let stats = contextual::absorb_snapshot(&mut store, &source, &snap)
+                    .unwrap_or_else(|e| panic!("cx: {e}"));
+                println!(
+                    "{f}: +{} -{} kept {} ({} tombstones)",
+                    stats.added, stats.removed, stats.kept, snap.tombstones.len()
                 );
             }
         }

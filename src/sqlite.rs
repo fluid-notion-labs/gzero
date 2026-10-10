@@ -18,6 +18,10 @@ CREATE TABLE IF NOT EXISTS atoms (
     node   TEXT NOT NULL,
     tags   TEXT NOT NULL DEFAULT '[]',
     PRIMARY KEY (text, source)
+);
+CREATE TABLE IF NOT EXISTS tombstones (
+    text TEXT PRIMARY KEY,
+    atom TEXT NOT NULL
 );";
 
 /// SQLite-backed bag. One row per (text, source) assertion.
@@ -119,18 +123,48 @@ impl Storage for SqliteStore {
     }
 
     fn remove_matching(&mut self, needle: &str) -> Result<usize> {
-        let matches: Vec<String> = self
-            .all()?
+        // Capture the merged representation so the tombstone atom matches
+        // what other machines hold for this text.
+        let matches: Vec<crate::snapshot::Atom> = crate::alive(self)?
             .into_iter()
-            .filter(|row| row.text.contains(needle))
-            .map(|row| row.text)
+            .filter(|(text, _)| text.contains(needle))
+            .map(|(text, r)| crate::snapshot::Atom {
+                text,
+                scope: r.scope,
+                node: r.node,
+                tags: r.tags,
+            })
             .collect();
-        let mut removed = 0;
-        for text in &matches {
-            removed +=
-                self.conn.execute("DELETE FROM atoms WHERE text = ?1", params![text])?;
+        let tombstoned = self.tombstone(&matches)?;
+        for atom in &matches {
+            self.conn
+                .execute("DELETE FROM atoms WHERE text = ?1", params![atom.text])?;
         }
-        Ok(removed)
+        Ok(tombstoned)
+    }
+
+    fn tombstones(&self) -> Result<Vec<crate::snapshot::Atom>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT atom FROM tombstones ORDER BY text")?;
+        let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(serde_json::from_str(&row?)?);
+        }
+        Ok(out)
+    }
+
+    fn tombstone(&mut self, atoms: &[crate::snapshot::Atom]) -> Result<usize> {
+        let mut added = 0;
+        for atom in atoms {
+            let json = serde_json::to_string(atom)?;
+            added += self.conn.execute(
+                "INSERT OR IGNORE INTO tombstones (text, atom) VALUES (?1, ?2)",
+                params![atom.text, json],
+            )?;
+        }
+        Ok(added)
     }
 }
 
@@ -139,6 +173,24 @@ mod tests {
     use super::*;
     use crate::{add_doc, alive};
     use std::collections::BTreeSet;
+
+    #[test]
+    fn tombstones_exclude_and_survive() {
+        let mut store = SqliteStore::in_memory().unwrap();
+        add_doc(&mut store, "s", "## n\n- visible\n- doomed\n").unwrap();
+        assert_eq!(alive(&store).unwrap().len(), 2);
+        assert_eq!(store.remove_matching("doomed").unwrap(), 1);
+        assert_eq!(alive(&store).unwrap().len(), 1);
+        let tombs = store.tombstones().unwrap();
+        assert_eq!(tombs.len(), 1);
+        assert_eq!(tombs[0].text, "doomed");
+        assert_eq!(tombs[0].node, "n");
+        // tombstone is idempotent
+        assert_eq!(store.tombstone(&tombs).unwrap(), 0);
+        // deleting the assertion again doesn't resurrect or duplicate
+        store.sync_source("s", &[]).unwrap();
+        assert_eq!(store.tombstones().unwrap().len(), 1);
+    }
 
     fn tags(list: &[&str]) -> BTreeSet<String> {
         list.iter().map(|s| s.to_string()).collect()
