@@ -16,6 +16,8 @@
 use std::collections::BTreeSet;
 use std::io::{BufRead, Write};
 
+use contextual::hub::{Event, Hub};
+use contextual::snapshot::Atom;
 use contextual::{resolve, tag_counts, ParsedAtom, Row, SqliteStore, Storage};
 
 const SOURCE: &str = "mcp";
@@ -24,6 +26,7 @@ const DEFAULT_NODE: &str = "notes";
 
 fn main() {
     let mut store = open_store();
+    pull_from_hub(&mut store);
     let stdin = std::io::stdin();
     let mut out = std::io::stdout().lock();
     for line in stdin.lock().lines() {
@@ -34,6 +37,33 @@ fn main() {
         if let Some(response) = handle_line(&line, &mut store) {
             writeln!(out, "{response}").expect("cx-mcp: stdout closed");
             out.flush().expect("cx-mcp: flush failed");
+        }
+    }
+}
+
+/// Best-effort: absorb the hub's merged snapshot so this session sees
+/// other machines' updates immediately. Offline mode just skips this.
+fn pull_from_hub(store: &mut SqliteStore) {
+    let Some(hub) = Hub::from_env() else { return };
+    match hub.fetch_snapshot().map_err(|e| e.to_string()).and_then(|snap| {
+        let n = snap.atoms.len() + snap.tombstones.len();
+        contextual::absorb_snapshot(store, "hub", &snap)
+            .map_err(|e| e.to_string())
+            .map(|_| n)
+    }) {
+        Ok(n) => eprintln!("cx-mcp: hub sync ({n} entries)"),
+        Err(e) => eprintln!("cx-mcp: hub sync failed: {e}"),
+    }
+}
+
+/// Best-effort event post to the hub.
+fn try_post(events: Vec<Event>) {
+    if events.is_empty() {
+        return;
+    }
+    if let Some(hub) = Hub::from_env() {
+        if let Err(e) = hub.post_events(&events) {
+            eprintln!("cx-mcp: hub post failed: {e}");
         }
     }
 }
@@ -150,7 +180,7 @@ fn tool_put(args: &serde_json::Value, store: &mut SqliteStore) -> Result<String,
         .get("node")
         .and_then(|t| t.as_str())
         .unwrap_or(DEFAULT_NODE);
-    let tags = arg_tags(&args);
+    let tags = arg_tags(args);
 
     // Re-sync the "mcp" source: its existing atoms plus the new one.
     let mut mine: Vec<ParsedAtom> = store
@@ -161,12 +191,20 @@ fn tool_put(args: &serde_json::Value, store: &mut SqliteStore) -> Result<String,
         .map(row_to_parsed)
         .collect();
     mine.push(ParsedAtom {
-        text,
+        text: text.clone(),
         scope: scope.to_string(),
         node: node.to_string(),
-        tags,
+        tags: tags.clone(),
     });
     store.sync_source(SOURCE, &mine).map_err(|e| e.to_string())?;
+    try_post(vec![Event::Put {
+        atom: Atom {
+            text,
+            scope: scope.to_string(),
+            node: node.to_string(),
+            tags,
+        },
+    }]);
     Ok("stored".to_string())
 }
 
@@ -184,7 +222,20 @@ fn tool_remove(args: &serde_json::Value, store: &mut SqliteStore) -> Result<Stri
         .get("text")
         .and_then(|t| t.as_str())
         .ok_or("bag_remove: text is required")?;
+    // Capture full atoms first so the remove events carry exact identity.
+    let victims: Vec<Atom> = contextual::alive(store)
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .filter(|(text, _)| text.contains(needle))
+        .map(|(text, r)| Atom {
+            text,
+            scope: r.scope,
+            node: r.node,
+            tags: r.tags,
+        })
+        .collect();
     let n = store.remove_matching(needle).map_err(|e| e.to_string())?;
+    try_post(victims.into_iter().map(|atom| Event::Remove { atom }).collect());
     Ok(format!("tombstoned {n} atom(s) matching {needle:?}"))
 }
 

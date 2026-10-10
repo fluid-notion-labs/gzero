@@ -22,6 +22,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
+pub mod hub;
 pub mod snapshot;
 pub mod sqlite;
 pub use sqlite::SqliteStore;
