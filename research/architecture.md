@@ -11,8 +11,8 @@ Companions: `research/context/lattice.md` (merge math), `sync.md`
 | term       | meaning                                              |
 |------------|------------------------------------------------------|
 | contextual | the system                                           |
-| context    | the resolved view an agent consumes (`cx`, `bag_resolve`) |
-| bag        | the store: hashtable/multiset of atoms (internal noun) |
+| context    | what the agent receives: global ∪ project ∪ pulled-in |
+| bag        | the repository of *possible* contexts; pulled via hashtag |
 | atom       | one terse assertion: `{text, scope, node, tags}`; identity = text |
 | ledger     | per-machine SQLite: rows `(text, source, scope, node, tags)` + tombstones |
 | snapshot   | published merge unit: `{version, atoms, tombstones}` JSON |
@@ -32,6 +32,81 @@ Companions: `research/context/lattice.md` (merge math), `sync.md`
 Two pools, one bridge: **contextual** is the product (SQLite ledger, live
 data); **bagflow** is the proven engine (in-memory lattice + JSON
 snapshot). They share only the snapshot format. Unification is M4.
+
+## Resolution model — three tiers
+
+Context is resolved automatically per session:
+
+- **global tier** — user/author-level context, scope `global`, always in
+- **project tier** — scope = **repo identity**, detected from cwd's git
+  root: `git remote get-url origin`, normalized (strip scheme/`git@`,
+  `.git` suffix, leading host) → e.g. `fluid-notion-labs/context`. Stable
+  across machines and checkout paths; falls back to cwd basename when
+  no git repo. The local project's standing context.
+- **repository tier** — the bag: tagged atoms and packs in any scope;
+  *pulled in* on demand via hashtag lookup (`resolve(tags)`), discovered
+  via `search` when the model doesn't know the hashtag yet
+
+Default delivery = untagged atoms of global + project scopes. Tags pull
+from anywhere — that's the hashtag lookup.
+
+```mermaid
+flowchart LR
+    G["global tier\nscope = global\nalways included"] --> R
+    CWD["cwd"] --> GIT["git root →\nremote origin URL →\nnormalized repo ID\n(fallback: dir name)"] --> P["project tier\nscope = repo ID"]
+    P --> R["resolved CONTEXT\ndelivered to agent"]
+    B["repository / bag\ntagged atoms & packs\nany scope"] -- "hashtag pull\nresolve(tags)" --> R
+    U["user phrase\n\"rust api, svelte app\""] -- "model maps\nto tags" --> B
+```
+
+### Repo identity is host-agnostic (pluggable backend)
+
+The key is the **normalized repo URL**, not the hosting backend. Git
+remotes now (GitHub, self-hosted, bare repos); later **Cloudflare
+Artifacts** — git-compatible versioned storage with repos per project,
+user, session, or task, plus Workers Builds auto-deploy. A repo's URL
+changes host → context follows the repo, because scope keys on the
+identity, not the path.
+
+Planned Artifacts roles (not yet built):
+
+1. **Project host** — repos live on Artifacts; `origin` URL normalizes
+   to the same repo-ID scheme. Zero context-code change.
+2. **Session repos** — Artifacts' per-session/branch model maps to the
+   harness plan (agent sessions as branches off a baseline).
+3. **Sync transport** — an Artifacts repo could host `sync/bag-<host>.json`
+   as a git-protocol alternative to the hub; the hub (real-time events)
+   remains the fast path.
+
+### The pull-in workflow
+
+The target interaction: the user names technologies or domains, and the
+system brings all matching skills/contexts in — no manual curation.
+
+```mermaid
+sequenceDiagram
+    participant U as user
+    participant P as pi (model)
+    participant C as context MCP
+    participant B as repository / bag
+
+    U->>P: "rust api, serving svelte app, flutter app"
+    P->>C: search("svelte") / tags
+    C->>B: hashtag + text lookup
+    C-->>P: matching atoms with their tags
+    P->>C: resolve(tags: rust, api, svelte, flutter)
+    C-->>P: global + project + pulled contexts
+    Note over P: every skill the task needs is now in context
+```
+
+Resolution rules:
+
+| rule | behavior |
+|------|----------|
+| default | untagged atoms, scopes `global` + detected project |
+| pull | `resolve(tags)` includes tagged atoms from any scope |
+| discover | `search(text)` finds atoms when the hashtag is unknown |
+| post | `add` writes to the detected repo identity (project scope) by default |
 
 ## Diagrams
 
@@ -143,7 +218,13 @@ the file is the wire format. Until then:
 ## Status
 
 - ✅ ledger, CLI, MCP server (pi-connected), export/absorb, tombstones
+- ✅ hub: Cloudflare Worker in server mode (events in, snapshot out,
+  `cx push` / `cx pull` / auto-post in `cx-mcp`) — multi-machine works
 - ✅ engine: lattice, persistence, HTTP replication demo
-- ⬜ real-machine sync loop (`sync.sh`: pull → absorb → export → push)
+- ⬜ MCP rename to context tiers (`bag_*` → `resolve/add/remove/tags`),
+  tiered resolve with **repo-URL project identity** (git origin,
+  normalized; cwd fallback), `search` tool
+- ⬜ Cloudflare Artifacts backend (planned — see "host-agnostic" above)
+- ⬜ hub: live push (DO websockets) so pulls aren't per-session
 - ⬜ chaos harness (compose + syncd, see `distributed-chaos-plan.md`)
-- ⬜ M4 unification
+- ⬜ M4 unification (name reserved: `contexture`)
