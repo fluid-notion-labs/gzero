@@ -22,8 +22,8 @@ Companions: `research/context/lattice.md` (merge math), `sync.md`
 
 | component     | crate     | role                                            |
 |---------------|-----------|-------------------------------------------------|
-| `cx`          | contextual| CLI: add/resolve/rm/tags/export/absorb          |
-| `cx-mcp`      | contextual| MCP stdio server: bag_resolve/put/remove/tags for agents (pi) |
+| `cx`          | contextual| CLI: add/resolve/rm/tags/export/absorb/push/pull |
+| `cx-mcp`      | contextual| MCP stdio server: resolve/search/add/remove/tags for agents (pi) |
 | `SqliteStore` | contextual| ledger backend behind the `Storage` trait       |
 | snapshot JSON | (format)  | the contract — identical shape in both crates   |
 | `bagflow`     | bagflow   | lattice engine prototype: DFIR dataflow, persistence, merge |
@@ -43,7 +43,7 @@ Context is resolved automatically per session:
   `.git` suffix, leading host) → e.g. `fluid-notion-labs/context`. Stable
   across machines and checkout paths; falls back to cwd basename when
   no git repo. The local project's standing context.
-- **repository tier** — the bag: tagged atoms and packs in any scope;
+- **repository tier** — the bag: tagged atoms in any scope;
   *pulled in* on demand via hashtag lookup (`resolve(tags)`), discovered
   via `search` when the model doesn't know the hashtag yet
 
@@ -55,7 +55,7 @@ flowchart LR
     G["global tier\nscope = global\nalways included"] --> R
     CWD["cwd"] --> GIT["git root →\nremote origin URL →\nnormalized repo ID\n(fallback: dir name)"] --> P["project tier\nscope = repo ID"]
     P --> R["resolved CONTEXT\ndelivered to agent"]
-    B["repository / bag\ntagged atoms & packs\nany scope"] -- "hashtag pull\nresolve(tags)" --> R
+    B["repository / bag\ntagged atoms\nany scope"] -- "hashtag pull\nresolve(tags)" --> R
     U["user phrase\n\"rust api, svelte app\""] -- "model maps\nto tags" --> B
 ```
 
@@ -115,7 +115,7 @@ Resolution rules:
 ```mermaid
 flowchart LR
     subgraph A["Authoring — per machine"]
-        MD["markdown\n(AGENTS.md, CONTEXT.md, packs/)"]
+        MD["markdown\n(AGENTS.md, CONTEXT.md)"
         PI["pi session"]
     end
     subgraph L["Ledger — SQLite, per machine"]
@@ -127,9 +127,9 @@ flowchart LR
         G["sync/ dir in git\nbag-<host>.json"]
     end
     MD -- "cx add\n(per-source sync)" --> DB
-    PI -- "mcp__context__bag_put\n(source = mcp)" --> MCP["cx-mcp"] --> DB
-    PI -- "bag_resolve" --> MCP
-    DB -- "cx rm / bag_remove" --> T
+    PI -- "mcp__context__add\n(source = mcp)" --> MCP["cx-mcp"] --> DB
+    PI -- "mcp__context__resolve" --> MCP
+    DB -- "cx rm / mcp__context__remove" --> T
     DB -- "cx export" --> S
     T --> S
     S -- "commit + push" --> G
@@ -149,14 +149,14 @@ sequenceDiagram
     participant LB as ledger B
     participant PB as pi (machine B)
 
-    PA->>MCPA: bag_put("terse beats verbose")
+    PA->>MCPA: add("terse beats verbose")
     MCPA->>LA: sync_source("mcp", ...)
     Note over G: A: cx export bag-a.json → commit → push
     Note over G: B: pull
     LB->>G: cx absorb bag-*.json
-    PB->>LB: bag_resolve → sees the atom
+    PB->>LB: resolve → sees the atom
 
-    PA->>MCPA: bag_remove("verbose")
+    PA->>MCPA: remove("verbose")
     MCPA->>LA: tombstone (full atom)
     Note over G: export/pull/absorb again
     LB->>LB: tombstone wins → gone on B
@@ -226,6 +226,12 @@ the file is the wire format. Until then:
   normalized; dir-name fallback + legacy scope match), `search` tool;
   verified live: tiers resolve per cwd, `add` lands in
   `fluid-notion-labs/explorations`
+- ✅ curation policy from hermes in the tool descriptions (`add` batch
+  `operations`, self-healing `remove`; `curation.md`) — 5s cap on hub calls
+- ✅ pi plugin P1+P2 (`pi-plugin.md`): per-turn `<context>` injection,
+  install offer, `/context` commands, stale-binary check
+- ⬜ packs dissolved in decision — seed atoms, delete `packs/` +
+  `recommend` (`plan.md` M4 work-list)
 - ⬜ Cloudflare Artifacts backend (planned — see "host-agnostic" above)
 - ⬜ hub: live push (DO websockets) so pulls aren't per-session
 - ⬜ chaos harness (compose + syncd, see `distributed-chaos-plan.md`)
