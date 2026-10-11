@@ -39,6 +39,11 @@ export class LineWindow {
     return this.lines.length;
   }
 
+  /** Current top line of the viewport. */
+  get scrollTop(): number {
+    return this.top;
+  }
+
   get scrollable(): boolean {
     return this.lines.length > this.viewport;
   }
@@ -55,6 +60,11 @@ export class LineWindow {
 
   scrollToStart(): void {
     this.top = 0;
+  }
+
+  /** Scroll so the given line index is at the top (clamped). */
+  scrollTo(line: number): void {
+    this.top = Math.max(0, Math.min(this.lines.length - this.viewport, line));
   }
 
   scrollToEnd(): void {

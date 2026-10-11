@@ -158,9 +158,9 @@ export function bucketTiers(rendered: string): TierSection[] {
       const header = line.slice(2);
       const first = header.split("/")[0].toLowerCase();
       tier = first === "global" ? "global" : first === "skills" ? "skillbag" : "local";
-      // Section label drops the tier prefix ("global/", "skills/"); local
-      // keeps the full header since its scope is the repo identity.
-      const label = tier === "local" ? header : header.slice("global/".length);
+      // Section label keeps the full header so a flat document can show
+      // where each section lives.
+      const label = header;
       current = { label, text: "" };
       tiers[tier].push(current);
       continue;
@@ -182,20 +182,17 @@ export function bucketTiers(rendered: string): TierSection[] {
 }
 
 /**
- * Read-only overlay viewer for the bag with two navigation levels: the
- * three tier tabs (global / local / skillbag) and, below them, a menu of
- * the sections within the active tier. ←→ walk the flattened structure
- * (tier "all" → its sections → next tier); ↑↓ cycle sections within the
- * tier; j/k scroll the content; 1/2/3 jump to a tier; esc/q close.
+ * Read-only overlay viewer rendering the sections as one flat document:
+ * each section is introduced by a horizontal divider with its title on
+ * the left. Navigation: ↑/↓ scroll line-wise, PgUp/PgDn page-wise,
+ * ctrl+↓/ctrl+↑ jump to the next/previous section, esc/q closes.
  */
 class TierViewer implements Component, Focusable {
   focused = false;
-  private tab = 0;
-  /** 0 = all sections of the tier, 1..n = a specific section. */
-  private sub = 0;
   private window = new LineWindow(modalViewport());
-  /** Wrapped lines of the active view, cached per (tab, sub, width). */
-  private lineCache: { tab: number; sub: number; width: number; lines: string[] } | null = null;
+  /** Full document (titled dividers + wrapped content), cached per width. */
+  private docCache: { width: number; lines: string[]; sectionStarts: number[] } | null = null;
+  private lastStarts: number[] = [];
 
   constructor(
     private sections: TierSection[],
@@ -205,153 +202,83 @@ class TierViewer implements Component, Focusable {
 
   invalidate(): void {}
 
-  private nodes(): TierNode[] {
-    return this.sections[this.tab]?.nodes ?? [];
-  }
-
-  /** Lines of the active view, wrapped to the current width. */
-  private contentLines(width: number): string[] {
-    if (
-      this.lineCache &&
-      this.lineCache.tab === this.tab &&
-      this.lineCache.sub === this.sub &&
-      this.lineCache.width === width
-    ) {
-      return this.lineCache.lines;
+  /** Build the flat document: divider + content per section, in order. */
+  private document(width: number): { lines: string[]; sectionStarts: number[] } {
+    if (this.docCache && this.docCache.width === width) return this.docCache;
+    const t = this.theme;
+    const inner = Math.max(width - 2, 20);
+    const lines: string[] = [];
+    const sectionStarts: number[] = [];
+    const divider = (title: string) => {
+      const head = "── ";
+      const tail = Math.max(0, inner - head.length - title.length - 1);
+      return t.fg("borderMuted", head) + t.fg("accent", title) + t.fg("borderMuted", " " + "─".repeat(tail));
+    };
+    for (const tier of this.sections) {
+      for (const node of tier.nodes) {
+        sectionStarts.push(lines.length);
+        lines.push(divider(node.label));
+        for (const wrapped of wrapPlain(node.text || "(empty)", inner - 1)) {
+          lines.push(` ${wrapped}`);
+        }
+        lines.push("");
+      }
     }
-    const nodes = this.nodes();
-    const text =
-      this.sub === 0
-        ? nodes.map((n) => n.text).join("\n\n")
-        : (nodes[this.sub - 1]?.text ?? "(empty)");
-    const lines = wrapPlain(text || "(empty)", Math.max(width - 2, 20));
-    this.lineCache = { tab: this.tab, sub: this.sub, width, lines };
+    if (lines.length === 0) lines.push(` ${t.fg("dim", "(empty)")}`);
+    this.docCache = { width, lines, sectionStarts };
+    this.lastStarts = sectionStarts;
     this.window.setLines(lines);
-    return lines;
+    return this.docCache;
   }
 
-  private setPosition(tab: number, sub: number) {
-    this.tab = tab;
-    this.sub = sub;
-    this.lineCache = null;
-    this.window.scrollToStart();
-  }
-
-  /** Flattened navigation order: each tier's "all" followed by its sections. */
-  private flatPositions(): { tab: number; sub: number }[] {
-    const out: { tab: number; sub: number }[] = [];
-    this.sections.forEach((s, i) => {
-      out.push({ tab: i, sub: 0 });
-      s.nodes.forEach((_, j) => out.push({ tab: i, sub: j + 1 }));
-    });
-    return out;
-  }
-
-  private moveFlat(delta: number) {
-    const flat = this.flatPositions();
-    const idx = flat.findIndex((p) => p.tab === this.tab && p.sub === this.sub);
-    const next = flat[(idx + delta + flat.length) % flat.length];
-    this.setPosition(next.tab, next.sub);
-  }
-
-  /** Cycle sections within the active tier, "all" included. */
-  private moveSub(delta: number) {
-    const count = this.nodes().length + 1;
-    this.setPosition(this.tab, (this.sub + delta + count) % count);
+  /** Index of the section divider at or before the current scroll top. */
+  private currentSection(starts: number[]): number {
+    let idx = 0;
+    for (let i = 0; i < starts.length; i++) {
+      if (starts[i] <= this.window.scrollTop) idx = i;
+      else break;
+    }
+    return idx;
   }
 
   handleInput(data: string): void {
     if (matchesKey(data, "escape") || matchesKey(data, "q")) {
       this.done();
-    } else if (matchesKey(data, "1")) {
-      this.setPosition(0, 0);
-    } else if (matchesKey(data, "2")) {
-      this.setPosition(1, 0);
-    } else if (matchesKey(data, "3")) {
-      this.setPosition(2, 0);
-    } else if (matchesKey(data, "tab")) {
-      this.setPosition((this.tab + 1) % this.sections.length, 0);
-    } else if (matchesKey(data, "right")) {
-      this.moveFlat(1);
-    } else if (matchesKey(data, "left")) {
-      this.moveFlat(-1);
-    } else if (matchesKey(data, "down")) {
-      this.moveSub(1);
+    } else if (matchesKey(data, "ctrl+down")) {
+      const cur = this.currentSection(this.lastStarts);
+      const next = this.lastStarts[Math.min(cur + 1, this.lastStarts.length - 1)];
+      this.window.scrollTo(next);
+    } else if (matchesKey(data, "ctrl+up")) {
+      const cur = this.currentSection(this.lastStarts);
+      const prev = this.lastStarts[Math.max(0, cur - 1)];
+      this.window.scrollTo(prev);
     } else if (matchesKey(data, "up")) {
-      this.moveSub(-1);
-    } else if (matchesKey(data, "k")) {
-      this.window.scrollBy(-3);
-    } else if (matchesKey(data, "j")) {
-      this.window.scrollBy(3);
+      this.window.scrollBy(-1);
+    } else if (matchesKey(data, "down")) {
+      this.window.scrollBy(1);
     } else if (matchesKey(data, "pageUp")) {
-      this.window.scrollBy(-20);
+      this.window.scrollBy(-this.window.viewport + 2);
     } else if (matchesKey(data, "pageDown")) {
-      this.window.scrollBy(20);
+      this.window.scrollBy(this.window.viewport - 2);
     } else if (matchesKey(data, "home")) {
       this.window.scrollToStart();
     } else if (matchesKey(data, "end") || data === "G") {
       this.window.scrollToEnd();
-    } else if (matchesKey(data, "g")) {
-      this.window.scrollToStart();
+    } else if (matchesKey(data, "j")) {
+      this.window.scrollBy(1);
+    } else if (matchesKey(data, "k")) {
+      this.window.scrollBy(-1);
     }
-  }
-
-  /** Horizontal rule, optionally titled. */
-  private divider(width: number, title?: string): string {
-    const t = this.theme;
-    if (!title) return t.fg("borderMuted", "─".repeat(width));
-    const head = "── ";
-    const tail = Math.max(0, width - head.length - title.length - 1);
-    return t.fg("borderMuted", head) + t.fg("accent", title) + t.fg("borderMuted", " " + "─".repeat(tail));
-  }
-
-  /** The section menu for the active tier, wrapped to the inner width. */
-  private subMenuLines(inner: number): string[] {
-    const t = this.theme;
-    const parts: { label: string; idx: number }[] = [
-      { label: "all", idx: 0 },
-      ...this.nodes().map((n, i) => ({ label: n.label, idx: i + 1 })),
-    ];
-    const lines: string[] = [];
-    let line = "";
-    for (const p of parts) {
-      const label = p.label.length > 26 ? `${p.label.slice(0, 25)}…` : p.label;
-      const styled =
-        p.idx === this.sub ? t.fg("accent", t.bold(` ${label} `)) : t.fg("dim", ` ${label} `);
-      const sep = line ? t.fg("dim", "│") : "";
-      const candidate = line + sep + styled;
-      if (line && visibleWidth(candidate) > inner) {
-        lines.push(line);
-        line = styled;
-      } else {
-        line = candidate;
-      }
-    }
-    if (line) lines.push(line);
-    return lines.length > 0 ? lines : [t.fg("dim", " (no sections)")];
   }
 
   render(width: number): string[] {
     const t = this.theme;
     const inner = Math.max(width - 2, 20);
-    this.contentLines(width); // refresh cache + window bounds for this width
+    const doc = this.document(width);
     const pos = this.window.scrollable ? ` · ${Math.round(this.window.position * 100)}%` : "";
-    const tier = this.sections[this.tab];
-    const tabs = this.sections
-      .map((s, i) => {
-        const label = ` ${i + 1} ${s.label} `;
-        return i === this.tab ? t.fg("accent", t.bold(label)) : t.fg("dim", label);
-      })
-      .join(t.fg("dim", "│"));
-    const viewTitle = this.sub === 0 ? tier?.label : this.nodes()[this.sub - 1]?.label;
     return boxFrame(width, [
-      ...new Text(tabs, 1).render(inner),
-      this.divider(inner, tier?.label),
-      ...this.subMenuLines(inner).map((l) => ` ${l}`),
-      this.divider(inner),
       ...this.window.render().map((line) => ` ${line}`),
-      this.divider(inner, viewTitle),
-      ...new Text(t.fg("dim", `←→ tier/section · ↑↓ section · j/k scroll${pos} · esc/q close`), 1).render(inner),
+      ...new Text(t.fg("dim", `↑↓ line · pgup/pgdn page · ctrl+↓↑ section${pos} · esc/q close`), 1).render(inner),
     ], (s) => t.fg("borderMuted", s));
   }
 }
