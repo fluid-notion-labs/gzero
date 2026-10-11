@@ -348,7 +348,7 @@ pub fn closest_matches(store: &dyn Storage, needle: &str, limit: usize) -> Resul
             (overlap, text)
         })
         .collect();
-    scored.sort_by(|a, b| b.0.cmp(&a.0));
+    scored.sort_by_key(|a| std::cmp::Reverse(a.0));
     Ok(scored
         .into_iter()
         .take_while(|(overlap, _)| *overlap * 10 >= needle_words.len() * 3)
