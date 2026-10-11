@@ -4,6 +4,26 @@
 // full line list, render only the visible slice. Wrap lines to width before
 // setLines — the window counts display lines.
 
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+
+/**
+ * Frame `innerLines` in a full box: cornered top/bottom rules and vertical
+ * rails on both sides. Lines are truncated (ANSI-aware) and padded to the
+ * inner width so every row is exactly `width` columns.
+ */
+export function boxFrame(width: number, innerLines: string[], style: (s: string) => string): string[] {
+  const inner = Math.max(width - 2, 12);
+  const pad = (line: string) => {
+    const fitted = truncateToWidth(line, inner);
+    return fitted + " ".repeat(Math.max(0, inner - visibleWidth(fitted)));
+  };
+  return [
+    style(`┌${"─".repeat(inner)}┐`),
+    ...innerLines.map((line) => style("│") + pad(line) + style("│")),
+    style(`└${"─".repeat(inner)}┘`),
+  ];
+}
+
 export class LineWindow {
   private lines: string[] = [];
   private top = 0;
@@ -74,8 +94,11 @@ export function wrapPlain(text: string, width: number): string[] {
   return out;
 }
 
-/** Visible content rows for a modal: terminal height minus chrome, clamped. */
+/**
+ * Visible content rows for a modal sized to ~3/4 of the screen: 75% of the
+ * terminal height minus chrome (header, hints, borders), clamped.
+ */
 export function modalViewport(): number {
   const rows = process.stdout.rows ?? 40;
-  return Math.max(8, Math.min(45, rows - 14));
+  return Math.max(8, Math.round(rows * 0.75) - 9);
 }

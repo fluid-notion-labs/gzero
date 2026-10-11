@@ -9,7 +9,6 @@ import { homedir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
-import { DynamicBorder } from "@earendil-works/pi-coding-agent";
 import {
   Input,
   Key,
@@ -19,7 +18,7 @@ import {
   type Component,
   type SelectItem,
 } from "@earendil-works/pi-tui";
-import { LineWindow, modalViewport, wrapPlain } from "./window.ts";
+import { boxFrame, LineWindow, modalViewport, wrapPlain } from "./window.ts";
 
 interface SkillEntry {
   name: string;
@@ -276,39 +275,34 @@ class SkillsPicker implements Component {
 
   render(width: number): string[] {
     const t = this.theme;
-    const border = () => new DynamicBorder((s) => t.fg("borderMuted", s)).render(width);
+    const inner = Math.max(width - 2, 20);
+    const rail = (s: string) => t.fg("borderMuted", s);
     if (this.mode === "detail" && this.current) {
       if (!this.bodyCache || this.bodyCache.file !== this.current.file || this.bodyCache.width !== width) {
         this.bodyCache = {
           file: this.current.file,
           width,
-          lines: wrapPlain(skillBody(this.current.file), Math.max(width - 2, 20)),
+          lines: wrapPlain(skillBody(this.current.file), Math.max(inner - 3, 20)),
         };
         this.window.setLines(this.bodyCache.lines);
       }
-      const pos = this.window.scrollable
-        ? ` · ${Math.round(this.window.position * 100)}%`
-        : "";
-      return [
-        ...border(),
-        ...new Text(t.fg("accent", t.bold(this.current.name)), 1).render(width),
-        ...new Text(t.fg("muted", truncate(this.current.description, 400)), 1).render(width),
-        ...new Text(t.fg("dim", `${this.current.vendor} · ${this.current.file}`), 1).render(width),
-        ...border(),
-        ...this.window.render(),
-        ...new Text(t.fg("dim", `esc/q back · j/k scroll · g/G top/end${pos}`), 1).render(width),
-        ...border(),
-      ];
+      const pos = this.window.scrollable ? ` · ${Math.round(this.window.position * 100)}%` : "";
+      return boxFrame(width, [
+        ...new Text(t.fg("accent", t.bold(this.current.name)), 1).render(inner),
+        ...new Text(t.fg("muted", truncate(this.current.description, 400)), 1).render(inner),
+        ...new Text(t.fg("dim", `${this.current.vendor} · ${this.current.file}`), 1).render(inner),
+        "",
+        ...this.window.render().map((line) => ` ${line}`),
+        ...new Text(t.fg("dim", `esc/q back · j/k scroll · g/G top/end${pos}`), 1).render(inner),
+      ], rail);
     }
-    return [
-      ...border(),
-      ...new Text(t.fg("accent", t.bold("Skills")), 1).render(width),
-      ...new Text(t.fg("dim", "vendored agent skills — search title & description, enter to read"), 1).render(width),
-      ...this.input.render(Math.max(width - 2, 20)).map((line) => ` ${line}`),
-      ...this.list.render(width),
-      ...new Text(t.fg("dim", "type to filter · ↑↓ select · enter read · esc close"), 1).render(width),
-      ...border(),
-    ];
+    return boxFrame(width, [
+      ...new Text(t.fg("accent", t.bold("Skills")), 1).render(inner),
+      ...new Text(t.fg("dim", "vendored agent skills — search title & description, enter to read"), 1).render(inner),
+      ...this.input.render(Math.max(inner - 2, 20)).map((line) => ` ${line}`),
+      ...this.list.render(inner),
+      ...new Text(t.fg("dim", "type to filter · ↑↓ select · enter read · esc close"), 1).render(inner),
+    ], rail);
   }
 }
 
@@ -327,7 +321,7 @@ async function openPicker(ctx: ExtensionContext): Promise<void> {
   }
   await ctx.ui.custom((_tui, theme, _keybindings, done) => new SkillsPicker(skills, theme, done), {
     overlay: true,
-    overlayOptions: { width: "70%", minWidth: 70, maxHeight: "85%", anchor: "center" },
+    overlayOptions: { width: "75%", minWidth: 70, maxHeight: "85%", anchor: "center" },
   });
 }
 

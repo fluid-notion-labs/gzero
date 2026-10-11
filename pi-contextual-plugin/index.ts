@@ -7,9 +7,6 @@
 // Spec: research/context/pi-plugin.md. Curation policy:
 // research/context/curation.md.
 
-import {
-  DynamicBorder,
-} from "@earendil-works/pi-coding-agent";
 import type {
   ExtensionAPI,
   ExtensionCommandContext,
@@ -21,7 +18,7 @@ import {
   type Component,
   type Focusable,
 } from "@earendil-works/pi-tui";
-import { LineWindow, modalViewport, wrapPlain } from "./window.ts";
+import { boxFrame, LineWindow, modalViewport, wrapPlain } from "./window.ts";
 import { registerSkills } from "./skills.ts";
 import { execFile, spawn } from "node:child_process";
 
@@ -218,7 +215,7 @@ class TierViewer implements Component, Focusable {
 
   render(width: number): string[] {
     const t = this.theme;
-    const border = () => new DynamicBorder((s) => t.fg("borderMuted", s)).render(width);
+    const inner = Math.max(width - 2, 20);
     this.contentLines(width); // refresh cache + window bounds for this width
     const pos = this.window.scrollable ? ` · ${Math.round(this.window.position * 100)}%` : "";
     const tabs = this.sections
@@ -227,15 +224,13 @@ class TierViewer implements Component, Focusable {
         return i === this.tab ? t.fg("accent", t.bold(label)) : t.fg("dim", label);
       })
       .join(t.fg("dim", "│"));
-    return [
-      ...border(),
-      ...new Text(tabs, 1).render(width),
-      ...new Text(t.fg("dim", "the context bag — global, local, skillbag tiers · j/k scroll · esc/q close"), 1).render(width),
-      ...border(),
-      ...this.window.render(),
-      ...new Text(t.fg("dim", `1/2/3 or ←→ tabs · j/k scroll${pos} · esc/q close`), 1).render(width),
-      ...border(),
-    ];
+    return boxFrame(width, [
+      ...new Text(tabs, 1).render(inner),
+      ...new Text(t.fg("dim", "the context bag — global, local, skillbag tiers · j/k scroll · esc/q close"), 1).render(inner),
+      "",
+      ...this.window.render().map((line) => ` ${line}`),
+      ...new Text(t.fg("dim", `1/2/3 or ←→ tabs · j/k scroll${pos} · esc/q close`), 1).render(inner),
+    ], (s) => t.fg("borderMuted", s));
   }
 }
 
@@ -419,7 +414,7 @@ export default function (pi: ExtensionAPI) {
             (_tui, theme, _keybindings, done) => new TierViewer(sections, theme, done),
             {
               overlay: true,
-              overlayOptions: { width: "80%", minWidth: 80, maxHeight: "85%", anchor: "center" },
+              overlayOptions: { width: "75%", minWidth: 80, maxHeight: "85%", anchor: "center" },
             },
           );
         } catch (e) {
