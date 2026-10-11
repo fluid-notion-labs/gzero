@@ -96,3 +96,19 @@ repos:
       - { path: pdf, tags: [documents] }
       - { path: pptx, tags: [documents] }
       - { path: xlsx, tags: [documents] }
+
+  # cloudflare/skills — dest override: basename 'skills' collides with anthropics/skills
+  - repo: cloudflare/skills
+    dest: cloudflare-skills
+    skills:
+      - { path: skills/cloudflare, tags: [cloudflare] }
+      - { path: skills/workers-best-practices, tags: [cloudflare, workers] }
+      - { path: skills/durable-objects, tags: [cloudflare, workers, durable-objects] }
+      - { path: skills/wrangler, tags: [cloudflare, workers, wrangler] }
+      - { path: skills/agents-sdk, tags: [cloudflare, agents, workers] }
+      - { path: skills/workers-profiling, tags: [cloudflare, workers, debugging] }
+      - { path: skills/sandbox-stable, tags: [cloudflare, sandbox, workers] }
+      - { path: skills/sandbox-next, tags: [cloudflare, sandbox, workers] }
+      - { path: skills/basin, tags: [cloudflare, r2, data] }
+      - { path: skills/k2, tags: [cloudflare, workers, data] }
+      - { path: skills/web-perf, tags: [performance, web] }

@@ -27,9 +27,14 @@ SECTION_CAP = 140
 MAX_SECTIONS = 6
 
 
-def ensure_repo(repo: str) -> Path:
-    """Vendored clone or shallow clone; returns the local path."""
-    name = repo.split("/")[-1]
+def ensure_repo(repo: str, dest_name: str | None = None) -> Path:
+    """Vendored clone or shallow clone; returns the local path.
+
+    `dest_name` overrides the directory name — needed when two repos
+    share a basename (e.g. anthropics/skills and cloudflare/skills both
+    end in 'skills', which would collide on vendor dir and pack file).
+    """
+    name = dest_name or repo.split("/")[-1]
     dest = VENDOR / name
     if not (dest / ".git").exists():
         VENDOR.mkdir(parents=True, exist_ok=True)
@@ -159,7 +164,7 @@ def main() -> int:
 
     for entry in schema.get("repos", []):
         repo = entry["repo"]
-        vendor = ensure_repo(repo)
+        vendor = ensure_repo(repo, entry.get("dest"))
         skills = entry.get("skills")
         if not skills:
             skills = [
@@ -177,7 +182,7 @@ def main() -> int:
             body = "\n".join(f"- {line}" for line in lines)
             sections.append(f"\n## {name}\n\n{body}")
 
-        vendor_name = repo.split("/")[-1]
+        vendor_name = entry.get("dest") or repo.split("/")[-1]
         pack = PACKS / f"skills-{vendor_name}.md"
         pack.write_text(f"# {prefix}/{vendor_name}\n" + "\n".join(sections) + "\n")
         result = subprocess.run(["cx", "add", str(pack)])
