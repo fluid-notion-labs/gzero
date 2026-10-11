@@ -61,12 +61,15 @@ fn open_store() -> SqliteStore {
 /// other machines' updates immediately. Offline mode just skips this.
 fn pull_from_hub(store: &mut SqliteStore) {
     let Some(hub) = Hub::from_env() else { return };
-    match hub.fetch_snapshot().map_err(|e| e.to_string()).and_then(|snap| {
-        let n = snap.atoms.len() + snap.tombstones.len();
-        contextual::absorb_snapshot(store, "hub", &snap)
-            .map_err(|e| e.to_string())
-            .map(|_| n)
-    }) {
+    match hub
+        .fetch_snapshot()
+        .map_err(|e| e.to_string())
+        .and_then(|snap| {
+            let n = snap.atoms.len() + snap.tombstones.len();
+            contextual::absorb_snapshot(store, "hub", &snap)
+                .map_err(|e| e.to_string())
+                .map(|_| n)
+        }) {
         Ok(n) => eprintln!("cx-mcp: hub sync ({n} entries)"),
         Err(e) => eprintln!("cx-mcp: hub sync failed: {e}"),
     }
@@ -127,12 +130,18 @@ fn handle_line(line: &str, store: &mut SqliteStore) -> Option<String> {
     })
 }
 
-fn call_tool(params: &serde_json::Value, store: &mut SqliteStore) -> Result<serde_json::Value, String> {
+fn call_tool(
+    params: &serde_json::Value,
+    store: &mut SqliteStore,
+) -> Result<serde_json::Value, String> {
     let name = params
         .get("name")
         .and_then(|n| n.as_str())
         .ok_or("tools/call: missing name")?;
-    let args = params.get("arguments").cloned().unwrap_or(serde_json::json!({}));
+    let args = params
+        .get("arguments")
+        .cloned()
+        .unwrap_or(serde_json::json!({}));
     let text = match name {
         "resolve" => tool_resolve(&args, store)?,
         "search" => tool_search(&args, store)?,
@@ -154,9 +163,12 @@ fn arg_tags(args: &serde_json::Value) -> BTreeSet<String> {
             .filter_map(|v| v.as_str())
             .map(str::to_string)
             .collect(),
-        Some(serde_json::Value::String(s)) => {
-            s.split(',').map(str::trim).filter(|t| !t.is_empty()).map(str::to_string).collect()
-        }
+        Some(serde_json::Value::String(s)) => s
+            .split(',')
+            .map(str::trim)
+            .filter(|t| !t.is_empty())
+            .map(str::to_string)
+            .collect(),
         _ => BTreeSet::new(),
     }
 }
@@ -208,7 +220,14 @@ fn tool_search(args: &serde_json::Value, store: &SqliteStore) -> Result<String, 
         let tags = if r.tags.is_empty() {
             String::new()
         } else {
-            format!(" [{}]", r.tags.iter().map(|t| format!("#{t}")).collect::<Vec<_>>().join(" "))
+            format!(
+                " [{}]",
+                r.tags
+                    .iter()
+                    .map(|t| format!("#{t}"))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            )
         };
         out.push_str(&format!("- ({}/{}) {}{}\n", r.scope, r.node, text, tags));
     }
@@ -268,7 +287,9 @@ fn parse_ops(args: &serde_json::Value) -> Result<Vec<Op>, String> {
                     node: op.get("node").and_then(|v| v.as_str()).map(str::to_string),
                     tags: arg_tags(op),
                 }),
-                "remove" => ops.push(Op::Remove { needle: text("text")? }),
+                "remove" => ops.push(Op::Remove {
+                    needle: text("text")?,
+                }),
                 other => {
                     return Err(format!(
                         "add: operations[{i}]: unknown action '{other}' (add|remove)"
@@ -287,8 +308,14 @@ fn parse_ops(args: &serde_json::Value) -> Result<Vec<Op>, String> {
         .to_string();
     Ok(vec![Op::Add {
         text,
-        scope: args.get("scope").and_then(|v| v.as_str()).map(str::to_string),
-        node: args.get("node").and_then(|v| v.as_str()).map(str::to_string),
+        scope: args
+            .get("scope")
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
+        node: args
+            .get("node")
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
         tags: arg_tags(args),
     }])
 }
@@ -324,7 +351,12 @@ fn tool_harvest(args: &serde_json::Value, store: &mut SqliteStore) -> Result<Str
                     s.kept
                 ));
                 events.extend(r.atoms.into_iter().map(|a| Event::Put {
-                    atom: Atom { text: a.text, scope: a.scope, node: a.node, tags: a.tags },
+                    atom: Atom {
+                        text: a.text,
+                        scope: a.scope,
+                        node: a.node,
+                        tags: a.tags,
+                    },
                 }));
             }
         }
@@ -345,12 +377,22 @@ fn tool_add(args: &serde_json::Value, store: &mut SqliteStore) -> Result<String,
                 store.remove_matching(&needle).map_err(|e| e.to_string())?;
                 removed.extend(victims);
             }
-            Op::Add { text, scope, node, tags } => {
+            Op::Add {
+                text,
+                scope,
+                node,
+                tags,
+            } => {
                 let scope = scope.unwrap_or_else(|| {
                     contextual::repo_identity().unwrap_or_else(|| FALLBACK_SCOPE.to_string())
                 });
                 let node = node.unwrap_or_else(|| DEFAULT_NODE.to_string());
-                added.push(Atom { text, scope, node, tags });
+                added.push(Atom {
+                    text,
+                    scope,
+                    node,
+                    tags,
+                });
             }
         }
     }
@@ -378,7 +420,9 @@ fn tool_add(args: &serde_json::Value, store: &mut SqliteStore) -> Result<String,
             });
         }
     }
-    store.sync_source(SOURCE, &mine).map_err(|e| e.to_string())?;
+    store
+        .sync_source(SOURCE, &mine)
+        .map_err(|e| e.to_string())?;
 
     let mut events: Vec<Event> = removed
         .iter()
@@ -423,7 +467,12 @@ fn tool_remove(args: &serde_json::Value, store: &mut SqliteStore) -> Result<Stri
         return Ok(out);
     }
     let n = store.remove_matching(needle).map_err(|e| e.to_string())?;
-    try_post(victims.into_iter().map(|atom| Event::Remove { atom }).collect());
+    try_post(
+        victims
+            .into_iter()
+            .map(|atom| Event::Remove { atom })
+            .collect(),
+    );
     Ok(format!("tombstoned {n} atom(s) matching {needle:?}"))
 }
 
@@ -548,13 +597,18 @@ mod tests {
     #[test]
     fn notifications_get_no_reply() {
         let mut s = store();
-        assert!(handle_line(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#, &mut s).is_none());
+        assert!(handle_line(
+            r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#,
+            &mut s
+        )
+        .is_none());
     }
 
     #[test]
     fn list_and_call_roundtrip() {
         let mut s = store();
-        let reply = handle_line(r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#, &mut s).unwrap();
+        let reply =
+            handle_line(r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#, &mut s).unwrap();
         assert!(reply.contains("\"resolve\""));
         assert!(reply.contains("\"search\""));
         assert!(reply.contains("\"add\""));
@@ -586,7 +640,10 @@ mod tests {
             &mut s,
         )
         .unwrap();
-        assert!(!res.contains("rust only fact"), "tagged atom stays in the repository until pulled");
+        assert!(
+            !res.contains("rust only fact"),
+            "tagged atom stays in the repository until pulled"
+        );
         let res = handle_line(
             r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"resolve","arguments":{"tags":"rust"}}}"#,
             &mut s,
@@ -717,7 +774,10 @@ mod tests {
             &mut s,
         )
         .unwrap();
-        assert!(!res.contains("same text"), "re-assertion replaces the mcp row's tags");
+        assert!(
+            !res.contains("same text"),
+            "re-assertion replaces the mcp row's tags"
+        );
     }
 
     #[test]

@@ -384,9 +384,7 @@ pub fn resolve(store: &dyn Storage, referenced: &BTreeSet<String>) -> Result<Vec
         .into_iter()
         .filter(|(_, r)| r.tags.is_empty() || referenced.iter().any(|t| r.tags.contains(t)))
         .collect();
-    items.sort_by(|a, b| {
-        (&a.1.scope, &a.1.node, &a.0).cmp(&(&b.1.scope, &b.1.node, &b.0))
-    });
+    items.sort_by(|a, b| (&a.1.scope, &a.1.node, &a.0).cmp(&(&b.1.scope, &b.1.node, &b.0)));
     Ok(items)
 }
 
@@ -410,26 +408,65 @@ pub fn export_snapshot(store: &dyn Storage) -> Result<snapshot::Snapshot> {
     })
 }
 
-/// Merge a snapshot into the store: its atoms become assertions sourced as
-/// `source` (the snapshot file), its tombstones are recorded locally.
+/// Merge a snapshot into the store, by text: atom identity is text, so an
+/// assertion that already exists under ANY source — or is tombstoned — is
+/// never re-imported. Only genuinely new texts are inserted, with `source`
+/// recorded as provenance. Atoms previously imported under `source` are
+/// preserved (they are unioned with the new ones, since `sync_source`
+/// replaces a source's rows wholesale). Tombstones from the snapshot are
+/// recorded locally.
 pub fn absorb_snapshot(
     store: &mut dyn Storage,
     source: &str,
     snap: &snapshot::Snapshot,
 ) -> Result<SyncStats> {
-    let atoms: Vec<ParsedAtom> = snap
-        .atoms
-        .iter()
-        .map(|a| ParsedAtom {
+    // Everything that already exists locally, by text: any source's rows
+    // plus tombstoned texts (which must not be resurrected by an older
+    // snapshot that still carries them as alive).
+    let known: HashSet<String> = store
+        .all()?
+        .into_iter()
+        .map(|r| r.text)
+        .chain(store.tombstones()?.into_iter().map(|a| a.text))
+        .collect();
+
+    // Preserve this source's existing rows: `sync_source` owns them
+    // wholesale, so they must appear in the merged list or they get
+    // deleted.
+    let mut merged: Vec<ParsedAtom> = store
+        .all()?
+        .into_iter()
+        .filter(|r| r.source == source)
+        .map(|r| ParsedAtom {
+            text: r.text,
+            scope: r.scope,
+            node: r.node,
+            tags: r.tags,
+        })
+        .collect();
+    let mut seen: HashSet<String> = merged.iter().map(|a| a.text.clone()).collect();
+    let mut added = 0usize;
+    for a in &snap.atoms {
+        if known.contains(&a.text) || seen.contains(&a.text) {
+            continue;
+        }
+        seen.insert(a.text.clone());
+        merged.push(ParsedAtom {
             text: a.text.clone(),
             scope: a.scope.clone(),
             node: a.node.clone(),
             tags: a.tags.clone(),
-        })
-        .collect();
-    let stats = store.sync_source(source, &atoms)?;
+        });
+        added += 1;
+    }
+
+    let stats = store.sync_source(source, &merged)?;
     store.tombstone(&snap.tombstones)?;
-    Ok(stats)
+    Ok(SyncStats {
+        added,
+        removed: 0,
+        kept: stats.kept,
+    })
 }
 
 /// Tag vocabulary with the number of distinct atoms carrying each tag.
@@ -464,7 +501,8 @@ fn title_scope(title: &str) -> String {
     if let Some(rest) = s.strip_suffix("pack") {
         s = rest.to_string();
     }
-    s.trim_matches(|c: char| matches!(c, '—' | '–' | '-' | ':' | ' ')).to_string()
+    s.trim_matches(|c: char| matches!(c, '—' | '–' | '-' | ':' | ' '))
+        .to_string()
 }
 
 /// Node slug and tags from a `## ` heading: leading non-`#` tokens become
@@ -550,17 +588,38 @@ mod tests {
     fn sync_replaces_source_assertions() {
         let mut store = mem();
         let stats = add_doc(&mut store, "s", DOC).unwrap();
-        assert_eq!(stats, SyncStats { added: 3, removed: 0, kept: 0 });
+        assert_eq!(
+            stats,
+            SyncStats {
+                added: 3,
+                removed: 0,
+                kept: 0
+            }
+        );
 
         // re-import identical: idempotent
         let stats = add_doc(&mut store, "s", DOC).unwrap();
-        assert_eq!(stats, SyncStats { added: 0, removed: 0, kept: 3 });
+        assert_eq!(
+            stats,
+            SyncStats {
+                added: 0,
+                removed: 0,
+                kept: 3
+            }
+        );
         assert_eq!(store.all().unwrap().len(), 3);
 
         // edited file: deletion propagates
         let edited = "## core\n- always on\n";
         let stats = add_doc(&mut store, "s", edited).unwrap();
-        assert_eq!(stats, SyncStats { added: 0, removed: 2, kept: 1 });
+        assert_eq!(
+            stats,
+            SyncStats {
+                added: 0,
+                removed: 2,
+                kept: 1
+            }
+        );
         assert_eq!(store.all().unwrap().len(), 1);
     }
 
@@ -648,8 +707,10 @@ mod tests {
     #[test]
     fn hashtags_reject_markdown_hashes_and_trim_punctuation() {
         let tags = hashtags("### Hyrum's Law #api #design #rust, keep #!!");
-        let expect: BTreeSet<String> =
-            ["api", "design", "rust"].iter().map(|s| s.to_string()).collect();
+        let expect: BTreeSet<String> = ["api", "design", "rust"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
         assert_eq!(tags, expect);
     }
 
@@ -689,12 +750,20 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         // pointer stub: prose only, no bullets
-        std::fs::write(dir.join("AGENTS.md"), "# Context\n\nThis file is a pointer.\n").unwrap();
+        std::fs::write(
+            dir.join("AGENTS.md"),
+            "# Context\n\nThis file is a pointer.\n",
+        )
+        .unwrap();
         let mut store = mem();
         // the stub's source already has rows (the pre-P4 import)
         add_doc(
             &mut store,
-            dir.join("AGENTS.md").canonicalize().unwrap().to_str().unwrap(),
+            dir.join("AGENTS.md")
+                .canonicalize()
+                .unwrap()
+                .to_str()
+                .unwrap(),
             "# Context — global\n\n## n\n- real atom\n",
         )
         .unwrap();
@@ -719,13 +788,20 @@ mod tests {
         assert_eq!(closest[0], "user prefers concise responses");
         assert!(!closest.contains(&"unrelated".to_string()));
         // total gibberish scores below the 0.3 floor
-        assert!(closest_matches(&store, "xyzzy plugh", 3).unwrap().is_empty());
+        assert!(closest_matches(&store, "xyzzy plugh", 3)
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
     fn search_finds_by_text_case_insensitive() {
         let mut store = mem();
-        add_doc(&mut store, "s", "# packs\n\n## build #rust\n- Cargo before answers\n").unwrap();
+        add_doc(
+            &mut store,
+            "s",
+            "# packs\n\n## build #rust\n- Cargo before answers\n",
+        )
+        .unwrap();
         let items = search(&store, "cargo").unwrap();
         assert_eq!(items.len(), 1);
         assert!(items[0].1.tags.contains("rust"));
@@ -753,7 +829,10 @@ mod tests {
         assert!(texts.contains(&"only a".to_string()));
         assert!(texts.contains(&"only b".to_string()));
         assert!(texts.contains(&"shared".to_string()));
-        assert!(!texts.contains(&"doomed".to_string()), "tombstone hides doomed");
+        assert!(
+            !texts.contains(&"doomed".to_string()),
+            "tombstone hides doomed"
+        );
 
         // absorbing again is idempotent
         let before = b.all().unwrap().len();
@@ -763,5 +842,57 @@ mod tests {
         // B's export carries the tombstone forward
         let b_snap = export_snapshot(&b).unwrap();
         assert_eq!(b_snap.tombstones.len(), 1);
+    }
+
+    #[test]
+    fn absorb_merges_by_text_no_duplicates() {
+        let mut a = mem();
+        add_doc(&mut a, "a.md", "## n\n- shared\n- only a\n").unwrap();
+        let snap = export_snapshot(&a).unwrap();
+
+        // B already has "shared" from its own source
+        let mut b = mem();
+        add_doc(&mut b, "b.md", "## n\n- shared\n").unwrap();
+
+        // Merge: "shared" exists once, still owned by b.md — no hub copy
+        absorb_snapshot(&mut b, "hub", &snap).unwrap();
+        let rows = b.all().unwrap();
+        assert_eq!(rows.iter().filter(|r| r.text == "shared").count(), 1);
+        assert!(rows
+            .iter()
+            .all(|r| !(r.text == "shared" && r.source == "hub")));
+        // the genuinely new text lands under the provenance source
+        assert!(rows.iter().any(|r| r.text == "only a" && r.source == "hub"));
+
+        // absorbing again adds nothing and preserves the hub row
+        let stats = absorb_snapshot(&mut b, "hub", &snap).unwrap();
+        assert_eq!(stats.added, 0);
+        assert_eq!(b.all().unwrap().len(), rows.len());
+
+        // a later snapshot without "only a" must NOT delete it
+        // (hub rows are unioned, not replaced)
+        let mut a2 = mem();
+        add_doc(&mut a2, "a.md", "## n\n- shared\n").unwrap();
+        let snap2 = export_snapshot(&a2).unwrap();
+        absorb_snapshot(&mut b, "hub", &snap2).unwrap();
+        let texts: Vec<String> = alive(&b).unwrap().into_iter().map(|(t, _)| t).collect();
+        assert!(texts.contains(&"only a".to_string()));
+    }
+
+    #[test]
+    fn absorb_does_not_resurrect_tombstoned_texts() {
+        let mut a = mem();
+        add_doc(&mut a, "a.md", "## n\n- phoenix\n").unwrap();
+        let snap = export_snapshot(&a).unwrap();
+
+        let mut b = mem();
+        add_doc(&mut b, "b.md", "## n\n- phoenix\n").unwrap();
+        b.remove_matching("phoenix").unwrap(); // tombstoned, row deleted
+        assert!(b.all().unwrap().is_empty());
+
+        // the snapshot still carries phoenix as alive — must stay hidden
+        absorb_snapshot(&mut b, "hub", &snap).unwrap();
+        assert!(b.all().unwrap().is_empty());
+        assert!(alive(&b).unwrap().is_empty());
     }
 }

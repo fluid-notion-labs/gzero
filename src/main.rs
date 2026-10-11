@@ -82,8 +82,8 @@ fn main() {
             for f in &args[1..] {
                 let text = std::fs::read_to_string(f).unwrap_or_else(|e| panic!("cx: {}: {e}", f));
                 let source = source_path(Path::new(f));
-                let stats =
-                    contextual::add_doc(&mut store, &source, &text).unwrap_or_else(|e| panic!("cx: {e}"));
+                let stats = contextual::add_doc(&mut store, &source, &text)
+                    .unwrap_or_else(|e| panic!("cx: {e}"));
                 println!(
                     "{f}: +{} -{} ={} (kept {})",
                     stats.added, stats.removed, stats.kept, stats.kept
@@ -104,15 +104,16 @@ fn main() {
             }
         }
         "pull" => {
-            let hub = Hub::from_env()
-                .unwrap_or_else(|| {
-                    eprintln!("cx pull: set CX_HUB_URL and CX_TOKEN");
-                    exit(2);
-                });
+            let hub = Hub::from_env().unwrap_or_else(|| {
+                eprintln!("cx pull: set CX_HUB_URL and CX_TOKEN");
+                exit(2);
+            });
             let mut store = open_store();
-            let snap = hub.fetch_snapshot().unwrap_or_else(|e| panic!("cx pull: {e}"));
-            let stats =
-                contextual::absorb_snapshot(&mut store, "hub", &snap).unwrap_or_else(|e| panic!("cx: {e}"));
+            let snap = hub
+                .fetch_snapshot()
+                .unwrap_or_else(|e| panic!("cx pull: {e}"));
+            let stats = contextual::absorb_snapshot(&mut store, "hub", &snap)
+                .unwrap_or_else(|e| panic!("cx: {e}"));
             println!(
                 "hub: +{} -{} kept {} ({} tombstones)",
                 stats.added,
@@ -122,11 +123,10 @@ fn main() {
             );
         }
         "push" => {
-            let hub = Hub::from_env()
-                .unwrap_or_else(|| {
-                    eprintln!("cx push: set CX_HUB_URL and CX_TOKEN");
-                    exit(2);
-                });
+            let hub = Hub::from_env().unwrap_or_else(|| {
+                eprintln!("cx push: set CX_HUB_URL and CX_TOKEN");
+                exit(2);
+            });
             let store = open_store();
             let snap = contextual::export_snapshot(&store).unwrap_or_else(|e| panic!("cx: {e}"));
             hub.post_events(&events_for_snapshot(&snap))
@@ -168,7 +168,10 @@ fn main() {
                     .unwrap_or_else(|e| panic!("cx: {e}"));
                 println!(
                     "{f}: +{} -{} kept {} ({} tombstones)",
-                    stats.added, stats.removed, stats.kept, snap.tombstones.len()
+                    stats.added,
+                    stats.removed,
+                    stats.kept,
+                    snap.tombstones.len()
                 );
             }
         }
@@ -191,7 +194,10 @@ fn main() {
                 Ok(n) => {
                     println!("removed {n}");
                     try_post_events(
-                        &victims.into_iter().map(|atom| Event::Remove { atom }).collect::<Vec<_>>(),
+                        &victims
+                            .into_iter()
+                            .map(|atom| Event::Remove { atom })
+                            .collect::<Vec<_>>(),
                     );
                 }
                 Err(e) => panic!("cx: {e}"),
@@ -206,8 +212,10 @@ fn main() {
             let results = contextual::harvest_dir(&mut store, &dir)
                 .unwrap_or_else(|e| panic!("cx: harvest: {e}"));
             if results.is_empty() {
-                println!("(no instruction files found: {})",
-                    contextual::HARVEST_FILES.join(", "));
+                println!(
+                    "(no instruction files found: {})",
+                    contextual::HARVEST_FILES.join(", ")
+                );
             }
             for r in results {
                 let rel = r
@@ -224,7 +232,12 @@ fn main() {
                             .atoms
                             .into_iter()
                             .map(|a| Event::Put {
-                                atom: Atom { text: a.text, scope: a.scope, node: a.node, tags: a.tags },
+                                atom: Atom {
+                                    text: a.text,
+                                    scope: a.scope,
+                                    node: a.node,
+                                    tags: a.tags,
+                                },
                             })
                             .collect();
                         try_post_events(&events);
@@ -269,7 +282,10 @@ fn main() {
                         .unwrap_or_else(|e| panic!("cx: {e}"));
                     println!("{source}: removed {}", stats.removed);
                     try_post_events(
-                        &victims.into_iter().map(|atom| Event::Remove { atom }).collect::<Vec<_>>(),
+                        &victims
+                            .into_iter()
+                            .map(|atom| Event::Remove { atom })
+                            .collect::<Vec<_>>(),
                     );
                 }
                 [] => {
@@ -319,8 +335,8 @@ fn show(tags: &BTreeSet<String>) {
     let store = open_store();
     let refs: Vec<&str> = tags.iter().map(String::as_str).collect();
     let project = contextual::repo_identity();
-    let items =
-        contextual::resolve_tiers(&store, project.as_deref(), &refs).unwrap_or_else(|e| panic!("cx: {e}"));
+    let items = contextual::resolve_tiers(&store, project.as_deref(), &refs)
+        .unwrap_or_else(|e| panic!("cx: {e}"));
     if items.is_empty() {
         println!("(no matching context)");
         return;
@@ -353,7 +369,8 @@ fn bag_path() -> PathBuf {
 
 /// Canonical path used as a stable source identifier.
 fn source_path(p: &Path) -> String {
-    p.canonicalize().unwrap_or_else(|_| p.to_path_buf())
+    p.canonicalize()
+        .unwrap_or_else(|_| p.to_path_buf())
         .to_string_lossy()
         .into_owned()
 }

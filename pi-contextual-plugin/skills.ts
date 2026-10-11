@@ -222,12 +222,22 @@ export class SkillsAutocomplete implements AutocompleteProvider {
     item: AutocompleteItem,
     prefix: string,
   ): { lines: string[]; cursorLine: number; cursorCol: number } {
+    // Only our own #skill completions take the fast path — everything else
+    // (slash commands re-add the "/", @ paths, arguments) has special
+    // handling in the wrapped provider that we must not bypass.
+    if (!/^#skill/i.test(prefix)) {
+      return this.fallback.applyCompletion(lines, cursorLine, cursorCol, item, prefix);
+    }
     const line = lines[cursorLine] ?? "";
     const before = line.slice(0, cursorCol - prefix.length);
     const after = line.slice(cursorCol);
     const newLines = [...lines];
     newLines[cursorLine] = before + item.value + after;
     return { lines: newLines, cursorLine, cursorCol: before.length + item.value.length };
+  }
+
+  shouldTriggerFileCompletion(lines: string[], cursorLine: number, cursorCol: number): boolean {
+    return this.fallback.shouldTriggerFileCompletion?.(lines, cursorLine, cursorCol) ?? true;
   }
 }
 

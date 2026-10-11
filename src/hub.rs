@@ -26,7 +26,10 @@ impl Hub {
     pub fn from_env() -> Option<Hub> {
         let base = std::env::var("CX_HUB_URL").ok().filter(|u| !u.is_empty())?;
         let token = std::env::var("CX_TOKEN").ok().filter(|t| !t.is_empty())?;
-        Some(Hub { base: base.trim_end_matches('/').to_string(), token })
+        Some(Hub {
+            base: base.trim_end_matches('/').to_string(),
+            token,
+        })
     }
 
     fn post_json(&self, path: &str, body: &serde_json::Value) -> Result<(), String> {
