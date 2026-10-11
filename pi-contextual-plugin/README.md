@@ -6,9 +6,13 @@ contextual only via MCP — no direct SQLite or hub access.
 - registers `cx-mcp` so the model gets the `mcp__context__*` tools
 - injects the resolved default context (global + project tiers) into the
   system prompt on every turn
-- `/context` browses the bag in a tabbed overlay — **global** (always
-  active), **local** (project), **skillbag** (distilled skills); switch
-  with 1/2/3, tab, or ←/→; j/k scroll; esc/q close. `/context reload`
+- `/context` shows ground truth — exactly what is injected into the
+  system prompt this session: the `<context>` block (global + project
+  tier defaults) and the `<skills>` block (session-loaded skills), with
+  per-section sub-navigation. `/bag` is the explorer for the whole bag
+  (global / local / skillbag tiers with two-level navigation). Note the
+  skillbag is *not* sent to the model — its atoms load only when a tag
+  is pulled or a skill is referenced/loaded. `/context reload`
   re-resolves; `/context add <text>` saves an atom with a confirm dialog
 - alt-s or `/skills` opens the skills picker: type-to-search over the
   vendored `SKILL.md` files (title + description), enter reads the full

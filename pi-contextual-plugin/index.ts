@@ -543,7 +543,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerCommand("context", {
-    description: "Browse the bag by tier (global/local/skillbag); 'reload' re-resolves; 'add <text>' saves an atom",
+    description: "Show exactly what is sent to the model; 'reload' re-resolves; 'add <text>' saves an atom",
     handler: async (args: string, ctx: ExtensionCommandContext) => {
       const cxMcp = await findCxMcp();
       if (!cxMcp) {
@@ -608,29 +608,65 @@ export default function (pi: ExtensionAPI) {
         ctx.ui.notify("Nothing resolved for this project — /context add or tagged pulls", "info");
         return;
       }
-      // Tabbed viewer over the whole bag (global / local / skillbag);
-      // injected context remains the tiered default shown on every turn.
+      // /context shows ground truth: exactly what is injected into the
+      // system prompt this session — the <context> block (global + project
+      // tier defaults) and the <skills> block (session-loaded skills). The
+      // whole-bag browser lives at /bag.
       if (ctx.mode === "tui") {
-        try {
-          const rendered = await mcpCall(cxMcp, "resolve", { scope_prefix: "" });
-          const sections = bucketTiers(rendered).filter((s) => s.nodes.length > 0);
-          if (sections.length === 0) {
-            ctx.ui.notify("The bag is empty — /context add to start it", "info");
-            return;
-          }
-          await ctx.ui.custom(
-            (_tui, theme, _keybindings, done) => new TierViewer(sections, theme, done),
-            {
-              overlay: true,
-              overlayOptions: { width: "75%", minWidth: 80, maxHeight: "85%", anchor: "center" },
-            },
-          );
-        } catch (e) {
-          ctx.ui.notify(`Could not load the bag: ${e instanceof Error ? e.message : String(e)}`, "error");
+        if (resolvedBody === null) {
+          ctx.ui.notify("Nothing resolved for this project — /context add or tagged pulls", "info");
+          return;
         }
+        const sections = bucketTiers(resolvedBody).filter((s) => s.nodes.length > 0);
+        const loaded = getLoadedSkills();
+        if (loaded.length > 0) {
+          sections.push({
+            label: "skills (loaded)",
+            nodes: loaded.map((s) => ({ label: s.name, text: skillBody(s.file) })),
+          });
+        }
+        await ctx.ui.custom(
+          (_tui, theme, _keybindings, done) => new TierViewer(sections, theme, done),
+          {
+            overlay: true,
+            overlayOptions: { width: "75%", minWidth: 80, maxHeight: "85%", anchor: "center" },
+          },
+        );
       } else {
         const full = `<context>\n${PREAMBLE}\n\n${resolvedBody}\n</context>`;
         ctx.ui.notify(full.length > 400 ? `${full.slice(0, 400)}…` : full, "info");
+      }
+    },
+  });
+
+  pi.registerCommand("bag", {
+    description: "Browse the whole bag by tier (global/local/skillbag)",
+    handler: async (_args, ctx) => {
+      const cxMcp = await findCxMcp();
+      if (!cxMcp) {
+        ctx.ui.notify(`cx-mcp not found. Install with: ${INSTALL_CMD}`, "error");
+        return;
+      }
+      if (ctx.mode !== "tui") {
+        ctx.ui.notify("The bag browser is available in TUI mode", "warning");
+        return;
+      }
+      try {
+        const rendered = await mcpCall(cxMcp, "resolve", { scope_prefix: "" });
+        const sections = bucketTiers(rendered).filter((s) => s.nodes.length > 0);
+        if (sections.length === 0) {
+          ctx.ui.notify("The bag is empty — /context add to start it", "info");
+          return;
+        }
+        await ctx.ui.custom(
+          (_tui, theme, _keybindings, done) => new TierViewer(sections, theme, done),
+          {
+            overlay: true,
+            overlayOptions: { width: "75%", minWidth: 80, maxHeight: "85%", anchor: "center" },
+          },
+        );
+      } catch (e) {
+        ctx.ui.notify(`Could not load the bag: ${e instanceof Error ? e.message : String(e)}`, "error");
       }
     },
   });
