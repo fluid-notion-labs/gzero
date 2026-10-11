@@ -200,6 +200,8 @@ class TierViewer implements Component, Focusable {
     private sections: TierSection[],
     private theme: Theme,
     private done: (result?: unknown) => void,
+    /** Extra footer note, e.g. "2 skills loaded". */
+    private note?: string,
   ) {}
 
   invalidate(): void {}
@@ -299,17 +301,21 @@ class TierViewer implements Component, Focusable {
     const t = this.theme;
     const inner = Math.max(width - 2, 20);
     const doc = this.document(width);
-    const pos = this.window.scrollable ? ` · ${Math.round(this.window.position * 100)}%` : "";
     const tabs = this.sections
       .map((s, i) => {
         const label = ` ${i + 1} ${s.label} `;
         return i === this.tab ? t.fg("accent", t.bold(label)) : t.fg("dim", label);
       })
       .join(t.fg("dim", "│"));
+    const divider = t.fg("borderMuted", "─".repeat(inner));
+    const hints = `←→ tier · ↑↓ line · pgup/pgdn page · ctrl+↓↑ section · esc/q close`;
+    const footer = this.note ? `${hints} · ${this.note}` : hints;
     return boxFrame(width, [
       ...new Text(tabs, 1).render(inner),
+      divider,
       ...this.window.render().map((line) => ` ${line}`),
-      ...new Text(t.fg("dim", `←→ tier · ↑↓ line · pgup/pgdn page · ctrl+↓↑ section${pos} · esc/q close`), 1).render(inner),
+      divider,
+      ...new Text(t.fg("dim", footer), 1).render(inner),
     ], (s: string) => t.fg("borderMuted", s));
   }
 }
@@ -583,8 +589,12 @@ export default function (pi: ExtensionAPI) {
             nodes: loaded.map((s) => ({ label: s.name, text: skillBody(s.file) })),
           });
         }
+        const note =
+          loaded.length > 0
+            ? `${loaded.length} skill${loaded.length === 1 ? "" : "s"} loaded`
+            : undefined;
         await ctx.ui.custom(
-          (_tui, theme, _keybindings, done) => new TierViewer(sections, theme, done),
+          (_tui, theme, _keybindings, done) => new TierViewer(sections, theme, done, note),
           {
             overlay: true,
             overlayOptions: { width: "75%", minWidth: 80, maxHeight: "85%", anchor: "center" },
