@@ -8,12 +8,16 @@ contextual only via MCP — no direct SQLite or hub access.
   system prompt on every turn
 - `/context` shows ground truth — exactly what is injected into the
   system prompt this session: the `<context>` block (global + project
-  tier defaults) and the `<skills>` block (session-loaded skills), with
-  per-section sub-navigation. `/bag` is the explorer for the whole bag
-  (global / local / skillbag tiers with two-level navigation). Note the
-  skillbag is *not* sent to the model — its atoms load only when a tag
-  is pulled or a skill is referenced/loaded. `/context reload`
-  re-resolves; `/context add <text>` saves an atom with a confirm dialog
+  tier defaults) and the `<skills>` block (session-loaded skills).
+  `/bag` is the explorer for the whole bag. Both render as a tabbed
+  document: top-level tier menu bar (global / local / skills), and below
+  it a flat scrollable document where each section opens with a
+  horizontal divider carrying its title. Keys: ←→ or 1/2/3 switch
+  tiers, ↑↓ scroll line-wise, pgup/pgdn page-wise, ctrl+↓/ctrl+↑ jump
+  sections, esc/q close. Note the skillbag is *not* sent to the model —
+  its atoms load only when a tag is pulled or a skill is
+  referenced/loaded. `/context reload` re-resolves; `/context add
+  <text>` saves an atom with a confirm dialog
 - alt-s or `/skills` opens the skills picker: type-to-search over the
   vendored `SKILL.md` files (title + description), enter reads the full
   skill in a scrollable overlay, esc backs out, and enter again in the

@@ -182,16 +182,18 @@ export function bucketTiers(rendered: string): TierSection[] {
 }
 
 /**
- * Read-only overlay viewer rendering the sections as one flat document:
- * each section is introduced by a horizontal divider with its title on
- * the left. Navigation: ↑/↓ scroll line-wise, PgUp/PgDn page-wise,
- * ctrl+↓/ctrl+↑ jump to the next/previous section, esc/q closes.
+ * Read-only overlay viewer: a tab bar with the top-level tiers, and below
+ * it a flat document of that tier's sections, each introduced by a
+ * horizontal divider with its title. Navigation: ←/→ or 1/2/3 switch
+ * tiers, ↑/↓ scroll line-wise, PgUp/PgDn page-wise, ctrl+↓/ctrl+↑ jump to
+ * the next/previous section, esc/q closes.
  */
 class TierViewer implements Component, Focusable {
   focused = false;
+  private tab = 0;
   private window = new LineWindow(modalViewport());
-  /** Full document (titled dividers + wrapped content), cached per width. */
-  private docCache: { width: number; lines: string[]; sectionStarts: number[] } | null = null;
+  /** Active tier's document (titled dividers + wrapped content). */
+  private docCache: { tab: number; width: number; lines: string[]; sectionStarts: number[] } | null = null;
   private lastStarts: number[] = [];
 
   constructor(
@@ -202,11 +204,21 @@ class TierViewer implements Component, Focusable {
 
   invalidate(): void {}
 
-  /** Build the flat document: divider + content per section, in order. */
+  private switchTo(tab: number) {
+    if (tab === this.tab || tab < 0 || tab >= this.sections.length) return;
+    this.tab = tab;
+    this.docCache = null;
+    this.window.scrollToStart();
+  }
+
+  /** Build the flat document for the active tier. */
   private document(width: number): { lines: string[]; sectionStarts: number[] } {
-    if (this.docCache && this.docCache.width === width) return this.docCache;
+    if (this.docCache && this.docCache.tab === this.tab && this.docCache.width === width) {
+      return this.docCache;
+    }
     const t = this.theme;
     const inner = Math.max(width - 2, 20);
+    const tier = this.sections[this.tab];
     const lines: string[] = [];
     const sectionStarts: number[] = [];
     const divider = (title: string) => {
@@ -214,18 +226,20 @@ class TierViewer implements Component, Focusable {
       const tail = Math.max(0, inner - head.length - title.length - 1);
       return t.fg("borderMuted", head) + t.fg("accent", title) + t.fg("borderMuted", " " + "─".repeat(tail));
     };
-    for (const tier of this.sections) {
-      for (const node of tier.nodes) {
-        sectionStarts.push(lines.length);
-        lines.push(divider(node.label));
-        for (const wrapped of wrapPlain(node.text || "(empty)", inner - 1)) {
-          lines.push(` ${wrapped}`);
-        }
-        lines.push("");
+    for (const node of tier?.nodes ?? []) {
+      // the tab already names the tier — drop its prefix from titles
+      const title = node.label.startsWith(`${tier.label}/`)
+        ? node.label.slice(tier.label.length + 1)
+        : node.label;
+      sectionStarts.push(lines.length);
+      lines.push(divider(title));
+      for (const wrapped of wrapPlain(node.text || "(empty)", inner - 1)) {
+        lines.push(` ${wrapped}`);
       }
+      lines.push("");
     }
     if (lines.length === 0) lines.push(` ${t.fg("dim", "(empty)")}`);
-    this.docCache = { width, lines, sectionStarts };
+    this.docCache = { tab: this.tab, width, lines, sectionStarts };
     this.lastStarts = sectionStarts;
     this.window.setLines(lines);
     return this.docCache;
@@ -244,6 +258,16 @@ class TierViewer implements Component, Focusable {
   handleInput(data: string): void {
     if (matchesKey(data, "escape") || matchesKey(data, "q")) {
       this.done();
+    } else if (matchesKey(data, "left")) {
+      this.switchTo((this.tab + this.sections.length - 1) % this.sections.length);
+    } else if (matchesKey(data, "right") || matchesKey(data, "tab")) {
+      this.switchTo((this.tab + 1) % this.sections.length);
+    } else if (matchesKey(data, "1")) {
+      this.switchTo(0);
+    } else if (matchesKey(data, "2")) {
+      this.switchTo(1);
+    } else if (matchesKey(data, "3")) {
+      this.switchTo(2);
     } else if (matchesKey(data, "ctrl+down")) {
       const cur = this.currentSection(this.lastStarts);
       const next = this.lastStarts[Math.min(cur + 1, this.lastStarts.length - 1)];
@@ -276,10 +300,17 @@ class TierViewer implements Component, Focusable {
     const inner = Math.max(width - 2, 20);
     const doc = this.document(width);
     const pos = this.window.scrollable ? ` · ${Math.round(this.window.position * 100)}%` : "";
+    const tabs = this.sections
+      .map((s, i) => {
+        const label = ` ${i + 1} ${s.label} `;
+        return i === this.tab ? t.fg("accent", t.bold(label)) : t.fg("dim", label);
+      })
+      .join(t.fg("dim", "│"));
     return boxFrame(width, [
+      ...new Text(tabs, 1).render(inner),
       ...this.window.render().map((line) => ` ${line}`),
-      ...new Text(t.fg("dim", `↑↓ line · pgup/pgdn page · ctrl+↓↑ section${pos} · esc/q close`), 1).render(inner),
-    ], (s) => t.fg("borderMuted", s));
+      ...new Text(t.fg("dim", `←→ tier · ↑↓ line · pgup/pgdn page · ctrl+↓↑ section${pos} · esc/q close`), 1).render(inner),
+    ], (s: string) => t.fg("borderMuted", s));
   }
 }
 
