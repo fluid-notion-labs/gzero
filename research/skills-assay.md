@@ -71,14 +71,14 @@ Hybrid, staged:
   `#testing`, `#devops`, `#documents`, …)
 - ✅ pi plugin: alt-s / `/skills` picker — search title+description over
   the vendored SKILL.md files, read the full skill in an overlay
-- ⬜ skills hub (below): serve packs from contexture-hub instead of
+- ⬜ skills hub (below): serve packs from contexture instead of
   per-machine GitHub clones
 
 ## Skills hub (planned service)
 
 Today the pipeline is local-only: `pull.py` clones GitHub repos into
 `vendor/`, distills to `packs/`, imports via `cx add`. The hub step moves
-distribution to contexture-hub — the same Cloudflare Worker that already
+distribution to contexture — the same Cloudflare Worker that already
 syncs atoms via `CX_HUB_URL`/`CX_TOKEN` (`src/hub.rs`: `/events` put,
 `/snapshot` fetch, `cx pull`/`cx push`) — so skills travel with the bag
 across machines and the hub becomes the canonical source for both atoms

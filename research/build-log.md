@@ -29,7 +29,7 @@ Sequence, as it happened:
    `/context` viewer).
 5. **Distributed spine, in parallel.** bagflow (lattice over DFIR/hydro,
    versioned JSON snapshot, `bagflow-serve`), lattice/sync/persistence
-   docs, contexture-hub (Worker + DO, OR-set events, snapshot out).
+   docs, contexture (Worker + DO, OR-set events, snapshot out).
 
 ## What bit (the fiddly edges)
 

@@ -1,7 +1,7 @@
-//! Hub client: contexture-hub (Cloudflare Worker) in server mode.
+//! Hub client: contexture (Cloudflare Worker) in server mode.
 //! Clients post events and consume snapshots; the hub merges.
 //!
-//! Config via env: `CX_HUB_URL` (e.g. https://contexture-hub.<subdomain>.workers.dev)
+//! Config via env: `CX_HUB_URL` (e.g. https://contexture.<subdomain>.workers.dev)
 //! and `CX_TOKEN` (bearer). Absent vars = offline mode, no hub calls.
 
 use crate::snapshot::{Atom, Snapshot};
