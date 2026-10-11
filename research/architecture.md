@@ -30,8 +30,15 @@ Companions: `research/context/lattice.md` (merge math), `sync.md`
 | `bagflow-serve`| bagflow  | HTTP wrapper over the engine (multi-machine test harness) |
 
 Two pools, one bridge: **contextual** is the product (SQLite ledger, live
-data); **bagflow** is the proven engine (in-memory lattice + JSON
-snapshot). They share only the snapshot format. Unification is M4.
+data); **bagflow** is the engine (in-memory lattice + JSON snapshot).
+They share only the snapshot format. Unification is M4.
+
+**Status (2026-10):** `nursery/bagflow` is missing from disk — never
+committed, directory gone. **contextual has no dependency on it** (no
+hydroflow/dfir/lattices in its Cargo.toml; the merge is hand-rolled in
+`absorb_snapshot`). For the kv-facts work the only dependency to add is
+the crates.io `lattices` crate — `dfir_rs` stays optional (incremental
+views only). See `lattice.md` and `distributed-state.md`.
 
 ## Resolution model — three tiers
 
