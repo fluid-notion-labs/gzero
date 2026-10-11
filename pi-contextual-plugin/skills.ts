@@ -276,6 +276,19 @@ export class SkillsAutocomplete implements AutocompleteProvider {
   }
 }
 
+// Skills loaded directly via ctrl+enter in the picker: injected into every
+// turn of the session without a chat message. Accessors, not an exported
+// binding, so reassignment survives jiti's module interop.
+const loadedSkills = new Map<string, SkillEntry>();
+
+export function addLoadedSkill(entry: SkillEntry): void {
+  loadedSkills.set(`${entry.vendor}/${entry.name.toLowerCase()}`, entry);
+}
+
+export function getLoadedSkills(): SkillEntry[] {
+  return [...loadedSkills.values()];
+}
+
 /** Skill names referenced as `#skill:<name>` in a prompt. */
 export function extractSkillRefs(prompt: string): string[] {
   return [...new Set([...prompt.matchAll(/#skill:([\w.-]+)/g)].map((m) => m[1].toLowerCase()))];
@@ -361,7 +374,7 @@ class SkillsPicker implements Component {
   constructor(
     private entries: SkillEntry[],
     private theme: Theme,
-    private done: (result?: string) => void,
+    private done: (result?: SkillEntry) => void,
   ) {
     this.input.focused = true;
     this.list = this.rebuildList("");
@@ -429,7 +442,7 @@ class SkillsPicker implements Component {
         return;
       }
       if (this.isReferenceKey(data)) {
-        if (this.current) this.done(`#skill:${this.current.name} `);
+        if (this.current) this.done(this.current);
         return;
       }
       const s = this.window;
@@ -456,10 +469,10 @@ class SkillsPicker implements Component {
       return;
     }
     if (this.isReferenceKey(data)) {
-      // Reference from the list itself: use the current selection.
+      // Load from the list itself: use the current selection.
       const sel = this.list.getSelectedItem();
       const entry = sel ? this.byValue.get(sel.value) : undefined;
-      if (entry) this.done(`#skill:${entry.name} `);
+      if (entry) this.done(entry);
       return;
     }
     if (matchesKey(data, "return")) {
@@ -496,7 +509,7 @@ class SkillsPicker implements Component {
         ...new Text(t.fg("dim", `${this.current.vendor} · ${this.current.file}`), 1).render(inner),
         "",
         ...this.window.render().map((line) => ` ${line}`),
-        ...new Text(t.fg("dim", `esc/q back · ctrl+↵ reference · j/k scroll · g/G top/end${pos}`), 1).render(inner),
+        ...new Text(t.fg("dim", `esc/q back · ctrl+↵ load for session · j/k scroll · g/G top/end${pos}`), 1).render(inner),
       ], rail);
     }
     return boxFrame(width, [
@@ -504,7 +517,7 @@ class SkillsPicker implements Component {
       ...new Text(t.fg("dim", "vendored agent skills — search title & description, enter to read"), 1).render(inner),
       ...this.input.render(Math.max(inner - 2, 20)).map((line) => ` ${line}`),
       ...this.list.render(inner),
-      ...new Text(t.fg("dim", "type to filter · ↑↓ select · enter read · ctrl+↵ reference · esc close"), 1).render(inner),
+      ...new Text(t.fg("dim", "type to filter · ↑↓ select · enter read · ctrl+↵ load · esc close"), 1).render(inner),
     ], rail);
   }
 }
@@ -522,14 +535,20 @@ async function openPicker(ctx: ExtensionContext): Promise<void> {
     );
     return;
   }
-  const reference = await ctx.ui.custom<string | undefined>(
+  const loaded = await ctx.ui.custom<SkillEntry | undefined>(
     (_tui, theme, _keybindings, done) => new SkillsPicker(skills, theme, done),
     {
       overlay: true,
       overlayOptions: { width: "75%", minWidth: 70, maxHeight: "85%", anchor: "center" },
     },
   );
-  if (reference) ctx.ui.pasteToEditor(reference);
+  if (loaded) {
+    addLoadedSkill(loaded);
+    ctx.ui.notify(
+      `${loaded.name} loaded — its full instructions apply to every turn this session (distills into the skillbag on your next message)`,
+      "info",
+    );
+  }
 }
 
 // Skills discovered this session; filled shortly after session start and

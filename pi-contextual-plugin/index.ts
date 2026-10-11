@@ -10,6 +10,7 @@
 import type {
   ExtensionAPI,
   ExtensionCommandContext,
+  ExtensionContext,
   Theme,
 } from "@earendil-works/pi-coding-agent";
 import {
@@ -23,6 +24,7 @@ import {
   distillSkill,
   extractSkillRefs,
   getSkillsCache,
+  getLoadedSkills,
   startDiscovery,
   ensureSkills,
   registerSkills,
@@ -253,6 +255,48 @@ export default function (pi: ExtensionAPI) {
   /** Skill references already distilled into the bag this session. */
   const addedToBag = new Set<string>();
 
+  /** Distill any of the given skills not yet in the bag into the skillbag.
+   * Bag atoms dedupe by text; already-imported skills are skipped by node check. */
+  const ensureInBag = async (
+    cxMcp: string,
+    entries: SkillEntry[],
+    ui: ExtensionContext["ui"],
+  ) => {
+    const pending = entries.filter((e) => !addedToBag.has(`${e.vendor}/${e.name.toLowerCase()}`));
+    if (pending.length === 0) return;
+    let inBag: string | null = null;
+    try {
+      inBag = await mcpCall(cxMcp, "resolve", { scope_prefix: "skills/" });
+    } catch {
+      // bag check failed; adding is still safe (dedupe by text)
+    }
+    for (const entry of pending) {
+      const key = `${entry.vendor}/${entry.name.toLowerCase()}`;
+      addedToBag.add(key);
+      if (inBag?.includes(`# skills/${entry.vendor}/${entry.name}`)) continue;
+      const atoms = distillSkill(entry);
+      if (atoms.length === 0) continue;
+      try {
+        await mcpCall(cxMcp, "add", {
+          operations: atoms.map((a) => ({
+            action: "add",
+            text: a.text,
+            scope: `skills/${entry.vendor}`,
+            node: entry.name,
+            tags: a.tags,
+          })),
+        });
+        ui.notify(`skillbag: added ${entry.name} (${atoms.length} atoms)`, "info");
+      } catch (e) {
+        addedToBag.delete(key);
+        ui.notify(
+          `skillbag add failed for ${entry.name}: ${e instanceof Error ? e.message : String(e)}`,
+          "error",
+        );
+      }
+    }
+  };
+
   const findCxMcp = async (): Promise<string | null> => {
     if (cxMcpPath === undefined) cxMcpPath = await which("cx-mcp");
     return cxMcpPath;
@@ -341,61 +385,34 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("before_agent_start", async (event, ctx) => {
-    // #skill:<name> references in the prompt pull the full skill into this turn.
+    // Skills enter a turn two ways: loaded via ctrl+enter in the picker
+    // (every turn of the session) and referenced as #skill:<name> in the
+    // prompt (that turn). Both are injected; both distill into the skillbag.
     const refs = extractSkillRefs(event.prompt);
     const cxMcp = await findCxMcp();
-    if (!cxMcp && refs.length === 0) return; // offline degradation: no server, AGENTS.md fallback remains
-    if (refs.length > 0) {
+    const loaded = getLoadedSkills();
+    if (!cxMcp && refs.length === 0 && loaded.length === 0) {
+      return; // offline degradation: no server, AGENTS.md fallback remains
+    }
+    if (refs.length > 0 || loaded.length > 0) {
       const skills = await ensureSkills();
-      const referenced: SkillEntry[] = [];
-      const parts: string[] = [];
+      const entries = new Map<string, SkillEntry>();
       for (const name of refs) {
         const entry = skills.find((s) => s.name.toLowerCase() === name);
-        if (entry) {
-          referenced.push(entry);
-          parts.push(`## ${entry.name} (${entry.vendor})\n\n${skillBody(entry.file)}`);
-        }
+        if (entry) entries.set(`${entry.vendor}/${entry.name.toLowerCase()}`, entry);
       }
-      if (parts.length > 0) {
+      for (const entry of loaded) {
+        entries.set(`${entry.vendor}/${entry.name.toLowerCase()}`, entry);
+      }
+      if (entries.size > 0) {
+        const parts = [...entries.values()].map(
+          (entry) => `## ${entry.name} (${entry.vendor})\n\n${skillBody(entry.file)}`,
+        );
         event.systemPromptOptions.sections["skills"] =
-          `<skills>\nThe user referenced these skills with #skill:<name>; their full instructions are included here.\n\n${parts.join("\n\n")}\n</skills>`;
+          `<skills>\nThese skills are loaded for this session or were referenced with #skill:<name>; their full instructions are included here.\n\n${parts.join("\n\n")}\n</skills>`;
       }
-      // Skills not yet in the bag get distilled into the skillbag so their
-      // terse atoms persist across sessions. Bag atoms dedupe by text, and
-      // already-imported skills are skipped by node check.
-      if (cxMcp && referenced.length > 0) {
-        let inBag: string | null = null;
-        try {
-          inBag = await mcpCall(cxMcp, "resolve", { scope_prefix: "skills/" });
-        } catch {
-          // bag check failed; adding is still safe (dedupe by text)
-        }
-        for (const entry of referenced) {
-          const key = `${entry.vendor}/${entry.name.toLowerCase()}`;
-          if (addedToBag.has(key)) continue;
-          addedToBag.add(key);
-          if (inBag?.includes(`# skills/${entry.vendor}/${entry.name}`)) continue;
-          const atoms = distillSkill(entry);
-          if (atoms.length === 0) continue;
-          try {
-            await mcpCall(cxMcp, "add", {
-              operations: atoms.map((a) => ({
-                action: "add",
-                text: a.text,
-                scope: `skills/${entry.vendor}`,
-                node: entry.name,
-                tags: a.tags,
-              })),
-            });
-            ctx.ui.notify(`skillbag: added ${entry.name} (${atoms.length} atoms)`, "info");
-          } catch (e) {
-            addedToBag.delete(key);
-            ctx.ui.notify(
-              `skillbag add failed for ${entry.name}: ${e instanceof Error ? e.message : String(e)}`,
-              "error",
-            );
-          }
-        }
+      if (cxMcp && entries.size > 0) {
+        await ensureInBag(cxMcp, [...entries.values()], ctx.ui);
       }
     }
     if (cxMcp) {
