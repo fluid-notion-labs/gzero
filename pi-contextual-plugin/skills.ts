@@ -276,7 +276,7 @@ export class SkillsAutocomplete implements AutocompleteProvider {
   }
 }
 
-// Skills loaded directly via ctrl+enter in the picker: injected into every
+// Skills loaded directly via enter in the picker detail view: injected into every
 // turn of the session without a chat message. Accessors, not an exported
 // binding, so reassignment survives jiti's module interop.
 const loadedSkills = new Map<string, SkillEntry>();
@@ -425,16 +425,6 @@ class SkillsPicker implements Component {
     this.bodyCache = null;
   }
 
-  /** Ctrl+Enter in all terminal encodings: kitty/CSI report it directly;
-   * legacy terminals send LF, which matches only ctrl+j (and return). */
-  private isReferenceKey(data: string): boolean {
-    return (
-      matchesKey(data, "ctrl+return") ||
-      matchesKey(data, "ctrl+enter") ||
-      matchesKey(data, "ctrl+j")
-    );
-  }
-
   handleInput(data: string): void {
     // Diagnostic: CX_SKILLS_KEY_DEBUG=<file> logs every key's hex so unknown
     // terminal encodings can be identified.
@@ -451,13 +441,10 @@ class SkillsPicker implements Component {
         this.backToList();
         return;
       }
-      if (
-        this.isReferenceKey(data) ||
-        matchesKey(data, "return") ||
-        matchesKey(data, "enter")
-      ) {
-        // Enter loads too: terminals that send plain CR for ctrl+enter make
-        // the two physically indistinguishable, and Enter has no other use here.
+      if (matchesKey(data, "return") || matchesKey(data, "enter")) {
+        // Enter loads the skill for the session. It had no other use in the
+        // detail view, and terminals that send plain CR for ctrl+enter are
+        // physically indistinguishable from enter anyway.
         if (this.current) this.done(this.current);
         return;
       }
@@ -482,13 +469,6 @@ class SkillsPicker implements Component {
       matchesKey(data, "pageDown")
     ) {
       this.list.handleInput(data);
-      return;
-    }
-    if (this.isReferenceKey(data)) {
-      // Load from the list itself: use the current selection.
-      const sel = this.list.getSelectedItem();
-      const entry = sel ? this.byValue.get(sel.value) : undefined;
-      if (entry) this.done(entry);
       return;
     }
     if (matchesKey(data, "return")) {
@@ -525,7 +505,7 @@ class SkillsPicker implements Component {
         ...new Text(t.fg("dim", `${this.current.vendor} · ${this.current.file}`), 1).render(inner),
         "",
         ...this.window.render().map((line) => ` ${line}`),
-        ...new Text(t.fg("dim", `esc/q back · enter or ctrl+↵ load for session · j/k scroll · g/G top/end${pos}`), 1).render(inner),
+        ...new Text(t.fg("dim", `esc/q back · enter loads for session · j/k scroll · g/G top/end${pos}`), 1).render(inner),
       ], rail);
     }
     return boxFrame(width, [
@@ -533,7 +513,7 @@ class SkillsPicker implements Component {
       ...new Text(t.fg("dim", "vendored agent skills — search title & description, enter to read"), 1).render(inner),
       ...this.input.render(Math.max(inner - 2, 20)).map((line) => ` ${line}`),
       ...this.list.render(inner),
-      ...new Text(t.fg("dim", "type to filter · ↑↓ select · enter read · ctrl+↵ load · esc close"), 1).render(inner),
+      ...new Text(t.fg("dim", "type to filter · ↑↓ select · enter read · esc close"), 1).render(inner),
     ], rail);
   }
 }

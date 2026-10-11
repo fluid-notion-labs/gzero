@@ -385,7 +385,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("before_agent_start", async (event, ctx) => {
-    // Skills enter a turn two ways: loaded via ctrl+enter in the picker
+    // Skills enter a turn two ways: loaded via enter in the picker detail view
     // (every turn of the session) and referenced as #skill:<name> in the
     // prompt (that turn). Both are injected; both distill into the skillbag.
     const refs = extractSkillRefs(event.prompt);
