@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { DynamicBorder } from "@earendil-works/pi-coding-agent";
 import {
+  Container,
   Input,
   Key,
   ScrollView,
@@ -154,24 +155,6 @@ function truncate(text: string, cap: number): string {
   return one.length > cap ? `${one.slice(0, cap - 1)}…` : one;
 }
 
-function wrap(text: string, width: number): string[] {
-  const out: string[] = [];
-  for (const para of text.split("\n")) {
-    let line = "";
-    for (const word of para.split(/\s+/).filter(Boolean)) {
-      const next = line ? `${line} ${word}` : word;
-      if (next.length > width && line) {
-        out.push(line);
-        line = word;
-      } else {
-        line = next;
-      }
-    }
-    out.push(line);
-  }
-  return out;
-}
-
 /** Body below the frontmatter — the actual skill content. */
 function skillBody(file: string): string {
   try {
@@ -292,27 +275,25 @@ class SkillsPicker implements Component {
 
   render(width: number): string[] {
     const t = this.theme;
+    const border = new DynamicBorder((s) => t.fg("borderMuted", s));
+    const box = new Container();
+    box.addChild(border);
     if (this.mode === "detail" && this.current) {
-      const head: string[] = [];
-      head.push(t.fg("accent", t.bold(this.current.name)));
-      for (const line of wrap(truncate(this.current.description, 400), Math.max(width - 2, 20))) {
-        head.push(t.fg("muted", line));
-      }
-      head.push(t.fg("dim", `${this.current.vendor} · ${this.current.file}`));
-      return [
-        ...head.map((l) => ` ${l}`),
-        t.fg("accent", "─".repeat(Math.max(width, 20))),
-        ...(this.scroll?.render(width) ?? []),
-        t.fg("accent", "─".repeat(Math.max(width, 20))),
-        ` ${t.fg("dim", "esc/q back · j/k scroll · g/G top/end")}`,
-      ];
+      box.addChild(new Text(t.fg("accent", t.bold(this.current.name)), 1));
+      box.addChild(new Text(t.fg("muted", truncate(this.current.description, 400)), 1));
+      box.addChild(new Text(t.fg("dim", `${this.current.vendor} · ${this.current.file}`), 1));
+      box.addChild(border);
+      if (this.scroll) box.addChild(this.scroll);
+      box.addChild(new Text(t.fg("dim", "esc/q back · j/k scroll · g/G top/end"), 1));
+    } else {
+      box.addChild(new Text(t.fg("accent", t.bold("Skills")), 1));
+      box.addChild(new Text(t.fg("dim", `vendored agent skills — search title & description, enter to read`), 1));
+      box.addChild(this.input);
+      box.addChild(this.list);
+      box.addChild(new Text(t.fg("dim", "type to filter · ↑↓ select · enter read · esc close"), 1));
     }
-    return [
-      ` ${t.fg("accent", t.bold("Skills"))}`,
-      ...this.input.render(Math.max(width - 2, 20)).map((line) => ` ${line}`),
-      ...this.list.render(width),
-      ` ${t.fg("dim", "type to search · enter read · esc close")}`,
-    ];
+    box.addChild(border);
+    return box.render(width);
   }
 }
 
@@ -329,7 +310,10 @@ async function openPicker(ctx: ExtensionContext): Promise<void> {
     );
     return;
   }
-  await ctx.ui.custom((_tui, theme, _keybindings, done) => new SkillsPicker(skills, theme, done));
+  await ctx.ui.custom((_tui, theme, _keybindings, done) => new SkillsPicker(skills, theme, done), {
+    overlay: true,
+    overlayOptions: { width: "70%", minWidth: 70, maxHeight: "85%", anchor: "center" },
+  });
 }
 
 export function registerSkills(pi: ExtensionAPI): void {

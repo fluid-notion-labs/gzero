@@ -7,12 +7,16 @@
 // Spec: research/context/pi-plugin.md. Curation policy:
 // research/context/curation.md.
 
+import {
+  DynamicBorder,
+} from "@earendil-works/pi-coding-agent";
 import type {
   ExtensionAPI,
   ExtensionCommandContext,
   Theme,
 } from "@earendil-works/pi-coding-agent";
 import {
+  Container,
   ScrollView,
   Text,
   matchesKey,
@@ -209,13 +213,25 @@ class TierViewer implements Component, Focusable {
 
   render(width: number): string[] {
     const t = this.theme;
+    const border = new DynamicBorder((s) => t.fg("borderMuted", s));
     const tabs = this.sections
       .map((s, i) => {
         const label = ` ${i + 1} ${s.label} `;
         return i === this.tab ? t.fg("accent", t.bold(label)) : t.fg("dim", label);
       })
       .join(t.fg("dim", "│"));
-    return [tabs, t.fg("accent", "─".repeat(Math.max(width, 20))), ...this.scroll.render(width)];
+    const box = new Container();
+    box.addChild(border);
+    box.addChild(new Text(tabs, 1));
+    box.addChild(
+      new Text(
+        t.fg("dim", "the context bag — global, local, skillbag tiers · j/k scroll · esc/q close"),
+        1,
+      ),
+    );
+    box.addChild(border);
+    box.addChild(this.scroll);
+    return box.render(width);
   }
 }
 
@@ -397,6 +413,10 @@ export default function (pi: ExtensionAPI) {
           }
           await ctx.ui.custom(
             (_tui, theme, _keybindings, done) => new TierViewer(sections, theme, done),
+            {
+              overlay: true,
+              overlayOptions: { width: "80%", minWidth: 80, maxHeight: "85%", anchor: "center" },
+            },
           );
         } catch (e) {
           ctx.ui.notify(`Could not load the bag: ${e instanceof Error ? e.message : String(e)}`, "error");
