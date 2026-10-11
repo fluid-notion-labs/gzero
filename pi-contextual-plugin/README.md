@@ -12,16 +12,25 @@ contextual only via MCP — no direct SQLite or hub access.
   re-resolves; `/context add <text>` saves an atom with a confirm dialog
 - alt-s or `/skills` opens the skills picker: type-to-search over the
   vendored `SKILL.md` files (title + description), enter reads the full
-  skill in a scrollable overlay, esc backs out then closes. Skill
-  sources: `$CX_SKILLS_DIRS` (colon-separated), or the contextual repo's
-  `vendor/` next to this plugin / at the known checkout path, or any
-  `vendor/` above the working directory
+  skill in a scrollable overlay, esc backs out then closes; in the detail
+  view ctrl+enter inserts a `#skill:<name>` reference into the composer.
+  Skill sources: `$CX_SKILLS_DIRS` (colon-separated), or the contextual
+  repo's `vendor/` next to this plugin / at the known checkout path, or
+  any `vendor/` above the working directory
+- `#skill` in the composer autocompletes (tab/enter) like `@` does for
+  files: type `#skill` then part of a name, pick one, and the referenced
+  skill's full text is injected into the turn's system prompt
+  (`<skills>` section). Skill discovery is precached on session start;
+  plain `#` hashtags are unaffected — the provider only activates on
+  tokens starting with `#skill`
 - warns on a stale `cx-mcp` (missing tools via `tools/list`)
 - offers to install contextual on first run if `cx-mcp` is missing
 
 Spec: `research/context/pi-plugin.md` (in the explorations repo);
 curation policy: `research/context/curation.md`; skills pipeline and
-hub plan: `research/skills-assay.md`.
+hub plan: `research/skills-assay.md`. Deferred: modal first-open lag
+and related performance work is tracked in the implementation plan
+(`plan.md` M4).
 
 ## Install
 

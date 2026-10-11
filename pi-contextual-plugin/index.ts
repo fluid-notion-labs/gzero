@@ -19,7 +19,15 @@ import {
   type Focusable,
 } from "@earendil-works/pi-tui";
 import { boxFrame, LineWindow, modalViewport, wrapPlain } from "./window.ts";
-import { registerSkills } from "./skills.ts";
+import {
+  extractSkillRefs,
+  getSkillsCache,
+  startDiscovery,
+  ensureSkills,
+  registerSkills,
+  SkillsAutocomplete,
+  skillBody,
+} from "./skills.ts";
 import { execFile, spawn } from "node:child_process";
 
 const REPO = "https://github.com/fluid-notion-labs/contextual";
@@ -238,6 +246,8 @@ export default function (pi: ExtensionAPI) {
   let cxMcpPath: string | null | undefined;
   /** Resolved default context for this session; injected every turn. */
   let resolvedBody: string | null = null;
+  /** The #skill autocomplete stacks once per process; sessions may start more than once. */
+  let autocompleteInstalled = false;
 
   const findCxMcp = async (): Promise<string | null> => {
     if (cxMcpPath === undefined) cxMcpPath = await which("cx-mcp");
@@ -266,6 +276,16 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_start", async (_event, ctx) => {
     resolvedBody = null; // fresh session → resolve again
+    startDiscovery();
+    if (!autocompleteInstalled && ctx.mode === "tui") {
+      autocompleteInstalled = true;
+      ctx.ui.addAutocompleteProvider(
+        (current) => new SkillsAutocomplete(current, () => {
+          const cached = getSkillsCache();
+          return cached.length > 0 ? cached : null;
+        }),
+      );
+    }
     const cxMcp = await findCxMcp();
     if (!cxMcp) {
       if (!ctx.hasUI) {
@@ -317,6 +337,21 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("before_agent_start", async (event) => {
+    // #skill:<name> references in the prompt pull the full skill into this turn.
+    const refs = extractSkillRefs(event.prompt);
+    if (refs.length > 0) {
+      const skills = await ensureSkills();
+      const parts: string[] = [];
+      for (const name of refs) {
+        const entry = skills.find((s) => s.name.toLowerCase() === name);
+        if (entry) parts.push(`## ${entry.name} (${entry.vendor})\n\n${skillBody(entry.file)}`);
+      }
+      if (parts.length > 0) {
+        event.systemPromptOptions.sections["skills"] =
+          `<skills>\nThe user referenced these skills with #skill:<name>; their full instructions are included here.\n\n${parts.join("\n\n")}\n</skills>`;
+      }
+    }
+
     const cxMcp = await findCxMcp();
     if (!cxMcp) return; // offline degradation: no server, AGENTS.md fallback remains
     try {
