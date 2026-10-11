@@ -266,10 +266,7 @@ fn harvest_root(dir: &std::path::Path) -> (std::path::PathBuf, String) {
 }
 
 /// Candidate instruction files at `root` and `dir` (deduped).
-fn candidate_files(
-    root: &std::path::Path,
-    dir: &std::path::Path,
-) -> Vec<std::path::PathBuf> {
+fn candidate_files(root: &std::path::Path, dir: &std::path::Path) -> Vec<std::path::PathBuf> {
     let mut candidates: Vec<std::path::PathBuf> = Vec::new();
     for base in [root, dir] {
         for name in HARVEST_FILES {

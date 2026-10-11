@@ -218,19 +218,25 @@ fn main() {
                 for r in &result.harvested {
                     match &r.stats {
                         None => println!("{}: no bullets — skipped", r.path.display()),
-                        Some(s) => println!("{}: +{} -{} (kept {})", r.path.display(), s.added, s.removed, s.kept),
+                        Some(s) => println!(
+                            "{}: +{} -{} (kept {})",
+                            r.path.display(),
+                            s.added,
+                            s.removed,
+                            s.kept
+                        ),
                     }
                 }
                 for p in &result.taken {
                     println!("{}: imported then deleted (--take)", p.display());
                 }
                 for p in &result.removed {
-                    println!("{}: deleted since last harvest — source retracted", p.display());
+                    println!(
+                        "{}: deleted since last harvest — source retracted",
+                        p.display()
+                    );
                 }
-                println!(
-                    "{} unchanged",
-                    result.unchanged
-                );
+                println!("{} unchanged", result.unchanged);
                 // Hub events: Puts for re-imported atoms, Removes for retracted ones.
                 let mut events: Vec<Event> = Vec::new();
                 let put_texts: std::collections::BTreeSet<String> = result
@@ -255,41 +261,43 @@ fn main() {
                 }
                 try_post_events(&events);
             } else {
-            let results = contextual::harvest_dir(&mut store, &dir)
-                .unwrap_or_else(|e| panic!("cx: harvest: {e}"));
-            if results.is_empty() {
-                println!(
-                    "(no instruction files found: {})",
-                    contextual::HARVEST_FILES.join(", ")
-                );
-            }
-            for r in results {
-                let rel = r
-                    .path
-                    .strip_prefix(&dir)
-                    .unwrap_or(&r.path)
-                    .display()
-                    .to_string();
-                match r.stats {
-                    None => println!("{rel}: no bullets — skipped (pointer stubs are protected)"),
-                    Some(s) => {
-                        println!("{rel}: +{} -{} (kept {})", s.added, s.removed, s.kept);
-                        let events: Vec<Event> = r
-                            .atoms
-                            .into_iter()
-                            .map(|a| Event::Put {
-                                atom: Atom {
-                                    text: a.text,
-                                    scope: a.scope,
-                                    node: a.node,
-                                    tags: a.tags,
-                                },
-                            })
-                            .collect();
-                        try_post_events(&events);
+                let results = contextual::harvest_dir(&mut store, &dir)
+                    .unwrap_or_else(|e| panic!("cx: harvest: {e}"));
+                if results.is_empty() {
+                    println!(
+                        "(no instruction files found: {})",
+                        contextual::HARVEST_FILES.join(", ")
+                    );
+                }
+                for r in results {
+                    let rel = r
+                        .path
+                        .strip_prefix(&dir)
+                        .unwrap_or(&r.path)
+                        .display()
+                        .to_string();
+                    match r.stats {
+                        None => {
+                            println!("{rel}: no bullets — skipped (pointer stubs are protected)")
+                        }
+                        Some(s) => {
+                            println!("{rel}: +{} -{} (kept {})", s.added, s.removed, s.kept);
+                            let events: Vec<Event> = r
+                                .atoms
+                                .into_iter()
+                                .map(|a| Event::Put {
+                                    atom: Atom {
+                                        text: a.text,
+                                        scope: a.scope,
+                                        node: a.node,
+                                        tags: a.tags,
+                                    },
+                                })
+                                .collect();
+                            try_post_events(&events);
+                        }
                     }
                 }
-            }
             }
         }
         "rm-source" => {
