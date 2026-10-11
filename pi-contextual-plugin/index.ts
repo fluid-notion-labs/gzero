@@ -34,6 +34,13 @@ import {
   type SkillEntry,
 } from "./skills.ts";
 import { registerReview, type ReviewDeps } from "./review.ts";
+import {
+  ensureWorkstyles,
+  extractWorkstyleRefs,
+  findEntry,
+  peekWorkstyles,
+  registerWorkstyles,
+} from "./workstyles.ts";
 import { execFile, spawn } from "node:child_process";
 
 const REPO = "https://github.com/fluid-notion-labs/contextual";
@@ -459,6 +466,37 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("before_agent_start", async (event, ctx) => {
+    // Workstyle directives enter a turn via ##workstyle.key codes in the
+    // prompt; the parenthetical (extra info for this repo/message) stays in
+    // the prompt, the directive text is injected as a section.
+    const codeRefs = extractWorkstyleRefs(event.prompt);
+    if (codeRefs.length > 0) {
+      const cxMcpForCodes = await findCxMcp();
+      if (cxMcpForCodes) {
+        try {
+          const entries = await ensureWorkstyles(cxMcpForCodes, mcpCall);
+          const parts: string[] = [];
+          const missing: string[] = [];
+          for (const ref of codeRefs) {
+            const entry = findEntry(entries, ref);
+            if (entry) {
+              parts.push(`## ${entry.workstyle}.${entry.key}\n\n${entry.text}`);
+            } else if (peekWorkstyles().length > 0) {
+              missing.push(`##${ref.workstyle}.${ref.key}`);
+            }
+          }
+          if (parts.length > 0) {
+            event.systemPromptOptions.sections["workstyles"] =
+              `<workstyles>\nDirectives referenced as ##workstyle.key in this message; their full instructions follow. Anything in parentheses after a code is extra info for this repo/message, not part of the directive.\n\n${parts.join("\n\n")}\n</workstyles>`;
+          }
+          if (missing.length > 0) {
+            ctx.ui.notify(`Unknown workstyle code${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}`, "warning");
+          }
+        } catch {
+          // resolve failed → leave codes visible; the model can use MCP search
+        }
+      }
+    }
     // Skills enter a turn two ways: loaded via enter in the picker detail view
     // (every turn of the session) and referenced as #skill:<name> in the
     // prompt (that turn). Both are injected; both distill into the skillbag.
@@ -640,5 +678,6 @@ export default function (pi: ExtensionAPI) {
   });
 
   registerSkills(pi);
+  registerWorkstyles(pi, { findCxMcp, mcpCall });
   registerReview(pi, { findCxMcp, mcpCall } satisfies ReviewDeps);
 }
