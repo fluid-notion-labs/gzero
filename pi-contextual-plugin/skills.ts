@@ -412,13 +412,23 @@ class SkillsPicker implements Component {
     this.bodyCache = null;
   }
 
+  /** Ctrl+Enter in all terminal encodings: kitty/CSI report it directly;
+   * legacy terminals send LF, which matches only ctrl+j (and return). */
+  private isReferenceKey(data: string): boolean {
+    return (
+      matchesKey(data, "ctrl+return") ||
+      matchesKey(data, "ctrl+enter") ||
+      matchesKey(data, "ctrl+j")
+    );
+  }
+
   handleInput(data: string): void {
     if (this.mode === "detail") {
       if (matchesKey(data, "escape") || matchesKey(data, "q")) {
         this.backToList();
         return;
       }
-      if (matchesKey(data, "ctrl+return") || matchesKey(data, "ctrl+enter")) {
+      if (this.isReferenceKey(data)) {
         if (this.current) this.done(`#skill:${this.current.name} `);
         return;
       }
@@ -443,6 +453,13 @@ class SkillsPicker implements Component {
       matchesKey(data, "pageDown")
     ) {
       this.list.handleInput(data);
+      return;
+    }
+    if (this.isReferenceKey(data)) {
+      // Reference from the list itself: use the current selection.
+      const sel = this.list.getSelectedItem();
+      const entry = sel ? this.byValue.get(sel.value) : undefined;
+      if (entry) this.done(`#skill:${entry.name} `);
       return;
     }
     if (matchesKey(data, "return")) {
@@ -487,7 +504,7 @@ class SkillsPicker implements Component {
       ...new Text(t.fg("dim", "vendored agent skills — search title & description, enter to read"), 1).render(inner),
       ...this.input.render(Math.max(inner - 2, 20)).map((line) => ` ${line}`),
       ...this.list.render(inner),
-      ...new Text(t.fg("dim", "type to filter · ↑↓ select · enter read · esc close"), 1).render(inner),
+      ...new Text(t.fg("dim", "type to filter · ↑↓ select · enter read · ctrl+↵ reference · esc close"), 1).render(inner),
     ], rail);
   }
 }

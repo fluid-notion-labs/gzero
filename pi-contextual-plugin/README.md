@@ -12,8 +12,11 @@ contextual only via MCP — no direct SQLite or hub access.
   re-resolves; `/context add <text>` saves an atom with a confirm dialog
 - alt-s or `/skills` opens the skills picker: type-to-search over the
   vendored `SKILL.md` files (title + description), enter reads the full
-  skill in a scrollable overlay, esc backs out then closes; in the detail
-  view ctrl+enter inserts a `#skill:<name>` reference into the composer.
+  skill in a scrollable overlay, esc backs out then closes. Ctrl+enter
+  inserts a `#skill:<name>` reference into the composer, from both the
+  search list and the detail view. Note: terminals without the Kitty
+  keyboard protocol send ctrl+enter as LF, which the picker treats as
+  the reference key (plain enter still opens the detail view).
   Skill sources: `$CX_SKILLS_DIRS` (colon-separated), or the contextual
   repo's `vendor/` next to this plugin / at the known checkout path, or
   any `vendor/` above the working directory
