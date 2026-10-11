@@ -16,6 +16,7 @@ import type {
 import {
   Text,
   matchesKey,
+  visibleWidth,
   type Component,
   type Focusable,
 } from "@earendil-works/pi-tui";
@@ -130,44 +131,71 @@ async function mcpTools(cxMcp: string): Promise<string[]> {
 /** Framing block injected before the resolved atoms (curation.md §4). */
 const PREAMBLE = `The context below is persistent memory: carried across sessions and machines, present in every session. Tagged knowledge is not shown here — when the user names technologies or domains, pull it via mcp__context__resolve with tags; discover hashtags with search. Facts that belong here apply to every session; task-specific learnings get tags instead. When saving: declarative facts, never imperatives to yourself; batch changes; consolidate rather than skip.`;
 
-interface TierSection {
+interface TierNode {
+  /** Section label within the tier, e.g. "git" or "jj-skills/jj-workflow". */
   label: string;
   text: string;
+}
+
+interface TierSection {
+  label: string;
+  nodes: TierNode[];
 }
 
 /**
  * Split rendered atoms into the three browsable tiers by scope header:
  * `# global/…` → global, `# skills/…` → skillbag, everything else → local
- * (the project tier, whatever its repo identity is).
+ * (the project tier, whatever its repo identity is). Each tier is a list
+ * of named sections (the nodes) so the viewer can offer a second menu
+ * level below the three top-level tabs.
  */
 export function bucketTiers(rendered: string): TierSection[] {
-  const buckets: Record<string, string[]> = { global: [], local: [], skillbag: [] };
-  let current: string[] = buckets.local;
+  const tiers: Record<string, TierNode[]> = { global: [], local: [], skillbag: [] };
+  let tier: keyof typeof tiers = "local";
+  let current: TierNode | null = null;
   for (const line of rendered.split("\n")) {
     if (line.startsWith("# ")) {
-      const scope = line.slice(2).split("/")[0].toLowerCase();
-      current = buckets[scope === "global" ? "global" : scope === "skills" ? "skillbag" : "local"];
+      const header = line.slice(2);
+      const first = header.split("/")[0].toLowerCase();
+      tier = first === "global" ? "global" : first === "skills" ? "skillbag" : "local";
+      // Section label drops the tier prefix ("global/", "skills/"); local
+      // keeps the full header since its scope is the repo identity.
+      const label = tier === "local" ? header : header.slice("global/".length);
+      current = { label, text: "" };
+      tiers[tier].push(current);
+      continue;
     }
-    current.push(line);
+    if (!current) {
+      current = { label: "(start)", text: "" };
+      tiers[tier].push(current);
+    }
+    current.text += (current.text ? "\n" : "") + line;
   }
-  return ([
-    { label: "global", text: buckets.global.join("\n").trim() },
-    { label: "local", text: buckets.local.join("\n").trim() },
-    { label: "skillbag", text: buckets.skillbag.join("\n").trim() },
-  ]);
+  for (const key of Object.keys(tiers) as (keyof typeof tiers)[]) {
+    for (const n of tiers[key]) n.text = n.text.trim();
+  }
+  return [
+    { label: "global", nodes: tiers.global },
+    { label: "local", nodes: tiers.local },
+    { label: "skillbag", nodes: tiers.skillbag },
+  ];
 }
 
 /**
- * Read-only overlay viewer for the bag, tabbed by tier: global (always
- * active), local (project), skillbag (the distilled skills). 1/2/3 or
- * tab/←→ switch tabs; j/k scroll; esc/q close.
+ * Read-only overlay viewer for the bag with two navigation levels: the
+ * three tier tabs (global / local / skillbag) and, below them, a menu of
+ * the sections within the active tier. ←→ walk the flattened structure
+ * (tier "all" → its sections → next tier); ↑↓ cycle sections within the
+ * tier; j/k scroll the content; 1/2/3 jump to a tier; esc/q close.
  */
 class TierViewer implements Component, Focusable {
   focused = false;
   private tab = 0;
+  /** 0 = all sections of the tier, 1..n = a specific section. */
+  private sub = 0;
   private window = new LineWindow(modalViewport());
-  /** Wrapped lines of the active tab, cached per (tab, width). */
-  private lineCache: { tab: number; width: number; lines: string[] } | null = null;
+  /** Wrapped lines of the active view, cached per (tab, sub, width). */
+  private lineCache: { tab: number; sub: number; width: number; lines: string[] } | null = null;
 
   constructor(
     private sections: TierSection[],
@@ -177,41 +205,83 @@ class TierViewer implements Component, Focusable {
 
   invalidate(): void {}
 
-  /** Lines of the active tab, wrapped to the current width. */
+  private nodes(): TierNode[] {
+    return this.sections[this.tab]?.nodes ?? [];
+  }
+
+  /** Lines of the active view, wrapped to the current width. */
   private contentLines(width: number): string[] {
-    if (this.lineCache && this.lineCache.tab === this.tab && this.lineCache.width === width) {
+    if (
+      this.lineCache &&
+      this.lineCache.tab === this.tab &&
+      this.lineCache.sub === this.sub &&
+      this.lineCache.width === width
+    ) {
       return this.lineCache.lines;
     }
-    const text = this.sections[this.tab]?.text || "(empty)";
-    const lines = wrapPlain(text, Math.max(width - 2, 20));
-    this.lineCache = { tab: this.tab, width, lines };
+    const nodes = this.nodes();
+    const text =
+      this.sub === 0
+        ? nodes.map((n) => n.text).join("\n\n")
+        : (nodes[this.sub - 1]?.text ?? "(empty)");
+    const lines = wrapPlain(text || "(empty)", Math.max(width - 2, 20));
+    this.lineCache = { tab: this.tab, sub: this.sub, width, lines };
     this.window.setLines(lines);
     return lines;
   }
 
-  private switchTo(tab: number) {
-    if (tab === this.tab || tab < 0 || tab >= this.sections.length) return;
+  private setPosition(tab: number, sub: number) {
     this.tab = tab;
+    this.sub = sub;
     this.lineCache = null;
     this.window.scrollToStart();
+  }
+
+  /** Flattened navigation order: each tier's "all" followed by its sections. */
+  private flatPositions(): { tab: number; sub: number }[] {
+    const out: { tab: number; sub: number }[] = [];
+    this.sections.forEach((s, i) => {
+      out.push({ tab: i, sub: 0 });
+      s.nodes.forEach((_, j) => out.push({ tab: i, sub: j + 1 }));
+    });
+    return out;
+  }
+
+  private moveFlat(delta: number) {
+    const flat = this.flatPositions();
+    const idx = flat.findIndex((p) => p.tab === this.tab && p.sub === this.sub);
+    const next = flat[(idx + delta + flat.length) % flat.length];
+    this.setPosition(next.tab, next.sub);
+  }
+
+  /** Cycle sections within the active tier, "all" included. */
+  private moveSub(delta: number) {
+    const count = this.nodes().length + 1;
+    this.setPosition(this.tab, (this.sub + delta + count) % count);
   }
 
   handleInput(data: string): void {
     if (matchesKey(data, "escape") || matchesKey(data, "q")) {
       this.done();
     } else if (matchesKey(data, "1")) {
-      this.switchTo(0);
+      this.setPosition(0, 0);
     } else if (matchesKey(data, "2")) {
-      this.switchTo(1);
+      this.setPosition(1, 0);
     } else if (matchesKey(data, "3")) {
-      this.switchTo(2);
-    } else if (matchesKey(data, "tab") || matchesKey(data, "right")) {
-      this.switchTo((this.tab + 1) % this.sections.length);
+      this.setPosition(2, 0);
+    } else if (matchesKey(data, "tab")) {
+      this.setPosition((this.tab + 1) % this.sections.length, 0);
+    } else if (matchesKey(data, "right")) {
+      this.moveFlat(1);
     } else if (matchesKey(data, "left")) {
-      this.switchTo((this.tab + this.sections.length - 1) % this.sections.length);
-    } else if (matchesKey(data, "up") || matchesKey(data, "k")) {
+      this.moveFlat(-1);
+    } else if (matchesKey(data, "down")) {
+      this.moveSub(1);
+    } else if (matchesKey(data, "up")) {
+      this.moveSub(-1);
+    } else if (matchesKey(data, "k")) {
       this.window.scrollBy(-3);
-    } else if (matchesKey(data, "down") || matchesKey(data, "j")) {
+    } else if (matchesKey(data, "j")) {
       this.window.scrollBy(3);
     } else if (matchesKey(data, "pageUp")) {
       this.window.scrollBy(-20);
@@ -226,23 +296,62 @@ class TierViewer implements Component, Focusable {
     }
   }
 
+  /** Horizontal rule, optionally titled. */
+  private divider(width: number, title?: string): string {
+    const t = this.theme;
+    if (!title) return t.fg("borderMuted", "─".repeat(width));
+    const head = "── ";
+    const tail = Math.max(0, width - head.length - title.length - 1);
+    return t.fg("borderMuted", head) + t.fg("accent", title) + t.fg("borderMuted", " " + "─".repeat(tail));
+  }
+
+  /** The section menu for the active tier, wrapped to the inner width. */
+  private subMenuLines(inner: number): string[] {
+    const t = this.theme;
+    const parts: { label: string; idx: number }[] = [
+      { label: "all", idx: 0 },
+      ...this.nodes().map((n, i) => ({ label: n.label, idx: i + 1 })),
+    ];
+    const lines: string[] = [];
+    let line = "";
+    for (const p of parts) {
+      const label = p.label.length > 26 ? `${p.label.slice(0, 25)}…` : p.label;
+      const styled =
+        p.idx === this.sub ? t.fg("accent", t.bold(` ${label} `)) : t.fg("dim", ` ${label} `);
+      const sep = line ? t.fg("dim", "│") : "";
+      const candidate = line + sep + styled;
+      if (line && visibleWidth(candidate) > inner) {
+        lines.push(line);
+        line = styled;
+      } else {
+        line = candidate;
+      }
+    }
+    if (line) lines.push(line);
+    return lines.length > 0 ? lines : [t.fg("dim", " (no sections)")];
+  }
+
   render(width: number): string[] {
     const t = this.theme;
     const inner = Math.max(width - 2, 20);
     this.contentLines(width); // refresh cache + window bounds for this width
     const pos = this.window.scrollable ? ` · ${Math.round(this.window.position * 100)}%` : "";
+    const tier = this.sections[this.tab];
     const tabs = this.sections
       .map((s, i) => {
         const label = ` ${i + 1} ${s.label} `;
         return i === this.tab ? t.fg("accent", t.bold(label)) : t.fg("dim", label);
       })
       .join(t.fg("dim", "│"));
+    const viewTitle = this.sub === 0 ? tier?.label : this.nodes()[this.sub - 1]?.label;
     return boxFrame(width, [
       ...new Text(tabs, 1).render(inner),
-      ...new Text(t.fg("dim", "the context bag — global, local, skillbag tiers · j/k scroll · esc/q close"), 1).render(inner),
-      "",
+      this.divider(inner, tier?.label),
+      ...this.subMenuLines(inner).map((l) => ` ${l}`),
+      this.divider(inner),
       ...this.window.render().map((line) => ` ${line}`),
-      ...new Text(t.fg("dim", `1/2/3 or ←→ tabs · j/k scroll${pos} · esc/q close`), 1).render(inner),
+      this.divider(inner, viewTitle),
+      ...new Text(t.fg("dim", `←→ tier/section · ↑↓ section · j/k scroll${pos} · esc/q close`), 1).render(inner),
     ], (s) => t.fg("borderMuted", s));
   }
 }
@@ -504,7 +613,7 @@ export default function (pi: ExtensionAPI) {
       if (ctx.mode === "tui") {
         try {
           const rendered = await mcpCall(cxMcp, "resolve", { scope_prefix: "" });
-          const sections = bucketTiers(rendered).filter((s) => s.text);
+          const sections = bucketTiers(rendered).filter((s) => s.nodes.length > 0);
           if (sections.length === 0) {
             ctx.ui.notify("The bag is empty — /context add to start it", "info");
             return;
