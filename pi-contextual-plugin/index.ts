@@ -16,13 +16,12 @@ import type {
   Theme,
 } from "@earendil-works/pi-coding-agent";
 import {
-  Container,
-  ScrollView,
   Text,
   matchesKey,
   type Component,
   type Focusable,
 } from "@earendil-works/pi-tui";
+import { LineWindow, modalViewport, wrapPlain } from "./window.ts";
 import { registerSkills } from "./skills.ts";
 import { execFile, spawn } from "node:child_process";
 
@@ -156,29 +155,35 @@ export function bucketTiers(rendered: string): TierSection[] {
 class TierViewer implements Component, Focusable {
   focused = false;
   private tab = 0;
-  private scroll: ScrollView;
+  private window = new LineWindow(modalViewport());
+  /** Wrapped lines of the active tab, cached per (tab, width). */
+  private lineCache: { tab: number; width: number; lines: string[] } | null = null;
 
   constructor(
     private sections: TierSection[],
     private theme: Theme,
     private done: (result?: unknown) => void,
-  ) {
-    this.scroll = this.makeScroll();
-  }
+  ) {}
 
-  invalidate(): void {
-    this.scroll.invalidate();
-  }
+  invalidate(): void {}
 
-  private makeScroll(): ScrollView {
+  /** Lines of the active tab, wrapped to the current width. */
+  private contentLines(width: number): string[] {
+    if (this.lineCache && this.lineCache.tab === this.tab && this.lineCache.width === width) {
+      return this.lineCache.lines;
+    }
     const text = this.sections[this.tab]?.text || "(empty)";
-    return new ScrollView(new Text(text, 1, 1), { scrollbar: "auto" });
+    const lines = wrapPlain(text, Math.max(width - 2, 20));
+    this.lineCache = { tab: this.tab, width, lines };
+    this.window.setLines(lines);
+    return lines;
   }
 
   private switchTo(tab: number) {
     if (tab === this.tab || tab < 0 || tab >= this.sections.length) return;
     this.tab = tab;
-    this.scroll = this.makeScroll();
+    this.lineCache = null;
+    this.window.scrollToStart();
   }
 
   handleInput(data: string): void {
@@ -195,43 +200,42 @@ class TierViewer implements Component, Focusable {
     } else if (matchesKey(data, "left")) {
       this.switchTo((this.tab + this.sections.length - 1) % this.sections.length);
     } else if (matchesKey(data, "up") || matchesKey(data, "k")) {
-      this.scroll.scrollBy(-3);
+      this.window.scrollBy(-3);
     } else if (matchesKey(data, "down") || matchesKey(data, "j")) {
-      this.scroll.scrollBy(3);
+      this.window.scrollBy(3);
     } else if (matchesKey(data, "pageUp")) {
-      this.scroll.scrollBy(-20);
+      this.window.scrollBy(-20);
     } else if (matchesKey(data, "pageDown")) {
-      this.scroll.scrollBy(20);
+      this.window.scrollBy(20);
     } else if (matchesKey(data, "home")) {
-      this.scroll.scrollToStart();
+      this.window.scrollToStart();
     } else if (matchesKey(data, "end") || data === "G") {
-      this.scroll.scrollToEnd();
+      this.window.scrollToEnd();
     } else if (matchesKey(data, "g")) {
-      this.scroll.scrollToStart();
+      this.window.scrollToStart();
     }
   }
 
   render(width: number): string[] {
     const t = this.theme;
-    const border = new DynamicBorder((s) => t.fg("borderMuted", s));
+    const border = () => new DynamicBorder((s) => t.fg("borderMuted", s)).render(width);
+    this.contentLines(width); // refresh cache + window bounds for this width
+    const pos = this.window.scrollable ? ` · ${Math.round(this.window.position * 100)}%` : "";
     const tabs = this.sections
       .map((s, i) => {
         const label = ` ${i + 1} ${s.label} `;
         return i === this.tab ? t.fg("accent", t.bold(label)) : t.fg("dim", label);
       })
       .join(t.fg("dim", "│"));
-    const box = new Container();
-    box.addChild(border);
-    box.addChild(new Text(tabs, 1));
-    box.addChild(
-      new Text(
-        t.fg("dim", "the context bag — global, local, skillbag tiers · j/k scroll · esc/q close"),
-        1,
-      ),
-    );
-    box.addChild(border);
-    box.addChild(this.scroll);
-    return box.render(width);
+    return [
+      ...border(),
+      ...new Text(tabs, 1).render(width),
+      ...new Text(t.fg("dim", "the context bag — global, local, skillbag tiers · j/k scroll · esc/q close"), 1).render(width),
+      ...border(),
+      ...this.window.render(),
+      ...new Text(t.fg("dim", `1/2/3 or ←→ tabs · j/k scroll${pos} · esc/q close`), 1).render(width),
+      ...border(),
+    ];
   }
 }
 

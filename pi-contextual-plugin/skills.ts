@@ -11,16 +11,15 @@ import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { DynamicBorder } from "@earendil-works/pi-coding-agent";
 import {
-  Container,
   Input,
   Key,
-  ScrollView,
   SelectList,
   Text,
   matchesKey,
   type Component,
   type SelectItem,
 } from "@earendil-works/pi-tui";
+import { LineWindow, modalViewport, wrapPlain } from "./window.ts";
 
 interface SkillEntry {
   name: string;
@@ -174,7 +173,9 @@ class SkillsPicker implements Component {
   private list: SelectList;
   private byValue = new Map<string, SkillEntry>();
   private current: SkillEntry | null = null;
-  private scroll: ScrollView | null = null;
+  private window = new LineWindow(modalViewport());
+  /** Wrapped detail body, cached per (file, width). */
+  private bodyCache: { file: string; width: number; lines: string[] } | null = null;
 
   constructor(
     private entries: SkillEntry[],
@@ -219,14 +220,15 @@ class SkillsPicker implements Component {
 
   private openDetail(entry: SkillEntry) {
     this.current = entry;
-    this.scroll = new ScrollView(new Text(skillBody(entry.file), 1, 1), { scrollbar: "auto" });
+    this.bodyCache = null;
+    this.window = new LineWindow(modalViewport());
     this.mode = "detail";
   }
 
   private backToList() {
     this.mode = "list";
-    this.scroll = null;
     this.current = null;
+    this.bodyCache = null;
   }
 
   handleInput(data: string): void {
@@ -235,7 +237,7 @@ class SkillsPicker implements Component {
         this.backToList();
         return;
       }
-      const s = this.scroll!;
+      const s = this.window;
       if (matchesKey(data, "up") || matchesKey(data, "k")) s.scrollBy(-3);
       else if (matchesKey(data, "down") || matchesKey(data, "j")) s.scrollBy(3);
       else if (matchesKey(data, "pageUp") || matchesKey(data, "b")) s.scrollBy(-20);
@@ -270,30 +272,43 @@ class SkillsPicker implements Component {
 
   invalidate(): void {
     this.list.invalidate();
-    this.scroll?.invalidate();
   }
 
   render(width: number): string[] {
     const t = this.theme;
-    const border = new DynamicBorder((s) => t.fg("borderMuted", s));
-    const box = new Container();
-    box.addChild(border);
+    const border = () => new DynamicBorder((s) => t.fg("borderMuted", s)).render(width);
     if (this.mode === "detail" && this.current) {
-      box.addChild(new Text(t.fg("accent", t.bold(this.current.name)), 1));
-      box.addChild(new Text(t.fg("muted", truncate(this.current.description, 400)), 1));
-      box.addChild(new Text(t.fg("dim", `${this.current.vendor} · ${this.current.file}`), 1));
-      box.addChild(border);
-      if (this.scroll) box.addChild(this.scroll);
-      box.addChild(new Text(t.fg("dim", "esc/q back · j/k scroll · g/G top/end"), 1));
-    } else {
-      box.addChild(new Text(t.fg("accent", t.bold("Skills")), 1));
-      box.addChild(new Text(t.fg("dim", `vendored agent skills — search title & description, enter to read`), 1));
-      box.addChild(this.input);
-      box.addChild(this.list);
-      box.addChild(new Text(t.fg("dim", "type to filter · ↑↓ select · enter read · esc close"), 1));
+      if (!this.bodyCache || this.bodyCache.file !== this.current.file || this.bodyCache.width !== width) {
+        this.bodyCache = {
+          file: this.current.file,
+          width,
+          lines: wrapPlain(skillBody(this.current.file), Math.max(width - 2, 20)),
+        };
+        this.window.setLines(this.bodyCache.lines);
+      }
+      const pos = this.window.scrollable
+        ? ` · ${Math.round(this.window.position * 100)}%`
+        : "";
+      return [
+        ...border(),
+        ...new Text(t.fg("accent", t.bold(this.current.name)), 1).render(width),
+        ...new Text(t.fg("muted", truncate(this.current.description, 400)), 1).render(width),
+        ...new Text(t.fg("dim", `${this.current.vendor} · ${this.current.file}`), 1).render(width),
+        ...border(),
+        ...this.window.render(),
+        ...new Text(t.fg("dim", `esc/q back · j/k scroll · g/G top/end${pos}`), 1).render(width),
+        ...border(),
+      ];
     }
-    box.addChild(border);
-    return box.render(width);
+    return [
+      ...border(),
+      ...new Text(t.fg("accent", t.bold("Skills")), 1).render(width),
+      ...new Text(t.fg("dim", "vendored agent skills — search title & description, enter to read"), 1).render(width),
+      ...this.input.render(Math.max(width - 2, 20)).map((line) => ` ${line}`),
+      ...this.list.render(width),
+      ...new Text(t.fg("dim", "type to filter · ↑↓ select · enter read · esc close"), 1).render(width),
+      ...border(),
+    ];
   }
 }
 
