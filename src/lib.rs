@@ -303,6 +303,18 @@ pub fn resolve_tiers(
     Ok(items)
 }
 
+/// Browse view: every alive atom whose scope starts with `prefix`,
+/// ignoring tier defaults — for inspection UIs, not injection. An empty
+/// prefix returns the whole bag.
+pub fn scope_atoms(store: &dyn Storage, prefix: &str) -> Result<Vec<(String, Row)>> {
+    let mut items: Vec<(String, Row)> = alive(store)?
+        .into_iter()
+        .filter(|(_, r)| r.scope.starts_with(prefix))
+        .collect();
+    items.sort_by(|a, b| (&a.1.scope, &a.1.node, &a.0).cmp(&(&b.1.scope, &b.1.node, &b.0)));
+    Ok(items)
+}
+
 /// Find alive atoms by case-insensitive text match — how an agent
 /// discovers which hashtags exist when the user names a technology.
 pub fn search(store: &dyn Storage, needle: &str) -> Result<Vec<(String, Row)>> {

@@ -20,6 +20,12 @@ repos:
       - { path: executing-plans, tags: [planning] }
       - { path: verification-before-completion, tags: [verification] }
       - { path: using-git-worktrees, tags: [git] }
+      - { path: brainstorming, tags: [planning] }
+      - { path: dispatching-parallel-agents, tags: [agents, planning] }
+      - { path: subagent-driven-development, tags: [agents, planning] }
+      - { path: finishing-a-development-branch, tags: [git] }
+      - { path: using-superpowers, tags: [skills, meta] }
+      - { path: writing-skills, tags: [skills, meta] }
 
   - repo: addyosmani/agent-skills
     skills:
@@ -44,6 +50,34 @@ repos:
       - { path: devops-engineer, tags: [devops] }
       - { path: fastapi-expert, tags: [python, api] }
       - { path: django-expert, tags: [python] }
+      - { path: python-pro, tags: [python] }
+      - { path: rust-engineer, tags: [rust] }
+      - { path: typescript-pro, tags: [typescript] }
+      - { path: javascript-pro, tags: [javascript] }
+      - { path: react-expert, tags: [frontend, react] }
+      - { path: nextjs-developer, tags: [frontend, nextjs] }
+      - { path: playwright-expert, tags: [testing, web] }
+      - { path: test-master, tags: [testing] }
+      - { path: postgres-pro, tags: [database, postgres] }
+      - { path: sql-pro, tags: [database] }
+      - { path: kubernetes-specialist, tags: [kubernetes, devops] }
+      - { path: terraform-engineer, tags: [terraform, devops] }
+      - { path: monitoring-expert, tags: [monitoring, devops] }
+      - { path: microservices-architect, tags: [architecture] }
+      - { path: spec-miner, tags: [architecture, spec] }
+      - { path: code-documenter, tags: [docs] }
+      - { path: security-reviewer, tags: [security, code-review] }
+      - { path: mcp-developer, tags: [mcp] }
+      - { path: prompt-engineer, tags: [prompting] }
+      - { path: the-fool, tags: [decision, review] }
+
+  - repo: HotThoughts/jj-skills
+    skills:
+      - { path: jj-workflow, tags: [jj, vcs] }
+      - { path: jj-cleanup, tags: [jj, vcs] }
+      - { path: jj-create-pr, tags: [jj, vcs, github] }
+      - { path: jj-update-pr, tags: [jj, vcs, github] }
+      - { path: jj-gh-stack, tags: [jj, vcs, github] }
 
   - repo: anthropics/skills
     skills:
@@ -51,3 +85,10 @@ repos:
       - { path: webapp-testing, tags: [testing, web] }
       - { path: frontend-design, tags: [frontend, design] }
       - { path: skill-creator, tags: [skills, meta] }
+      - { path: claude-api, tags: [claude, api] }
+      - { path: web-artifacts-builder, tags: [frontend, web] }
+      - { path: doc-coauthoring, tags: [docs, writing] }
+      - { path: docx, tags: [documents] }
+      - { path: pdf, tags: [documents] }
+      - { path: pptx, tags: [documents] }
+      - { path: xlsx, tags: [documents] }

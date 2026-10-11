@@ -63,6 +63,53 @@ Hybrid, staged:
 
 - ✅ vendored: `anthropics/skills`, `obra/superpowers`,
   `addyosmani/agent-skills`, `Jeffallan/claude-skills`,
-  `ComposioHQ/awesome-claude-skills`
-- ⬜ converter: `SKILL.md` → pack atoms (distilled + hashtags + file pointer)
-- ⬜ first distilled pack to validate the pipeline (probably superpowers TDD)
+  `ComposioHQ/awesome-claude-skills` (noise), `HotThoughts/jj-skills`
+- ✅ converter: `tools/skills/pull.py` + `tools/skills/skills.yaml` —
+  clones repos to `vendor/`, distills listed skills to terse tagged atoms
+  in `packs/`, imports via `cx add` (per-source sync, idempotent)
+- ✅ in the bag: ~65 skills across 6 vendors (~400 atoms; `#jj`, `#rust`,
+  `#testing`, `#devops`, `#documents`, …)
+- ✅ pi plugin: alt-s / `/skills` picker — search title+description over
+  the vendored SKILL.md files, read the full skill in an overlay
+- ⬜ skills hub (below): serve packs from contexture-hub instead of
+  per-machine GitHub clones
+
+## Skills hub (planned service)
+
+Today the pipeline is local-only: `pull.py` clones GitHub repos into
+`vendor/`, distills to `packs/`, imports via `cx add`. The hub step moves
+distribution to contexture-hub — the same Cloudflare Worker that already
+syncs atoms via `CX_HUB_URL`/`CX_TOKEN` (`src/hub.rs`: `/events` put,
+`/snapshot` fetch, `cx pull`/`cx push`) — so skills travel with the bag
+across machines and the hub becomes the canonical source for both atoms
+and skills.
+
+Design, staged:
+
+1. **Serve packs (read path).** New worker routes, keyed like bag
+   sources:
+   - `GET /skills` — index: `[{vendor, skills, tags, updated}]`
+   - `GET /skills/<vendor>.md` — the distilled pack (exactly what
+     `pull.py` writes into `packs/`), imported by `cx add` on arrival
+   - `GET /skills/<vendor>/<skill>.md` — raw `SKILL.md`, fetched on
+     demand when someone reads the depth
+   Auth: bearer `CX_TOKEN`, same as atom sync. Unset env degrades to
+   today's local-only path.
+2. **`pull.py` gains a hub source.** `skills.yaml` entries get
+   `source: github | hub` (default github). Hub entries skip cloning:
+   fetch the pack, import it, and cache `SKILL.md` bodies into `vendor/`
+   lazily for the alt-s picker. Same per-source sync and hub event
+   posting as now, so `cx pull` on another machine picks up the atoms
+   for free.
+3. **Publishing (write path).** `cx skills publish <dir-or-pack>` posts
+   the pack + SKILL.md artifacts; the hub validates frontmatter
+   (`name`, `description`) and hashtags. This is how bespoke skills —
+   ours, not a vendor's — reach every machine without a GitHub detour.
+4. **pi plugin.** The alt-s picker prefers local `vendor/` and falls
+   back to hub search on open (or a manual refresh), so a fresh machine
+   can browse and pull before anything is vendored locally.
+
+Non-goals: hosting skill *execution*. Skills are documents; the hub is
+distribution + tags. The bag stays terse, depth stays on demand, and
+licensing (MIT vs source-available, see above) stays visible in the
+index so pulls remain deliberate.

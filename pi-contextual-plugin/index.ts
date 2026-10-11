@@ -19,6 +19,7 @@ import {
   type Component,
   type Focusable,
 } from "@earendil-works/pi-tui";
+import { registerSkills } from "./skills.ts";
 import { execFile, spawn } from "node:child_process";
 
 const REPO = "https://github.com/fluid-notion-labs/contextual";
@@ -116,32 +117,105 @@ async function mcpTools(cxMcp: string): Promise<string[]> {
 /** Framing block injected before the resolved atoms (curation.md §4). */
 const PREAMBLE = `The context below is persistent memory: carried across sessions and machines, present in every session. Tagged knowledge is not shown here — when the user names technologies or domains, pull it via mcp__context__resolve with tags; discover hashtags with search. Facts that belong here apply to every session; task-specific learnings get tags instead. When saving: declarative facts, never imperatives to yourself; batch changes; consolidate rather than skip.`;
 
-/** Read-only overlay viewer for the injected context. */
-class ContextViewer implements Focusable {
-  readonly width = 84;
+interface TierSection {
+  label: string;
+  text: string;
+}
+
+/**
+ * Split rendered atoms into the three browsable tiers by scope header:
+ * `# global/…` → global, `# skills/…` → skillbag, everything else → local
+ * (the project tier, whatever its repo identity is).
+ */
+export function bucketTiers(rendered: string): TierSection[] {
+  const buckets: Record<string, string[]> = { global: [], local: [], skillbag: [] };
+  let current: string[] = buckets.local;
+  for (const line of rendered.split("\n")) {
+    if (line.startsWith("# ")) {
+      const scope = line.slice(2).split("/")[0].toLowerCase();
+      current = buckets[scope === "global" ? "global" : scope === "skills" ? "skillbag" : "local"];
+    }
+    current.push(line);
+  }
+  return ([
+    { label: "global", text: buckets.global.join("\n").trim() },
+    { label: "local", text: buckets.local.join("\n").trim() },
+    { label: "skillbag", text: buckets.skillbag.join("\n").trim() },
+  ]);
+}
+
+/**
+ * Read-only overlay viewer for the bag, tabbed by tier: global (always
+ * active), local (project), skillbag (the distilled skills). 1/2/3 or
+ * tab/←→ switch tabs; j/k scroll; esc/q close.
+ */
+class TierViewer implements Component, Focusable {
   focused = false;
+  private tab = 0;
   private scroll: ScrollView;
 
-  constructor(text: string, private done: () => void) {
-    this.scroll = new ScrollView(new Text(text, 1, 1), { scrollbar: "auto" });
+  constructor(
+    private sections: TierSection[],
+    private theme: Theme,
+    private done: (result?: unknown) => void,
+  ) {
+    this.scroll = this.makeScroll();
+  }
+
+  invalidate(): void {
+    this.scroll.invalidate();
+  }
+
+  private makeScroll(): ScrollView {
+    const text = this.sections[this.tab]?.text || "(empty)";
+    return new ScrollView(new Text(text, 1, 1), { scrollbar: "auto" });
+  }
+
+  private switchTo(tab: number) {
+    if (tab === this.tab || tab < 0 || tab >= this.sections.length) return;
+    this.tab = tab;
+    this.scroll = this.makeScroll();
   }
 
   handleInput(data: string): void {
-    if (matchesKey(data, "escape") || matchesKey(data, "return") || matchesKey(data, "q")) {
+    if (matchesKey(data, "escape") || matchesKey(data, "q")) {
       this.done();
+    } else if (matchesKey(data, "1")) {
+      this.switchTo(0);
+    } else if (matchesKey(data, "2")) {
+      this.switchTo(1);
+    } else if (matchesKey(data, "3")) {
+      this.switchTo(2);
+    } else if (matchesKey(data, "tab") || matchesKey(data, "right")) {
+      this.switchTo((this.tab + 1) % this.sections.length);
+    } else if (matchesKey(data, "left")) {
+      this.switchTo((this.tab + this.sections.length - 1) % this.sections.length);
     } else if (matchesKey(data, "up") || matchesKey(data, "k")) {
       this.scroll.scrollBy(-3);
     } else if (matchesKey(data, "down") || matchesKey(data, "j")) {
       this.scroll.scrollBy(3);
+    } else if (matchesKey(data, "pageUp")) {
+      this.scroll.scrollBy(-20);
+    } else if (matchesKey(data, "pageDown")) {
+      this.scroll.scrollBy(20);
     } else if (matchesKey(data, "home")) {
       this.scroll.scrollToStart();
-    } else if (matchesKey(data, "end") || matchesKey(data, "g")) {
+    } else if (matchesKey(data, "end") || data === "G") {
       this.scroll.scrollToEnd();
+    } else if (matchesKey(data, "g")) {
+      this.scroll.scrollToStart();
     }
   }
 
   render(width: number): string[] {
-    return this.scroll.render(width);
+    const t = this.theme;
+    const tabs = this.sections
+      .map((s, i) => {
+        const label = ` ${i + 1} ${s.label} `;
+        return i === this.tab ? t.fg("accent", t.bold(label)) : t.fg("dim", label);
+      })
+      .join(t.fg("dim", "│"));
+    return [tabs, t.fg("accent", "─".repeat(Math.max(width, 20))), ...this.scroll.render(width)];
   }
 }
 
@@ -246,7 +320,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerCommand("context", {
-    description: "Show the injected context; 'reload' re-resolves it; 'add <text>' saves an atom",
+    description: "Browse the bag by tier (global/local/skillbag); 'reload' re-resolves; 'add <text>' saves an atom",
     handler: async (args: string, ctx: ExtensionCommandContext) => {
       const cxMcp = await findCxMcp();
       if (!cxMcp) {
@@ -311,14 +385,28 @@ export default function (pi: ExtensionAPI) {
         ctx.ui.notify("Nothing resolved for this project — /context add or tagged pulls", "info");
         return;
       }
-      const full = `<context>\n${PREAMBLE}\n\n${resolvedBody}\n</context>`;
+      // Tabbed viewer over the whole bag (global / local / skillbag);
+      // injected context remains the tiered default shown on every turn.
       if (ctx.mode === "tui") {
-        await ctx.ui.custom(
-          (_tui, _theme, _keybindings, done) => new ContextViewer(full, done),
-        );
+        try {
+          const rendered = await mcpCall(cxMcp, "resolve", { scope_prefix: "" });
+          const sections = bucketTiers(rendered).filter((s) => s.text);
+          if (sections.length === 0) {
+            ctx.ui.notify("The bag is empty — /context add to start it", "info");
+            return;
+          }
+          await ctx.ui.custom(
+            (_tui, theme, _keybindings, done) => new TierViewer(sections, theme, done),
+          );
+        } catch (e) {
+          ctx.ui.notify(`Could not load the bag: ${e instanceof Error ? e.message : String(e)}`, "error");
+        }
       } else {
+        const full = `<context>\n${PREAMBLE}\n\n${resolvedBody}\n</context>`;
         ctx.ui.notify(full.length > 400 ? `${full.slice(0, 400)}…` : full, "info");
       }
     },
   });
+
+  registerSkills(pi);
 }

@@ -179,6 +179,12 @@ fn render(items: Vec<(String, Row)>) -> String {
 }
 
 fn tool_resolve(args: &serde_json::Value, store: &SqliteStore) -> Result<String, String> {
+    // Browse mode: a scope_prefix (even empty) bypasses tier defaults and
+    // returns every atom whose scope starts with it — for inspection UIs.
+    if let Some(prefix) = args.get("scope_prefix").and_then(|v| v.as_str()) {
+        let items = contextual::scope_atoms(store, prefix).map_err(|e| e.to_string())?;
+        return Ok(render(items));
+    }
     let tags = arg_tags(args);
     let refs: Vec<&str> = tags.iter().map(String::as_str).collect();
     let project = contextual::repo_identity();
@@ -443,6 +449,10 @@ const TOOLS: &str = r#"[
         "tags": {
           "type": "string",
           "description": "Comma-separated hashtags to pull from the repository, e.g. \"rust, svelte\". Omit for just global + project context."
+        },
+        "scope_prefix": {
+          "type": "string",
+          "description": "Browse instead of resolve: return ALL atoms whose scope starts with this prefix, ignoring tier defaults (empty string = the whole bag). For inspection UIs, not for pulling task context."
         }
       }
     }
