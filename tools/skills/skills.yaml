@@ -79,6 +79,10 @@ repos:
       - { path: jj-update-pr, tags: [jj, vcs, github] }
       - { path: jj-gh-stack, tags: [jj, vcs, github] }
 
+  - repo: fluid-notion-labs/scene-mcp-skill
+    skills:
+      - { path: scene-mcp, tags: [scene, mcp, 3d] }
+
   - repo: anthropics/skills
     skills:
       - { path: mcp-builder, tags: [mcp] }
