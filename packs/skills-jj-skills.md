@@ -6,6 +6,12 @@
 - minimal-output: Every read command MUST be bounded and summary-level. #jj #vcs
 - sandbox: Jujutsu can be configured to sign commits (can be checked with jj config list --include-overridden | grep -i sign). #jj #vcs
 
+## jj-workspaces
+
+- Guides Claude on jj workspaces — multiple working directories backed by one repository, without branch locking (git calls the same idea worktrees). #jj #vcs
+- minimal-output: jj workspace list is small; print it whole when asked.; Inspect a workspace's state through its log line in jj log, not by cd-ing around. #jj #vcs
+- naming: The name defaults to the destination directory's basename: ../feature becomes workspace feature. #jj #vcs
+
 ## jj-cleanup
 
 - Removes the local jj bookmarks, revisions, and workspaces left behind by merged or closed GitHub pull requests #jj #vcs

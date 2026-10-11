@@ -74,6 +74,7 @@ repos:
   - repo: HotThoughts/jj-skills
     skills:
       - { path: jj-workflow, tags: [jj, vcs] }
+      - { path: jj-workspaces, tags: [jj, vcs] }
       - { path: jj-cleanup, tags: [jj, vcs] }
       - { path: jj-create-pr, tags: [jj, vcs, github] }
       - { path: jj-update-pr, tags: [jj, vcs, github] }
