@@ -20,9 +20,14 @@ contextual only via MCP — no direct SQLite or hub access.
 - `#` in the composer autocompletes skills (tab/enter) like `@` does for
   files: type `#` then part of a name, pick one, and the referenced
   skill's full text is injected into the turn's system prompt
-  (`<skills>` section) as `#skill:<name>`. Plain hashtags still type
-  normally — just keep typing past the popup. Skill discovery is
-  precached on session start
+  (`<skills>` section) as `#skill:<name>`. Referencing also feeds the
+  skillbag: a skill not yet in the bag is distilled (summary + section
+  highlights, same style as `tools/skills/pull.py`) and added via
+  `cx-mcp add` with `skills/<vendor>` scope, tagged `#<name>` and
+  `#<vendor>`, so its terse atoms persist across sessions. Re-adding is
+  idempotent (bag dedupes by text); explicitly removed atoms stay
+  removed (tombstones). Plain hashtags still type normally — just keep
+  typing past the popup. Skill discovery is precached on session start
 - warns on a stale `cx-mcp` (missing tools via `tools/list`)
 - offers to install contextual on first run if `cx-mcp` is missing
 

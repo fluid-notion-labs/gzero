@@ -23,7 +23,7 @@ import {
 } from "@earendil-works/pi-tui";
 import { boxFrame, LineWindow, modalViewport, wrapPlain } from "./window.ts";
 
-interface SkillEntry {
+export interface SkillEntry {
   name: string;
   description: string;
   /** Vendor repo directory, e.g. "jj-skills". */
@@ -246,6 +246,70 @@ export class SkillsAutocomplete implements AutocompleteProvider {
 /** Skill names referenced as `#skill:<name>` in a prompt. */
 export function extractSkillRefs(prompt: string): string[] {
   return [...new Set([...prompt.matchAll(/#skill:([\w.-]+)/g)].map((m) => m[1].toLowerCase()))];
+}
+
+// --- distillation into the skillbag ---------------------------------------
+
+// Mirrors tools/skills/pull.py's distiller: terse atoms — summary line plus
+// one highlight per ## heading. Exact wording only needs to be
+// self-consistent: bag atoms dedupe by text, and skills that pull.py already
+// imported are skipped by node-header check before we ever add.
+
+const SUMMARY_CAP = 160;
+const SECTION_CAP = 140;
+const MAX_SECTIONS = 6;
+const NOISY = ["|", "dot ", "graph ", "label=", "```"];
+
+function firstSentence(text: string, cap: number): string {
+  let t = text.replace(/\*\*/g, "").replace(/```/g, " ").replace(/`/g, "");
+  t = t.replace(/\s+/g, " ").trim();
+  t = t.replace(/^[\-* ]+/, "");
+  let sentence = t.split(/(?<=\.)\s/)[0] ?? t;
+  if (sentence.length > cap) sentence = `${sentence.slice(0, cap - 1).trimEnd()}…`;
+  return sentence;
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** One atom per line: summary + section highlights, tags riding on each. */
+export function distillSkill(entry: SkillEntry): { text: string; tags: string[] }[] {
+  let body = "";
+  try {
+    body = readFileSync(entry.file, "utf8").replace(/^---\n.*?\n---\n?/s, "");
+  } catch {
+    return [];
+  }
+  const tags = [
+    ...new Set(
+      [
+        ...Array.from(entry.description.matchAll(/#([a-zA-Z0-9_-]+)/g), (m) => m[1]),
+        entry.name,
+        entry.vendor,
+      ].map((t) => t.toLowerCase()),
+    ),
+  ];
+  const tagSuffix = tags.length > 0 ? ` ${tags.map((t) => `#${t}`).join(" ")}` : "";
+
+  const lines = [`${firstSentence(entry.description, SUMMARY_CAP)}${tagSuffix}`];
+  const headings = [...body.matchAll(/^## (.+)$/gm)]
+    .map((m) => m[1].split("#")[0].trim())
+    .filter((h) => h && h.toLowerCase() !== "overview")
+    .slice(0, MAX_SECTIONS);
+  for (const heading of headings) {
+    const pattern = new RegExp(
+      `^## ${escapeRegExp(heading)}.*?\\n\\n(.+?)(?:\\n\\n|\\n#)`,
+      "ms",
+    );
+    const m = body.match(pattern);
+    if (!m) continue;
+    const under = m[1].replace(/^\s+/, "");
+    if (NOISY.some((n) => under.startsWith(n))) continue;
+    const slug = heading.toLowerCase().replace(/\s+/g, "-");
+    lines.push(`${slug}: ${firstSentence(under, SECTION_CAP)}${tagSuffix}`);
+  }
+  return lines.map((text) => ({ text, tags }));
 }
 
 // --- picker component ------------------------------------------------------

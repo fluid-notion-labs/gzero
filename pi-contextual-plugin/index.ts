@@ -20,6 +20,7 @@ import {
 } from "@earendil-works/pi-tui";
 import { boxFrame, LineWindow, modalViewport, wrapPlain } from "./window.ts";
 import {
+  distillSkill,
   extractSkillRefs,
   getSkillsCache,
   startDiscovery,
@@ -27,6 +28,7 @@ import {
   registerSkills,
   SkillsAutocomplete,
   skillBody,
+  type SkillEntry,
 } from "./skills.ts";
 import { execFile, spawn } from "node:child_process";
 
@@ -248,6 +250,8 @@ export default function (pi: ExtensionAPI) {
   let resolvedBody: string | null = null;
   /** The #skill autocomplete stacks once per process; sessions may start more than once. */
   let autocompleteInstalled = false;
+  /** Skill references already distilled into the bag this session. */
+  const addedToBag = new Set<string>();
 
   const findCxMcp = async (): Promise<string | null> => {
     if (cxMcpPath === undefined) cxMcpPath = await which("cx-mcp");
@@ -336,36 +340,78 @@ export default function (pi: ExtensionAPI) {
     }
   });
 
-  pi.on("before_agent_start", async (event) => {
+  pi.on("before_agent_start", async (event, ctx) => {
     // #skill:<name> references in the prompt pull the full skill into this turn.
     const refs = extractSkillRefs(event.prompt);
+    const cxMcp = await findCxMcp();
+    if (!cxMcp && refs.length === 0) return; // offline degradation: no server, AGENTS.md fallback remains
     if (refs.length > 0) {
       const skills = await ensureSkills();
+      const referenced: SkillEntry[] = [];
       const parts: string[] = [];
       for (const name of refs) {
         const entry = skills.find((s) => s.name.toLowerCase() === name);
-        if (entry) parts.push(`## ${entry.name} (${entry.vendor})\n\n${skillBody(entry.file)}`);
+        if (entry) {
+          referenced.push(entry);
+          parts.push(`## ${entry.name} (${entry.vendor})\n\n${skillBody(entry.file)}`);
+        }
       }
       if (parts.length > 0) {
         event.systemPromptOptions.sections["skills"] =
           `<skills>\nThe user referenced these skills with #skill:<name>; their full instructions are included here.\n\n${parts.join("\n\n")}\n</skills>`;
       }
+      // Skills not yet in the bag get distilled into the skillbag so their
+      // terse atoms persist across sessions. Bag atoms dedupe by text, and
+      // already-imported skills are skipped by node check.
+      if (cxMcp && referenced.length > 0) {
+        let inBag: string | null = null;
+        try {
+          inBag = await mcpCall(cxMcp, "resolve", { scope_prefix: "skills/" });
+        } catch {
+          // bag check failed; adding is still safe (dedupe by text)
+        }
+        for (const entry of referenced) {
+          const key = `${entry.vendor}/${entry.name.toLowerCase()}`;
+          if (addedToBag.has(key)) continue;
+          addedToBag.add(key);
+          if (inBag?.includes(`# skills/${entry.vendor}/${entry.name}`)) continue;
+          const atoms = distillSkill(entry);
+          if (atoms.length === 0) continue;
+          try {
+            await mcpCall(cxMcp, "add", {
+              operations: atoms.map((a) => ({
+                action: "add",
+                text: a.text,
+                scope: `skills/${entry.vendor}`,
+                node: entry.name,
+                tags: a.tags,
+              })),
+            });
+            ctx.ui.notify(`skillbag: added ${entry.name} (${atoms.length} atoms)`, "info");
+          } catch (e) {
+            addedToBag.delete(key);
+            ctx.ui.notify(
+              `skillbag add failed for ${entry.name}: ${e instanceof Error ? e.message : String(e)}`,
+              "error",
+            );
+          }
+        }
+      }
     }
-
-    const cxMcp = await findCxMcp();
-    if (!cxMcp) return; // offline degradation: no server, AGENTS.md fallback remains
-    try {
-      if (resolvedBody === null) resolvedBody = await resolveContext(cxMcp);
-      if (resolvedBody !== null) {
+    if (cxMcp) {
+      try {
+        if (resolvedBody === null) resolvedBody = await resolveContext(cxMcp);
+        if (resolvedBody !== null) {
         // A fresh normalized copy arrives every turn; the returned options
         // become the turn's system prompt, so the section must be set
         // every turn or it is dropped from the prompt diff.
         event.systemPromptOptions.sections["context"] =
           `<context>\n${PREAMBLE}\n\n${resolvedBody}\n</context>`;
       }
-    } catch (e) {
-      resolvedBody = null; // resolve failed → retry next turn
-      // Degrade silently: pi still works without injection.
+      } catch (e) {
+        resolvedBody = null; // resolve failed → retry next turn
+        // Degrade silently: pi still works without injection.
+      }
     }
   });
 
