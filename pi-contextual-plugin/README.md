@@ -33,6 +33,15 @@ contextual only via MCP — no direct SQLite or hub access.
 - warns on a stale `cx-mcp` (missing tools via `tools/list`)
 - offers to install contextual on first run if `cx-mcp` is missing
 
+- post-turn review: every turn is captured; when `CX_REVIEW_BATCH`
+  (default 5) turns are pending, one forked model call — the session's
+  model — reviews the batch and saves durable facts to the bag (scope
+  global for user/environment, project for repo conventions, hashtags
+  for on-demand task knowledge). "Nothing to save." is the usual reply;
+  saved atoms are announced via notification. Fire-and-forget in
+  interactive mode, awaited in headless. `CX_REVIEW=0` disables.
+  Scope exclusions and policy: `research/context/curation.md` §5.
+
 Spec: `research/context/pi-plugin.md` (in the explorations repo);
 curation policy: `research/context/curation.md`; skills pipeline and
 hub plan: `research/skills-assay.md`. Deferred: modal first-open lag

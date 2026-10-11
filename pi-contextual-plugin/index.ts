@@ -32,6 +32,7 @@ import {
   skillBody,
   type SkillEntry,
 } from "./skills.ts";
+import { registerReview, type ReviewDeps } from "./review.ts";
 import { execFile, spawn } from "node:child_process";
 
 const REPO = "https://github.com/fluid-notion-labs/contextual";
@@ -526,4 +527,5 @@ export default function (pi: ExtensionAPI) {
   });
 
   registerSkills(pi);
+  registerReview(pi, { findCxMcp, mcpCall } satisfies ReviewDeps);
 }
