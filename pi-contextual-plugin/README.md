@@ -17,12 +17,12 @@ contextual only via MCP — no direct SQLite or hub access.
   Skill sources: `$CX_SKILLS_DIRS` (colon-separated), or the contextual
   repo's `vendor/` next to this plugin / at the known checkout path, or
   any `vendor/` above the working directory
-- `#skill` in the composer autocompletes (tab/enter) like `@` does for
-  files: type `#skill` then part of a name, pick one, and the referenced
+- `#` in the composer autocompletes skills (tab/enter) like `@` does for
+  files: type `#` then part of a name, pick one, and the referenced
   skill's full text is injected into the turn's system prompt
-  (`<skills>` section). Skill discovery is precached on session start;
-  plain `#` hashtags are unaffected — the provider only activates on
-  tokens starting with `#skill`
+  (`<skills>` section) as `#skill:<name>`. Plain hashtags still type
+  normally — just keep typing past the popup. Skill discovery is
+  precached on session start
 - warns on a stale `cx-mcp` (missing tools via `tools/list`)
 - offers to install contextual on first run if `cx-mcp` is missing
 

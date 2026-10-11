@@ -169,11 +169,12 @@ export function skillBody(file: string): string {
 // --- #skill autocomplete --------------------------------------------------
 
 /**
- * Stacks on the built-in provider: when the token at the cursor starts with
- * `#skill` (optionally `#skill:` + query), it suggests skill references like
- * `#skill:systematic-debugging`. Every other token — including plain `#`
- * hashtags — is delegated to the wrapped provider, so nothing changes for
- * the `@` and `/` flows.
+ * Stacks on the built-in provider: any token starting with `#` suggests
+ * skill references like `#skill:systematic-debugging`, filtered by what
+ * follows the `#` (`#sk` matches names containing "sk"; `#skill:j` the
+ * same). Works like `@` does for files — a plain hashtag still types fine,
+ * the popup just offers skills while you type. All other tokens are
+ * delegated to the wrapped provider (`@` files, `/` commands).
  */
 export class SkillsAutocomplete implements AutocompleteProvider {
   triggerCharacters = ["#"];
@@ -197,10 +198,11 @@ export class SkillsAutocomplete implements AutocompleteProvider {
     options: { signal: AbortSignal; force?: boolean },
   ): Promise<AutocompleteSuggestions | null> {
     const token = this.tokenAt(lines[cursorLine] ?? "", cursorCol);
-    if (/^#skill/i.test(token)) {
+    if (token.startsWith("#")) {
       const skills = this.getSkills();
       if (skills) {
-        const query = (token.match(/^#skill:?(.*)$/i)?.[1] ?? "").toLowerCase();
+        const m = token.match(/^#skill:?(.*)$/i);
+        const query = (m ? m[1] : token.slice(1)).toLowerCase();
         const items: AutocompleteItem[] = skills
           .filter((s) => `${s.name} ${s.vendor}`.toLowerCase().includes(query))
           .slice(0, 20)
@@ -222,10 +224,10 @@ export class SkillsAutocomplete implements AutocompleteProvider {
     item: AutocompleteItem,
     prefix: string,
   ): { lines: string[]; cursorLine: number; cursorCol: number } {
-    // Only our own #skill completions take the fast path — everything else
-    // (slash commands re-add the "/", @ paths, arguments) has special
+    // Only our own #-prefixed completions take the fast path — everything
+    // else (slash commands re-add the "/", @ paths, arguments) has special
     // handling in the wrapped provider that we must not bypass.
-    if (!/^#skill/i.test(prefix)) {
+    if (!prefix.startsWith("#")) {
       return this.fallback.applyCompletion(lines, cursorLine, cursorCol, item, prefix);
     }
     const line = lines[cursorLine] ?? "";
