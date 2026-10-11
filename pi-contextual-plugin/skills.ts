@@ -4,7 +4,7 @@
 // they point at. Source of truth: the vendor/ clones that
 // tools/skills/pull.py pulls from (CX_SKILLS_DIRS overrides, colon-separated).
 
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -436,12 +436,28 @@ class SkillsPicker implements Component {
   }
 
   handleInput(data: string): void {
+    // Diagnostic: CX_SKILLS_KEY_DEBUG=<file> logs every key's hex so unknown
+    // terminal encodings can be identified.
+    const debugLog = process.env.CX_SKILLS_KEY_DEBUG;
+    if (debugLog) {
+      try {
+        appendFileSync(debugLog, `${Buffer.from(data, "binary").toString("hex")}\n`);
+      } catch {
+        /* ignore */
+      }
+    }
     if (this.mode === "detail") {
       if (matchesKey(data, "escape") || matchesKey(data, "q")) {
         this.backToList();
         return;
       }
-      if (this.isReferenceKey(data)) {
+      if (
+        this.isReferenceKey(data) ||
+        matchesKey(data, "return") ||
+        matchesKey(data, "enter")
+      ) {
+        // Enter loads too: terminals that send plain CR for ctrl+enter make
+        // the two physically indistinguishable, and Enter has no other use here.
         if (this.current) this.done(this.current);
         return;
       }
@@ -509,7 +525,7 @@ class SkillsPicker implements Component {
         ...new Text(t.fg("dim", `${this.current.vendor} · ${this.current.file}`), 1).render(inner),
         "",
         ...this.window.render().map((line) => ` ${line}`),
-        ...new Text(t.fg("dim", `esc/q back · ctrl+↵ load for session · j/k scroll · g/G top/end${pos}`), 1).render(inner),
+        ...new Text(t.fg("dim", `esc/q back · enter or ctrl+↵ load for session · j/k scroll · g/G top/end${pos}`), 1).render(inner),
       ], rail);
     }
     return boxFrame(width, [
