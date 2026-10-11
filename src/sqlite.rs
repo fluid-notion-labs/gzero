@@ -22,6 +22,10 @@ CREATE TABLE IF NOT EXISTS atoms (
 CREATE TABLE IF NOT EXISTS tombstones (
     text TEXT PRIMARY KEY,
     atom TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS source_hashes (
+    source TEXT PRIMARY KEY,
+    hash TEXT NOT NULL
 );";
 
 /// SQLite-backed bag. One row per (text, source) assertion.
@@ -165,6 +169,68 @@ impl Storage for SqliteStore {
             )?;
         }
         Ok(added)
+    }
+
+    fn source_hash(&self, source: &str) -> Result<Option<String>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT hash FROM source_hashes WHERE source = ?1")?;
+        let mut rows = stmt.query_map(params![source], |r| r.get::<_, String>(0))?;
+        Ok(rows.next().transpose()?.filter(|h| !h.is_empty()))
+    }
+
+    fn set_source_hash(&mut self, source: &str, hash: Option<&str>) -> Result<()> {
+        match hash {
+            Some(h) => {
+                self.conn.execute(
+                    "INSERT OR REPLACE INTO source_hashes (source, hash) VALUES (?1, ?2)",
+                    params![source, h],
+                )?;
+            }
+            None => {
+                self.conn
+                    .execute("DELETE FROM source_hashes WHERE source = ?1", params![source])?;
+            }
+        }
+        Ok(())
+    }
+
+    fn forget_source(&mut self, source: &str) -> Result<Vec<crate::snapshot::Atom>> {
+        // Texts asserted only by this source die with it (tombstoned, so
+        // deletion survives hub sync); texts also asserted elsewhere keep
+        // living there — delete only this source's assertions.
+        let own: Vec<(String, String, String, String)> = self
+            .conn
+            .prepare(
+                "SELECT text, scope, node, tags FROM atoms WHERE source = ?1",
+            )?
+            .query_map(params![source], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+            })?
+            .collect::<std::result::Result<_, _>>()?;
+        let elsewhere: HashSet<String> = self
+            .conn
+            .prepare("SELECT text FROM atoms WHERE source != ?1")?
+            .query_map(params![source], |r| r.get(0))?
+            .collect::<std::result::Result<HashSet<_>, _>>()?;
+        let mut dying = Vec::new();
+        for (text, scope, node, tags_json) in &own {
+            if elsewhere.contains(text) {
+                continue;
+            }
+            dying.push(crate::snapshot::Atom {
+                text: text.clone(),
+                scope: scope.clone(),
+                node: node.clone(),
+                tags: serde_json::from_str(tags_json)?,
+            });
+        }
+        self.tombstone(&dying)?;
+        self.conn
+            .execute("DELETE FROM atoms WHERE source = ?1", params![source])?;
+        self.conn
+            .execute("DELETE FROM source_hashes WHERE source = ?1", params![source])?;
+        Ok(dying)
     }
 }
 

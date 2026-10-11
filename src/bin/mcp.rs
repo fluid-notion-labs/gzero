@@ -33,6 +33,7 @@ const DEFAULT_NODE: &str = "notes";
 fn main() {
     let mut store = open_store();
     pull_from_hub(&mut store);
+    reconcile_harvest_on_startup(&mut store);
     let stdin = std::io::stdin();
     let mut out = std::io::stdout().lock();
     for line in stdin.lock().lines() {
@@ -73,6 +74,55 @@ fn pull_from_hub(store: &mut SqliteStore) {
         Ok(n) => eprintln!("cx-mcp: hub sync ({n} entries)"),
         Err(e) => eprintln!("cx-mcp: hub sync failed: {e}"),
     }
+}
+
+/// Organic harvest at startup: reconcile the cwd's repo instruction files
+/// against the content hashes recorded at last harvest. Changed files are
+/// re-imported (and Put to the hub), deleted files retract their sources
+/// (Remove for texts asserted only there). Never fatal: the session works
+/// without it, the model can still call the `harvest` tool manually.
+fn reconcile_harvest_on_startup(store: &mut SqliteStore) {
+    let dir = match std::env::current_dir() {
+        Ok(d) => d,
+        Err(_) => return,
+    };
+    let result = match contextual::reconcile_harvest(store, &dir, false) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("cx-mcp: harvest reconcile failed: {e}");
+            return;
+        }
+    };
+    if result.harvested.is_empty() && result.removed.is_empty() {
+        return;
+    }
+    let mut events: Vec<Event> = Vec::new();
+    let mut put_texts: BTreeSet<String> = BTreeSet::new();
+    for h in &result.harvested {
+        for a in &h.atoms {
+            put_texts.insert(a.text.clone());
+            events.push(Event::Put {
+                atom: Atom {
+                    text: a.text.clone(),
+                    scope: a.scope.clone(),
+                    node: a.node.clone(),
+                    tags: a.tags.clone(),
+                },
+            });
+        }
+    }
+    for a in &result.retracted {
+        if !put_texts.contains(&a.text) {
+            events.push(Event::Remove { atom: a.clone() });
+        }
+    }
+    eprintln!(
+        "cx-mcp: harvest reconcile ({} reimported, {} removed, {} unchanged)",
+        result.harvested.len(),
+        result.removed.len(),
+        result.unchanged
+    );
+    try_post(events);
 }
 
 /// Best-effort event post to the hub.
@@ -559,7 +609,7 @@ const TOOLS: &str = r#"[
   },
   {
     "name": "harvest",
-    "description": "Import agent-instruction files from the repo into the bag as project context — instructions written for ANY agent (AGENTS.md, CLAUDE.md, GEMINI.md, .cursorrules, .windsurfrules, .github/copilot-instructions.md) become one shared store, injected automatically in that repo from then on. WHEN: once when you start working in a repo whose instructions are not yet in the resolved context; re-run after those files change (per-source sync: edits propagate, removals of lines propagate). Files with no bullets are skipped (pointer stubs are protected). Optional 'path' defaults to the current directory.",
+    "description": "Import agent-instruction files from the repo into the bag as project context — instructions written for ANY agent (AGENTS.md, CLAUDE.md, GEMINI.md, .cursorrules, .windsurfrules, .github/copilot-instructions.md) become one shared store, injected automatically in that repo from then on. NOTE: this runs automatically at server startup — changes to those files are detected by content hash and mirrored without anyone calling this. Call it only to pick up mid-session edits immediately. Files with no bullets are skipped (pointer stubs are protected). Optional 'path' defaults to the current directory.",
     "inputSchema": {
       "type": "object",
       "properties": {

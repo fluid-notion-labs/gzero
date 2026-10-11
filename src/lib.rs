@@ -71,6 +71,14 @@ pub trait Storage {
     fn tombstones(&self) -> Result<Vec<snapshot::Atom>>;
     /// Record tombstones (idempotent); returns how many were new.
     fn tombstone(&mut self, atoms: &[snapshot::Atom]) -> Result<usize>;
+    /// The content hash recorded at last harvest for `source`, if any.
+    fn source_hash(&self, source: &str) -> Result<Option<String>>;
+    /// Record (Some) or clear (None) the content hash for `source`.
+    fn set_source_hash(&mut self, source: &str, hash: Option<&str>) -> Result<()>;
+    /// Remove a source wholesale: tombstone texts asserted only here
+    /// (deletion-as-change), keep texts that other sources still assert.
+    /// Returns the tombstoned atoms.
+    fn forget_source(&mut self, source: &str) -> Result<Vec<snapshot::Atom>>;
 }
 
 /// Parse a context file into atoms. See crate docs for the format.
@@ -129,6 +137,7 @@ pub const HARVEST_FILES: &[&str] = &[
 ];
 
 /// One harvested file's outcome.
+#[derive(Debug)]
 pub struct HarvestResult {
     pub path: std::path::PathBuf,
     /// `None` = skipped: the file parsed to zero bullets (pointer stubs
@@ -173,8 +182,20 @@ pub fn repo_identity() -> Option<String> {
     repo_identity_in(std::path::Path::new("."))
 }
 
+/// FNV-1a 64-bit content hash, hex-encoded. No dependencies, stable across
+/// runs — good enough for change detection (not a security hash).
+fn content_hash(text: &str) -> String {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in text.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("{hash:016x}")
+}
+
 /// Import one instruction file into the store: scope forced to `scope`
-/// (project tier), source = the file's canonical path.
+/// (project tier), source = the file's canonical path. Records the content
+/// hash so organic reconciliation can detect later changes.
 pub fn harvest_file(
     store: &mut dyn Storage,
     path: &std::path::Path,
@@ -198,6 +219,7 @@ pub fn harvest_file(
         .to_string_lossy()
         .into_owned();
     let stats = store.sync_source(&source, &atoms)?;
+    store.set_source_hash(&source, Some(&content_hash(&text)))?;
     Ok(HarvestResult {
         path: path.to_path_buf(),
         stats: Some(stats),
@@ -209,6 +231,18 @@ pub fn harvest_file(
 /// (and at `dir` itself, when deeper), all scoped to the repo identity.
 /// Scope falls back to the directory basename outside git.
 pub fn harvest_dir(store: &mut dyn Storage, dir: &std::path::Path) -> Result<Vec<HarvestResult>> {
+    let (root, scope) = harvest_root(dir);
+    let mut out = Vec::new();
+    for path in candidate_files(&root, dir) {
+        if let Ok(r) = harvest_file(store, &path, &scope) {
+            out.push(r);
+        }
+    }
+    Ok(out)
+}
+
+/// Repo root and harvest scope for `dir` (see `harvest_dir`).
+fn harvest_root(dir: &std::path::Path) -> (std::path::PathBuf, String) {
     let root = std::process::Command::new("git")
         .arg("-C")
         .arg(dir)
@@ -228,9 +262,16 @@ pub fn harvest_dir(store: &mut dyn Storage, dir: &std::path::Path) -> Result<Vec
     let scope = repo_identity_in(&root)
         .or_else(|| root.file_name().map(|n| n.to_string_lossy().into_owned()))
         .unwrap_or_else(|| "harvest".to_string());
+    (root, scope)
+}
 
+/// Candidate instruction files at `root` and `dir` (deduped).
+fn candidate_files(
+    root: &std::path::Path,
+    dir: &std::path::Path,
+) -> Vec<std::path::PathBuf> {
     let mut candidates: Vec<std::path::PathBuf> = Vec::new();
-    for base in [&root, dir] {
+    for base in [root, dir] {
         for name in HARVEST_FILES {
             let p = base.join(name);
             if p.is_file() && !candidates.contains(&p) {
@@ -238,13 +279,96 @@ pub fn harvest_dir(store: &mut dyn Storage, dir: &std::path::Path) -> Result<Vec
             }
         }
     }
-    let mut out = Vec::new();
-    for path in candidates {
-        if let Ok(r) = harvest_file(store, &path, &scope) {
-            out.push(r);
+    candidates
+}
+
+/// One organic reconciliation pass over `dir`'s repo.
+#[derive(Default, Debug)]
+pub struct ReconcileResult {
+    /// Files imported because they were new or their content hash changed.
+    pub harvested: Vec<HarvestResult>,
+    /// Files deleted since last harvest: source removed, only-here texts
+    /// tombstoned (texts other sources still assert keep living there).
+    pub removed: Vec<std::path::PathBuf>,
+    /// Files whose content hash matches the last harvest.
+    pub unchanged: usize,
+    /// `--take` mode: files imported then deleted (bag is sole authority;
+    /// hashes cleared so the deletion is not mistaken for a retraction).
+    pub taken: Vec<std::path::PathBuf>,
+    /// Atoms tombstoned by removals (for hub Remove events).
+    pub retracted: Vec<crate::snapshot::Atom>,
+}
+
+/// Organic harvest: reconcile the candidate instruction files of `dir`'s
+/// repo against the content hashes recorded at last harvest. New or changed
+/// files are re-imported; deleted files retract their sources (tombstoning
+/// texts asserted only by them); unchanged files are left alone. With
+/// `take`, every file with atoms is imported then deleted and its hash
+/// cleared — the bag becomes the sole authority.
+/// Cost: one read + hash per candidate file. No watcher, no daemon.
+/// Mid-session edits land at the next reconciliation, consistent with the
+/// frozen per-session injection model.
+pub fn reconcile_harvest(
+    store: &mut dyn Storage,
+    dir: &std::path::Path,
+    take: bool,
+) -> Result<ReconcileResult> {
+    let (root, scope) = harvest_root(dir);
+    let present = candidate_files(&root, dir);
+    let mut result = ReconcileResult::default();
+
+    for path in present {
+        let text = std::fs::read_to_string(&path)?;
+        let source = path
+            .canonicalize()
+            .unwrap_or_else(|_| path.to_path_buf())
+            .to_string_lossy()
+            .into_owned();
+        let hash = content_hash(&text);
+        let changed = store.source_hash(&source)? != Some(hash.clone());
+        if !changed && !take {
+            result.unchanged += 1;
+            continue;
+        }
+        let imported = harvest_file(store, &path, &scope)?;
+        if imported.stats.is_none() {
+            // Zero bullets: protected stub or prose-only file — nothing to
+            // import, nothing to remember.
+            result.unchanged += 1;
+            continue;
+        }
+        result.harvested.push(imported);
+        if take {
+            // Hand the file over to the bag and forget the file: clear the
+            // hash so its later absence is not read as a retraction.
+            store.set_source_hash(&source, None)?;
+            std::fs::remove_file(&path)?;
+            result.taken.push(path);
         }
     }
-    Ok(out)
+
+    // Deleted files: a recorded hash for a now-absent candidate means the
+    // file was harvested here before and has since been removed.
+    if let Ok(canonical_dir) = dir.canonicalize() {
+        for name in HARVEST_FILES {
+            for base in [&root, &canonical_dir] {
+                let path = base.join(name);
+                if path.is_file() {
+                    continue;
+                }
+                let source = path
+                    .canonicalize()
+                    .unwrap_or_else(|_| path.to_path_buf())
+                    .to_string_lossy()
+                    .into_owned();
+                if store.source_hash(&source)?.is_some() {
+                    result.retracted.extend(store.forget_source(&source)?);
+                    result.removed.push(path);
+                }
+            }
+        }
+    }
+    Ok(result)
 }
 
 /// `git@host:owner/repo.git`, `https://host/owner/repo.git`,
@@ -742,6 +866,100 @@ mod tests {
         let atom = &r.atoms[0];
         assert_eq!(atom.scope, "cx-harvest-a");
         assert_eq!(atom.text, "run the tests before done");
+    }
+
+    fn uniq_dir(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(name);
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn reconcile_detects_edit_ignores_touch_retracts_delete() {
+        let dir = uniq_dir("cx-reconcile-a");
+        let file = dir.join("AGENTS.md");
+        std::fs::write(&file, "# Context\n\n## n\n- rule one\n").unwrap();
+        let mut store = mem();
+
+        // first pass: harvests and records the hash
+        let r = reconcile_harvest(&mut store, &dir, false).unwrap();
+        assert_eq!(r.harvested.len(), 1);
+        assert_eq!(r.unchanged, 0);
+
+        // second pass without changes: nothing to do
+        let r = reconcile_harvest(&mut store, &dir, false).unwrap();
+        assert!(r.harvested.is_empty());
+        assert_eq!(r.unchanged, 1);
+
+        // mtime-only change (touch) is not a change: rewrite the file with
+        // identical bytes and bump mtime
+        std::fs::write(&file, "# Context\n\n## n\n- rule one\n").unwrap();
+        let _ = filetime_touch(&file);
+        let r = reconcile_harvest(&mut store, &dir, false).unwrap();
+        assert!(r.harvested.is_empty(), "touch must not reharvest");
+
+        // content edit: re-harvested, new atom lands
+        std::fs::write(&file, "# Context\n\n## n\n- rule one\n- rule two\n").unwrap();
+        let r = reconcile_harvest(&mut store, &dir, false).unwrap();
+        assert_eq!(r.harvested.len(), 1);
+        assert!(alive(&store).unwrap().iter().any(|(t, _)| t == "rule two"));
+
+        // deletion: source retracted, text tombstoned (alive is empty)
+        std::fs::remove_file(&file).unwrap();
+        let r = reconcile_harvest(&mut store, &dir, false).unwrap();
+        assert_eq!(r.removed.len(), 1);
+        assert_eq!(r.retracted.len(), 2, "both texts die with the file");
+        assert!(alive(&store).unwrap().is_empty());
+        assert!(!store.tombstones().unwrap().is_empty());
+    }
+
+    #[test]
+    fn reconcile_take_imports_then_removes_without_tombstone() {
+        let dir = uniq_dir("cx-reconcile-take");
+        let file = dir.join("AGENTS.md");
+        std::fs::write(&file, "# Context\n\n## n\n- keep me in the bag\n").unwrap();
+        let mut store = mem();
+
+        let r = reconcile_harvest(&mut store, &dir, true).unwrap();
+        assert_eq!(r.taken.len(), 1);
+        assert!(!file.exists(), "--take deletes the file");
+        assert_eq!(alive(&store).unwrap().len(), 1, "atoms stay in the bag");
+
+        // the deletion must not read as a retraction on the next pass
+        let r = reconcile_harvest(&mut store, &dir, false).unwrap();
+        assert!(r.removed.is_empty());
+        assert_eq!(alive(&store).unwrap().len(), 1);
+        assert!(store.tombstones().unwrap().is_empty());
+    }
+
+    #[test]
+    fn reconcile_protects_stubs_and_skips_unknown_files() {
+        let dir = uniq_dir("cx-reconcile-stub");
+        // zero-bullet pointer stub: never harvested, no hash recorded
+        std::fs::write(
+            dir.join("AGENTS.md"),
+            "# Context\n\nThis file is a pointer. The bag is the authority.\n",
+        )
+        .unwrap();
+        let mut store = mem();
+        let r = reconcile_harvest(&mut store, &dir, false).unwrap();
+        assert!(r.harvested.is_empty());
+        assert_eq!(r.unchanged, 1);
+
+        // deleting a stub is not a retraction (it was never harvested)
+        std::fs::remove_file(dir.join("AGENTS.md")).unwrap();
+        let r = reconcile_harvest(&mut store, &dir, false).unwrap();
+        assert!(r.removed.is_empty());
+        assert!(store.tombstones().unwrap().is_empty());
+    }
+
+    /// Set a file's mtime into the past so a content-identical rewrite looks
+    /// like a plain touch.
+    fn filetime_touch(path: &std::path::Path) -> std::io::Result<()> {
+        let old = std::time::SystemTime::now() - std::time::Duration::from_secs(60);
+        let f = std::fs::File::options().write(true).open(path)?;
+        f.set_modified(old)
     }
 
     #[test]

@@ -204,11 +204,57 @@ fn main() {
             }
         }
         "harvest" => {
-            let dir = match args.get(1) {
+            let flags: Vec<&String> = args[1..].iter().filter(|a| a.starts_with("--")).collect();
+            let check = flags.iter().any(|f| f.as_str() == "--check");
+            let take = flags.iter().any(|f| f.as_str() == "--take");
+            let dir = match args[1..].iter().find(|a| !a.starts_with("--")) {
                 Some(d) => PathBuf::from(d),
                 None => std::env::current_dir().unwrap_or_else(|e| panic!("cx: {e}")),
             };
             let mut store = open_store();
+            if check || take {
+                let result = contextual::reconcile_harvest(&mut store, &dir, take)
+                    .unwrap_or_else(|e| panic!("cx: harvest: {e}"));
+                for r in &result.harvested {
+                    match &r.stats {
+                        None => println!("{}: no bullets — skipped", r.path.display()),
+                        Some(s) => println!("{}: +{} -{} (kept {})", r.path.display(), s.added, s.removed, s.kept),
+                    }
+                }
+                for p in &result.taken {
+                    println!("{}: imported then deleted (--take)", p.display());
+                }
+                for p in &result.removed {
+                    println!("{}: deleted since last harvest — source retracted", p.display());
+                }
+                println!(
+                    "{} unchanged",
+                    result.unchanged
+                );
+                // Hub events: Puts for re-imported atoms, Removes for retracted ones.
+                let mut events: Vec<Event> = Vec::new();
+                let put_texts: std::collections::BTreeSet<String> = result
+                    .harvested
+                    .iter()
+                    .flat_map(|r| r.atoms.iter().map(|a| a.text.clone()))
+                    .collect();
+                for r in &result.harvested {
+                    events.extend(r.atoms.iter().map(|a| Event::Put {
+                        atom: Atom {
+                            text: a.text.clone(),
+                            scope: a.scope.clone(),
+                            node: a.node.clone(),
+                            tags: a.tags.clone(),
+                        },
+                    }));
+                }
+                for a in &result.retracted {
+                    if !put_texts.contains(&a.text) {
+                        events.push(Event::Remove { atom: a.clone() });
+                    }
+                }
+                try_post_events(&events);
+            } else {
             let results = contextual::harvest_dir(&mut store, &dir)
                 .unwrap_or_else(|e| panic!("cx: harvest: {e}"));
             if results.is_empty() {
@@ -243,6 +289,7 @@ fn main() {
                         try_post_events(&events);
                     }
                 }
+            }
             }
         }
         "rm-source" => {
