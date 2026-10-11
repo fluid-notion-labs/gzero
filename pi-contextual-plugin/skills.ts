@@ -77,6 +77,39 @@ function walkSkillFiles(root: string, out: string[], depth = 0): void {
   }
 }
 
+/** Chunked async walk: yields to the event loop every few directories so
+ * traversal of large vendor trees never blocks the main thread for long. */
+async function walkSkillFilesChunked(
+  root: string,
+  out: string[],
+  depth: number,
+  state: { dirs: number },
+): Promise<void> {
+  if (depth > 6) return;
+  let entries: string[];
+  try {
+    entries = readdirSync(root);
+  } catch {
+    return;
+  }
+  for (const e of entries) {
+    if (e.startsWith(".") || e === "node_modules" || e === "target") continue;
+    const p = join(root, e);
+    let st;
+    try {
+      st = statSync(p);
+    } catch {
+      continue;
+    }
+    if (st.isDirectory()) {
+      await walkSkillFilesChunked(p, out, depth + 1, state);
+      if (++state.dirs % 10 === 0) await new Promise((resolve) => setImmediate(resolve));
+    } else if (e === "SKILL.md") {
+      out.push(p);
+    }
+  }
+}
+
 /** Minimal YAML frontmatter read: name + description, folded styles included. */
 function frontmatter(text: string): { name?: string; description?: string } {
   const m = text.match(/^---\n(.*?)\n---(?:\n|$)/s);
@@ -464,8 +497,7 @@ async function openPicker(ctx: ExtensionContext): Promise<void> {
     ctx.ui.notify("Skills picker is available in TUI mode (/skills)", "warning");
     return;
   }
-  const cached = getSkillsCache();
-  const skills = cached.length > 0 ? cached : discoverSkills();
+  const skills = await ensureSkills();
   if (skills.length === 0) {
     ctx.ui.notify(
       `No SKILL.md files found (looked in: ${vendorDirs().join(", ")}). Run tools/skills/pull.py to vendor some.`,
@@ -494,20 +526,55 @@ export function getSkillsCache(): SkillEntry[] {
 
 let discovery: Promise<SkillEntry[]> | null = null;
 
-/** Kick off skill discovery without blocking the caller (fills the cache on a microtask). */
-export function startDiscovery(): void {
-  if (discovery) return;
-  discovery = Promise.resolve().then(() => {
-    skillsCache = discoverSkills();
-    return skillsCache;
-  });
+/**
+ * Discovery in chunks: reading ~1000 SKILL.md files in one synchronous pass
+ * blocks the main thread for ~350ms, which hitches session start and
+ /reload. Read in batches, yielding to the event loop between them, so the
+ cache fills progressively without a single long stall.
+ */
+async function discoverChunked(): Promise<SkillEntry[]> {
+  const entries: SkillEntry[] = [];
+  const BATCH = 40;
+  for (const dir of vendorDirs()) {
+    if (!existsSync(dir)) continue;
+    const files: string[] = [];
+    await walkSkillFilesChunked(dir, files, 0, { dirs: 0 });
+    for (let i = 0; i < files.length; i += BATCH) {
+      for (const file of files.slice(i, i + BATCH)) {
+        try {
+          const text = readFileSync(file, "utf8");
+          const fm = frontmatter(text);
+          const rel = relative(dir, file);
+          const vendor = rel.split("/")[0] ?? dir;
+          entries.push({
+            name: fm.name ?? rel.split("/").slice(-2, -1)[0] ?? file,
+            description: fm.description ?? "",
+            vendor,
+            file,
+          });
+        } catch {
+          continue;
+        }
+      }
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+  }
+  entries.sort((a, b) => a.name.localeCompare(b.name));
+  skillsCache = entries;
+  return entries;
 }
 
-/** Skills, awaiting a pending discovery when the cache is still empty. */
+/** Kick off skill discovery without blocking the caller (fills the cache progressively). */
+export function startDiscovery(): void {
+  if (discovery) return;
+  discovery = discoverChunked();
+}
+
+/** Skills, awaiting any in-flight (possibly chunked) discovery for the full list. */
 export async function ensureSkills(): Promise<SkillEntry[]> {
-  if (skillsCache.length > 0) return skillsCache;
-  if (!discovery) startDiscovery();
-  return discovery!;
+  if (!discovery && skillsCache.length === 0) startDiscovery();
+  if (discovery) return discovery;
+  return skillsCache;
 }
 
 export function registerSkills(pi: ExtensionAPI): void {
