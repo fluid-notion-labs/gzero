@@ -12,6 +12,11 @@
 //! - `remove`  — tombstone atoms by substring (self-healing errors)
 //! - `tags`    — tag vocabulary with counts
 //!
+//! Key–value annex (`kv_*`): dotted keys ('some.nested.structure') map to
+//! whole documents. Separate `kv` table in the same database, invisible to
+//! resolve. Local-first for now; hub sync of documents (with automatic
+//! pickup of new versions) is a planned part of the distributed story.
+//!
 //! Curation policy in the tool descriptions follows hermes' memory tool
 //! (see `research/context/curation.md`): WHEN/SKIP routing, declarative
 //! phrasing, swap-don't-skip via batched remove+add.
@@ -199,6 +204,10 @@ fn call_tool(
         "remove" => tool_remove(&args, store)?,
         "tags" => tool_tags(store)?,
         "harvest" => tool_harvest(&args, store)?,
+        "kv_put" => tool_kv_put(&args, store)?,
+        "kv_get" => tool_kv_get(&args, store)?,
+        "kv_list" => tool_kv_list(&args, store)?,
+        "kv_delete" => tool_kv_delete(&args, store)?,
         other => return Err(format!("unknown tool: {other}")),
     };
     Ok(serde_json::json!({
@@ -538,6 +547,106 @@ fn tool_tags(store: &SqliteStore) -> Result<String, String> {
         .join(", "))
 }
 
+/// Normalize a dotted key: trimmed, no empty segments ('a..b', '.a',
+/// 'a.'), no whitespace inside segments.
+fn norm_key(args: &serde_json::Value, tool: &str) -> Result<String, String> {
+    let key = args
+        .get("key")
+        .and_then(|k| k.as_str())
+        .map(str::trim)
+        .filter(|k| !k.is_empty())
+        .ok_or(format!("{tool}: key is required"))?;
+    for seg in key.split('.') {
+        let seg = seg.trim();
+        if seg.is_empty() {
+            return Err(format!("{tool}: bad key {key:?}: empty segment"));
+        }
+        if seg.chars().any(char::is_whitespace) {
+            return Err(format!("{tool}: bad key {key:?}: whitespace in segment"));
+        }
+    }
+    Ok(key.to_string())
+}
+
+fn tool_kv_put(args: &serde_json::Value, store: &mut SqliteStore) -> Result<String, String> {
+    let key = norm_key(args, "kv_put")?;
+    let doc = args
+        .get("doc")
+        .and_then(|d| d.as_str())
+        .filter(|d| !d.trim().is_empty())
+        .ok_or("kv_put: doc is required")?;
+    let existed = store.kv_put(&key, doc).map_err(|e| e.to_string())?;
+    Ok(if existed {
+        format!("replaced {key:?} ({} bytes)", doc.len())
+    } else {
+        format!("stored {key:?} ({} bytes)", doc.len())
+    })
+}
+
+fn tool_kv_get(args: &serde_json::Value, store: &SqliteStore) -> Result<String, String> {
+    let key = norm_key(args, "kv_get")?;
+    if let Some(doc) = store.kv_get(&key).map_err(|e| e.to_string())? {
+        return Ok(doc);
+    }
+    // No exact document: a branch key returns its subtree.
+    let children = store.kv_children(&key).map_err(|e| e.to_string())?;
+    if children.is_empty() {
+        return Err(format!(
+            "kv_get: no document at {key:?} (and no child keys)"
+        ));
+    }
+    let mut out = String::new();
+    for (k, doc) in children {
+        out.push_str(&format!("\n# {k}\n\n{doc}\n"));
+    }
+    Ok(out.trim_start().to_string())
+}
+
+fn tool_kv_list(args: &serde_json::Value, store: &SqliteStore) -> Result<String, String> {
+    let prefix = match args.get("prefix").and_then(|p| p.as_str()) {
+        Some(p) => norm_key(&serde_json::json!({ "key": p }), "kv_list")?,
+        None => String::new(),
+    };
+    let children = store.kv_children(&prefix).map_err(|e| e.to_string())?;
+    if children.is_empty() {
+        if prefix.is_empty() {
+            return Ok("(no keys)".to_string());
+        }
+        return Err(format!("kv_list: no keys under {prefix:?}"));
+    }
+    Ok(children
+        .into_iter()
+        .map(|(k, _)| k)
+        .collect::<Vec<_>>()
+        .join("\n"))
+}
+
+fn tool_kv_delete(args: &serde_json::Value, store: &mut SqliteStore) -> Result<String, String> {
+    let key = norm_key(args, "kv_delete")?;
+    if store.kv_delete(&key).map_err(|e| e.to_string())? {
+        Ok(format!("deleted {key:?}"))
+    } else {
+        // Helpful, not fatal: show the sibling keys so a wrong level or a
+        // typo is visible.
+        let parent = key
+            .rsplit_once('.')
+            .map_or(String::new(), |(p, _)| p.to_string());
+        let children = store.kv_children(&parent).map_err(|e| e.to_string())?;
+        if children.is_empty() {
+            Err(format!("kv_delete: no document at {key:?}"))
+        } else {
+            Err(format!(
+                "kv_delete: no document at {key:?}. Keys under {parent:?}:\n{}",
+                children
+                    .iter()
+                    .map(|(k, _)| format!("- {k}"))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            ))
+        }
+    }
+}
+
 const TOOLS: &str = r#"[
   {
     "name": "resolve",
@@ -621,6 +730,50 @@ const TOOLS: &str = r#"[
     "name": "tags",
     "description": "List the context repository's hashtag vocabulary with counts.",
     "inputSchema": { "type": "object", "properties": {} }
+  },
+  {
+    "name": "kv_put",
+    "description": "Store a document in the key-value annex: 'key' => 'document'. Keys are dotted paths like 'some.nested.structure' (non-empty segments, no spaces). Storing an existing key replaces its document. Use this for arbitrary documents and working data that don't fit the terse-atom context rules — the annex is local to this machine and never enters the resolve context stream.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "key": { "type": "string", "description": "Dotted path, e.g. \"research.auth.decision\"." },
+        "doc": { "type": "string", "description": "The document body: free-form text, markdown, JSON, anything." }
+      },
+      "required": ["key", "doc"]
+    }
+  },
+  {
+    "name": "kv_get",
+    "description": "Read from the key-value annex. A leaf key returns its document verbatim; a branch key (no document at that exact path) returns the whole subtree below it as '# key' sections.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "key": { "type": "string", "description": "Dotted path, leaf or branch." }
+      },
+      "required": ["key"]
+    }
+  },
+  {
+    "name": "kv_list",
+    "description": "List keys in the key-value annex, one per line. Optional 'prefix' limits to keys under that dotted path.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "prefix": { "type": "string", "description": "Only keys under this dotted path (e.g. \"research\" for all research.* keys). Omit for everything." }
+      }
+    }
+  },
+  {
+    "name": "kv_delete",
+    "description": "Delete the document at an exact key (a leaf — deleting a branch key does nothing and shows the keys under it instead). Removal is immediate and local; unlike atoms there are no tombstones.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "key": { "type": "string", "description": "Exact dotted path of the leaf to delete." }
+      },
+      "required": ["key"]
+    }
   }
 ]"#;
 
@@ -859,6 +1012,125 @@ mod tests {
         )
         .unwrap();
         assert!(res.contains("prefer short answers"));
+    }
+
+    fn call(name: &str, args: &str) -> String {
+        format!(
+            r#"{{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"{name}","arguments":{args}}}}}"#
+        )
+    }
+
+    #[test]
+    fn kv_roundtrip_and_replace() {
+        let mut s = store();
+        let reply = handle_line(
+            &call(
+                "kv_put",
+                r##"{"key":"some.nested.doc","doc":"# hello\nbody here"}"##,
+            ),
+            &mut s,
+        )
+        .unwrap();
+        assert!(reply.contains("stored"), "reply: {reply}");
+        // exact get returns the document verbatim
+        let res = handle_line(&call("kv_get", r#"{"key":"some.nested.doc"}"#), &mut s).unwrap();
+        assert!(res.contains("body here"));
+        // replace
+        let reply = handle_line(
+            &call("kv_put", r#"{"key":"some.nested.doc","doc":"v2"}"#),
+            &mut s,
+        )
+        .unwrap();
+        assert!(reply.contains("replaced"), "reply: {reply}");
+        let res = handle_line(&call("kv_get", r#"{"key":"some.nested.doc"}"#), &mut s).unwrap();
+        assert!(!res.contains("body here"));
+    }
+
+    #[test]
+    fn kv_branch_get_returns_subtree() {
+        let mut s = store();
+        for (k, d) in [
+            ("a.b.one", "first"),
+            ("a.b.two", "second"),
+            ("a.c", "other"),
+            ("ab.de", "unrelated"),
+        ] {
+            handle_line(
+                &call("kv_put", &format!(r#"{{"key":"{k}","doc":"{d}"}}"#)),
+                &mut s,
+            );
+        }
+        // leaf get returns the document verbatim
+        let res = handle_line(&call("kv_get", r#"{"key":"a.b.one"}"#), &mut s).unwrap();
+        assert!(res.contains("first"));
+        // branch get: a key with no document returns the subtree below it
+        let res = handle_line(&call("kv_get", r#"{"key":"a"}"#), &mut s).unwrap();
+        assert!(
+            res.contains("a.b.one") && res.contains("first"),
+            "branch get a: {res}"
+        );
+        assert!(res.contains("a.b.two") && res.contains("second"));
+        assert!(res.contains("a.c"), "a.c is under a");
+        assert!(!res.contains("ab.de"), "prefix must match whole segment");
+        let res = handle_line(&call("kv_get", r#"{"key":"a.b"}"#), &mut s).unwrap();
+        assert!(
+            res.contains("a.b.one") && res.contains("first"),
+            "branch get a.b: {res}"
+        );
+        assert!(res.contains("a.b.two") && res.contains("second"));
+        assert!(!res.contains("a.c"), "must not leak sibling branch");
+        assert!(!res.contains("ab.de"), "prefix must match whole segment");
+        // empty result is a clean error
+        let reply = handle_line(&call("kv_get", r#"{"key":"zz"}"#), &mut s).unwrap();
+        assert!(reply.contains("no document"));
+    }
+
+    #[test]
+    fn kv_list_prefix() {
+        let mut s = store();
+        for (k, d) in [("x.y", "1"), ("x.z.w", "2"), ("other", "3")] {
+            handle_line(
+                &call("kv_put", &format!(r#"{{"key":"{k}","doc":"{d}"}}"#)),
+                &mut s,
+            );
+        }
+        let res = handle_line(&call("kv_list", r#"{"prefix":"x"}"#), &mut s).unwrap();
+        assert!(res.contains("x.y") && res.contains("x.z.w") && !res.contains("other"));
+        let res = handle_line(&call("kv_list", "{}"), &mut s).unwrap();
+        assert!(res.contains("other"));
+    }
+
+    #[test]
+    fn kv_delete_leaf_and_missing() {
+        let mut s = store();
+        handle_line(&call("kv_put", r#"{"key":"k1.k2","doc":"v"}"#), &mut s);
+        // deleting a branch key fails and shows the keys below it
+        let reply = handle_line(&call("kv_delete", r#"{"key":"k1"}"#), &mut s).unwrap();
+        assert!(
+            reply.contains("no document") && reply.contains("k1.k2"),
+            "reply: {reply}"
+        );
+        let reply = handle_line(&call("kv_delete", r#"{"key":"k1.k2"}"#), &mut s).unwrap();
+        assert!(reply.contains("deleted"));
+        // gone
+        let reply = handle_line(&call("kv_get", r#"{"key":"k1.k2"}"#), &mut s).unwrap();
+        assert!(reply.contains("error"));
+    }
+
+    #[test]
+    fn kv_bad_keys() {
+        let mut s = store();
+        for key in ["", "a..b", ".a", "a.", "a b.c"] {
+            let reply = handle_line(
+                &call("kv_put", &r#"{"key":"KEY","doc":"v"}"#.replace("KEY", key)),
+                &mut s,
+            )
+            .unwrap();
+            assert!(
+                reply.contains("error"),
+                "expected error for {key:?}: {reply}"
+            );
+        }
     }
 
     #[test]
