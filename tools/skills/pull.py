@@ -63,13 +63,55 @@ def frontmatter(text: str) -> dict[str, str]:
 
 
 def first_sentence(text: str, cap: int) -> str:
+    """First sentence, condensed to at most `cap` chars.
+
+    Cutting happens at a clause or word boundary — never mid-word, and
+    never with a dangling ellipsis (truncation artifacts used to end up
+    as atoms ending in '…'). List separators (' - ') become '; ' so
+    bullet-list sections read as compact enumerations instead of one
+    chopped sentence.
+    """
     text = text.replace("**", "").replace("```", " ").replace("`", "")
     text = re.sub(r"\s+", " ", text).strip()
     text = re.sub(r"^[\-\* ]+", "", text)
+    text = text.replace(" - ", "; ")
     sentence = re.split(r"(?<=\.)\s", text)[0]
-    if len(sentence) > cap:
-        sentence = sentence[: cap - 1].rstrip() + "…"
-    return sentence
+    if len(sentence) <= cap:
+        return sentence
+    cut = sentence[:cap]
+    for sep in ("; ", ". ", ", "):
+        idx = cut.rfind(sep)
+        if idx > cap // 2:
+            return cut[:idx].rstrip(" ,;.")
+    return cut.rsplit(" ", 1)[0].rstrip(" ,;.")
+
+
+def usable(text: str, min_len: int = 15) -> bool:
+    """Reject heading fragments and other content-free atoms.
+
+    Kills the artifacts the old extractor produced: bare sub-headings
+    ('changes: ### Step 5: Push the Change'), list markers ('1.'), YAML
+    fragments ('|-'), and anything that is a label with no content.
+    """
+    stripped = text.strip()
+    if len(stripped) < min_len:
+        return False
+    if stripped.endswith(":"):
+        return False
+    if not any(c.isalpha() for c in stripped):
+        return False
+    return True
+
+
+def slugify(heading: str) -> str:
+    """'Critical: Avoid interactive mode' -> 'critical-avoid-interactive-mode'.
+
+    The old version kept the colon ('critical:-avoid-...'), which leaked
+    into atom labels.
+    """
+    return (
+        heading.strip().lower().replace(": ", " ").replace(":", "").replace(" ", "-")
+    )
 
 
 def distill(skill_dir: Path, extra_tags: list[str]) -> tuple[str, list[str]]:
@@ -83,13 +125,17 @@ def distill(skill_dir: Path, extra_tags: list[str]) -> tuple[str, list[str]]:
     tag_suffix = " " + " ".join(f"#{t}" for t in tags) if tags else ""
 
     body = source[match.end():] if (match := re.match(r"^---\n(.*?)\n---", source, re.DOTALL)) else source
-    lines = [f"{first_sentence(description, SUMMARY_CAP)}{tag_suffix}"]
+    lines = []
+    summary = first_sentence(description, SUMMARY_CAP)
+    if usable(summary):
+        lines.append(f"{summary}{tag_suffix}")
 
     # Section highlights: "## heading" -> first sentence under it.
     sections = re.findall(r"^## (.+)$", body, re.MULTILINE)
     sections = [s.split("#")[0].strip() for s in sections]  # strip trailing hashtags
     sections = [s for s in sections if s and s.lower() not in ("overview",)]
-    noisy = ("|", "dot ", "graph ", "label=", "```")
+    noisy = ("|", "dot ", "graph ", "label=", "```", "#")
+    seen: set[str] = set()
     for heading in sections[:MAX_SECTIONS]:
         # first sentence after the heading
         pattern = re.compile(rf"^## {re.escape(heading)}.*?\n\n(.+?)(?:\n\n|\n#)", re.DOTALL | re.MULTILINE)
@@ -97,7 +143,11 @@ def distill(skill_dir: Path, extra_tags: list[str]) -> tuple[str, list[str]]:
             if any(m.group(1).lstrip().startswith(n) for n in noisy):
                 continue
             highlight = first_sentence(m.group(1), SECTION_CAP)
-            lines.append(f"{heading.lower().replace(' ', '-')}: {highlight}{tag_suffix}")
+            line = f"{slugify(heading)}: {highlight}{tag_suffix}"
+            if not usable(highlight) or line in seen:
+                continue
+            seen.add(line)
+            lines.append(line)
     return name, lines
 
 
