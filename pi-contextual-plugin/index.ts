@@ -216,8 +216,8 @@ export function bucketTiers(rendered: string): TierSection[] {
 /**
  * Read-only overlay viewer: a tab bar with the top-level tiers, and below
  * it a flat document of that tier's sections, each introduced by a
- * horizontal divider with its title. Navigation: ←/→ or 1/2/3 switch
- * tiers, ↑/↓ scroll line-wise, PgUp/PgDn page-wise, ctrl+↓/ctrl+↑ jump to
+ * horizontal divider with its title. Navigation: ←/→ switch tiers,
+ * ↑/↓ scroll line-wise, PgUp/PgDn page-wise, ctrl+↓/ctrl+↑ jump to
  * the next/previous section, esc/q closes.
  */
 class TierViewer implements Component, Focusable {
@@ -232,7 +232,7 @@ class TierViewer implements Component, Focusable {
     private sections: TierSection[],
     private theme: Theme,
     private done: (result?: unknown) => void,
-    /** Extra footer note, e.g. "2 skills loaded". */
+    /** Extra footer note, e.g. "2 skills". */
     private note?: string,
   ) {}
 
@@ -296,12 +296,6 @@ class TierViewer implements Component, Focusable {
       this.switchTo((this.tab + this.sections.length - 1) % this.sections.length);
     } else if (matchesKey(data, "right") || matchesKey(data, "tab")) {
       this.switchTo((this.tab + 1) % this.sections.length);
-    } else if (matchesKey(data, "1")) {
-      this.switchTo(0);
-    } else if (matchesKey(data, "2")) {
-      this.switchTo(1);
-    } else if (matchesKey(data, "3")) {
-      this.switchTo(2);
     } else if (matchesKey(data, "ctrl+down")) {
       const cur = this.currentSection(this.lastStarts);
       const next = this.lastStarts[Math.min(cur + 1, this.lastStarts.length - 1)];
@@ -335,7 +329,7 @@ class TierViewer implements Component, Focusable {
     const doc = this.document(width);
     const tabs = this.sections
       .map((s, i) => {
-        const label = ` ${i + 1} ${s.label} `;
+        const label = ` ${s.label} `;
         return i === this.tab ? t.fg("accent", t.bold(label)) : t.fg("dim", label);
       })
       .join(t.fg("dim", "│"));
@@ -668,7 +662,7 @@ export default function (pi: ExtensionAPI) {
         }
         const note =
           loaded.length > 0
-            ? `${loaded.length} skill${loaded.length === 1 ? "" : "s"} loaded`
+            ? `${loaded.length} skill${loaded.length === 1 ? "" : "s"}`
             : undefined;
         await ctx.ui.custom(
           (_tui, theme, _keybindings, done) => new TierViewer(sections, theme, done, note),

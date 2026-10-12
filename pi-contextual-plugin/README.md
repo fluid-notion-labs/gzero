@@ -12,8 +12,8 @@ contextual only via MCP — no direct SQLite or hub access.
   `/bag` is the explorer for the whole bag. Both render as a tabbed
   document: top-level tier menu bar (global / local / skills), and below
   it a flat scrollable document where each section opens with a
-  horizontal divider carrying its title. Keys: ←→ or 1/2/3 switch
-  tiers, ↑↓ scroll line-wise, pgup/pgdn page-wise, ctrl+↓/ctrl+↑ jump
+  horizontal divider carrying its title. Keys: ←→ switch tiers, ↑↓
+  scroll line-wise, pgup/pgdn page-wise, ctrl+↓/ctrl+↑ jump
   sections, esc/q close. Note the skillbag is *not* sent to the model —
   its atoms load only when a tag is pulled or a skill is
   referenced/loaded. The injection refreshes itself: the cache is
