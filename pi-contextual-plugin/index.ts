@@ -398,7 +398,10 @@ async function loadWorkflowSections(): Promise<TierSection[]> {
   return sections;
 }
 
-async function openWorkflowSections(ctx: ExtensionContext): Promise<void> {
+async function openWorkflowSections(
+  ctx: ExtensionContext,
+  pane: ItemsPaneController,
+): Promise<void> {
   if (ctx.mode !== "tui") {
     ctx.ui.notify("Workflow sections need TUI mode", "warning");
     return;
@@ -417,14 +420,22 @@ async function openWorkflowSections(ctx: ExtensionContext): Promise<void> {
     ctx.ui.notify("No workflow sections yet — `cx ws set <name>` creates one", "info");
     return;
   }
-  await ctx.ui.custom(
-    (_tui, theme, _keybindings, done) =>
-      new TierViewer(sections, theme, done, `${sections.length} sections`),
-    {
-      overlay: true,
-      overlayOptions: { width: "100%", maxHeight: "100%", anchor: "center" },
-    },
-  );
+  // One overlay interaction at a time: the viewer replaces the pane's
+  // overlay, so the pane must yield first and come back afterwards.
+  const paneWasActive = pane.active;
+  pane.close();
+  try {
+    await ctx.ui.custom(
+      (_tui, theme, _keybindings, done) =>
+        new TierViewer(sections, theme, done, `${sections.length} sections`),
+      {
+        overlay: true,
+        overlayOptions: { width: "100%", maxHeight: "100%", anchor: "center" },
+      },
+    );
+  } finally {
+    if (paneWasActive) void pane.open(ctx);
+  }
 }
 
 /**
@@ -603,16 +614,18 @@ export default function (pi: ExtensionAPI) {
     } catch {
       // tools/list failure shouldn't block the session; injection degrades anyway.
     }
-    // Work-items pane: auto-opens in TUI sessions; auto-hides while empty.
+    // TUI setup. Order matters: the editor wrapper is installed first —
+    // the pane's custom interaction stays pending by design, so nothing
+    // may await it. The pane itself opens fire-and-forget.
     if (ctx.mode === "tui") {
-      await itemsPane.open(ctx);
       // Ctrl+W → full-screen workflow sections viewer.
       ctx.ui.setEditorComponent(
         (tui, theme, keybindings) =>
           new WorkflowEditor(tui, theme, keybindings, () =>
-            void openWorkflowSections(ctx),
+            void openWorkflowSections(ctx, itemsPane),
           ),
       );
+      void itemsPane.open(ctx);
     }
   });
 
@@ -641,7 +654,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerCommand("workflow", {
     description: "Open the workflow sections viewer (same as Ctrl+W)",
     handler: async (_args: string, ctx: ExtensionCommandContext) => {
-      await openWorkflowSections(ctx);
+      await openWorkflowSections(ctx, itemsPane);
     },
   });
 
