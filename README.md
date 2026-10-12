@@ -36,6 +36,9 @@ notes, JSON blobs, decision records.
 
 ## Status
 
-Parser, resolve, `Storage` trait, and SQLite backend done (M0–M2 of the
-plan). Live: project + global context and two packs in the bag. Next:
-re-import discipline after edits, pi integration (M3).
+Live system: parser, resolve, SQLite ledger, hub sync, pi plugin,
+harvest, kv annex. Architecture: `research/memory-plane.md`; whole
+system: `research/context/architecture.md` (Contexture umbrella).
+Forward plan: `research/context/plan2.md` (lattic engine, record
+types, work items); memory-layer history and open items:
+`research/context/plan.md`.

@@ -16,7 +16,7 @@ across two laptops.
 Each simulated machine = one container running the real components:
 
 - `cx` binary (SQLite bag at `/data/context.db`) — authoring + local reads
-- `bagflow` engine as a small HTTP service (new: `bagflow-serve`, ~200
+- `lattic` engine as a small HTTP service (new: `lattic-serve`, ~200
   lines) — holds the in-memory lattice backed by `/data/bag.json`
 - a snapshot exchange directory mounted per-machine: `/sync/` — in the
   docker network this is a shared volume emulating the git repo
@@ -28,7 +28,7 @@ The exchange directory plays the role of the pushed repo: machine A drops
 ```
 while true:
   copy foreign snapshots that are new  (emulates pull)
-  cx absorb ...  /  HTTP merge into bagflow service
+  cx absorb ...  /  HTTP merge into lattic service
   write own snapshot if changed   (emulates push)
   sleep $SYNC_INTERVAL ± jitter
 ```
@@ -66,7 +66,7 @@ while true:
 
 ### T5 — restart mid-flight (crash consistency)
 
-- kill -9 a client's bagflow service while it is absorbing
+- kill -9 a client's lattic service while it is absorbing
 - restart it; it reloads from `/data/bag.json`
 - **Assert:** no corruption, no lost atoms, converges with the others
 
@@ -105,7 +105,7 @@ order is normalized by the canonical sort.
 ## Instrumentation
 
 - every client exposes `GET /resolve`, `GET /snapshot`, `POST /merge` (the
-  bagflow-serve endpoints)
+  lattic-serve endpoints)
 - the runner records a timeline: publish events, absorb events, assertion
   timestamps — so failures show *which interval lost what*
 - syncd logs absorb counts (`+added -removed kept`), which map to the
@@ -113,7 +113,7 @@ order is normalized by the canonical sort.
 
 ## Build order
 
-1. ✅ `bagflow-serve` (HTTP over Bagflow: `PUT /atom`, `POST /merge`,
+1. ✅ `lattic-serve` (HTTP over Lattic: `PUT /atom`, `POST /merge`,
    `GET /resolve`, `GET /snapshot`, `DELETE /atom?text=`) — done, with a
    two-process smoke test (merge + delete propagation over HTTP verified)
 2. compose file + syncd script + T1 happy path
@@ -127,7 +127,7 @@ order is normalized by the canonical sort.
 
 - Does the sync worker need to diff foreign snapshots (mtime vs hash) to
   avoid re-absorbing? (Idempotence makes re-absorbing safe; only wasted IO.)
-- Should bagflow-serve expose tombstone of *not-present* atoms (pre-kill
+- Should lattic-serve expose tombstone of *not-present* atoms (pre-kill
   switch)? Currently `remove` requires the atom; text-only tombstones need
   the merged representation — same decision as cx's.
 - Netem vs toxiproxy: toxiproxy only proxies TCP (HTTP), while sync is
