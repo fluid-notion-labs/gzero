@@ -223,6 +223,79 @@ the file is the wire format. Until then:
    route `absorb` through automerge change application so per-source
    replace becomes true lattice merge. Cheapest change.
 
+## L1 design — the automerge doc under `Storage`
+
+One automerge document is the bag. `AutomergeStore` (in contextual)
+implements the existing `Storage` trait over it, so everything above the
+trait — resolve, harvest, `cx`, `cx-mcp`, the plugin — is untouched.
+
+**Doc shape** (map keys are the atom text; identity = text, as ever):
+
+```
+root
+├─ meta:   { schema: 2 }
+├─ atoms:  Map<text -> { sources: Map<source -> {scope, node, tags}> }>
+└─ tombs:  Map<text -> {scope, node, tags}>      // presence = dead; permanent
+```
+
+Discipline: **never delete an `atoms` or `tombs` key.** Only `sources`
+keys are deletable; an `atoms` record with an empty `sources` map is a
+shadow — kept but invisible. This sidesteps automerge's
+concurrent-set-vs-delete question entirely: adds and edits commute by
+construction, and no tombstone can be clobbered by a concurrent re-add.
+
+**Fold (`alive`)** — exactly today's semantics:
+
+- alive(text) = key in `atoms` ∧ `sources` ≠ ∅ ∧ key ∉ `tombs`
+- scope/node from the lexicographically least source (today: first row
+  of `ORDER BY source, text`); tags = union over all sources' payloads
+  (today: `tags.extend` across rows)
+
+**Op mapping** (each op is one transact):
+
+| today | L1 write |
+|---|---|
+| `sync_source(S, set)` | drop `sources[S]` where text ∉ set; add/update `sources[S]` for text ∈ set (create record if absent). Never touches `tombs` — same as today: file edits retract locally only, no cross-machine propagation |
+| `remove_matching(needle)` | add `tombs[text]` for each alive match, frozen merged record (as today). `sources` untouched — fold hides them |
+| `tombstone(atoms)` | add `tombs` entries — presence is idempotent (INSERT OR IGNORE) |
+| `forget_source(S)` (harvested file deleted) | drop `sources[S]` everywhere; where `sources` is locally now empty → add `tombs[text]` ("texts asserted only by this source die with it") |
+| add via mcp ("adds win on collisions") | reject if text ∈ `tombs` (resurrection-blocked — reword, as today); else `sync_source("mcp", ...)` |
+
+`source_hashes` (harvest change detection) stay machine-local: a tiny
+sidecar table next to the doc — never in it.
+
+**Transport** — the merge machinery dies entirely:
+
+- hub: the DO holds the canonical doc; clients exchange automerge sync
+  messages (`generate_sync_message` / `receive_sync_message`). The
+  change log *is* the doc's change DAG; `get_change_by_hash` is the
+  audit trail. The events API (`PUT`/`remove`) is retired.
+- offline git path: `save()` bytes at `sync/bag-<host>.mrl`; absorb =
+  apply the foreign doc's changes.
+- `cx export` becomes a read-only JSON view for humans and diffs — no
+  longer the merge unit.
+
+**Migration** (one-time, per machine): read the SQLite ledger → build
+the doc (`sync_source` per source in lexical order, then tombstones) →
+`save()`. Two machines' independent imports are different change sets
+with the same content: adds commute, tombstones union — the first hub
+sync converges them. The SQLite file is kept for rollback until the
+first verified sync.
+
+**Attribution**: one actor id per machine; timestamp/seq per change come
+from automerge; each transact carries the source name as change
+metadata — the Events plane's op-log promise, for free.
+
+**Open questions** (for the L1 build):
+
+1. The same file path harvested on two machines is the same `sources`
+   key; concurrent replace of that key resolves last-writer-wins inside
+   automerge — benign (both idempotent, same intent), but confirm.
+2. `save()` bytes grow with history — fine at bag scale (thousands of
+   atoms); automerge compaction exists if ever needed.
+3. `Storage::all()` keeps returning per-source rows (trait compat);
+   decide whether any caller actually needs them post-L1.
+
 ## Invariants
 
 - **Per-source sync**: a source (file, snapshot, `mcp`) owns its rows
