@@ -48,7 +48,7 @@ record types; the crates.io `lattices` crate is the algebra dependency,
 `dfir_rs` stays optional (incremental views only). See `lattice.md` and
 `distributed-state.md`.
 
-## Resolution model — three tiers
+## Resolution model — three tiers (+ workspace, planned)
 
 Context is resolved automatically per session:
 
@@ -58,11 +58,17 @@ Context is resolved automatically per session:
   `.git` suffix, leading host) → e.g. `fluid-notion-labs/context`. Stable
   across machines and checkout paths; falls back to cwd basename when
   no git repo. The local project's standing context.
+- **workspace tier (planned, `plan2.md`)** — scope =
+  `<repo-id>/ws/<feat>`, detected from cwd via `jj workspace list`
+  (longest-prefix match). Feature work always happens in a jj
+  workspace at `.jj/workspaces/<feat>`; the tier carries that
+  feature's working context, default-delivered while active.
 - **repository tier** — the bag: tagged atoms in any scope;
   *pulled in* on demand via hashtag lookup (`resolve(tags)`), discovered
   via `search` when the model doesn't know the hashtag yet
 
-Default delivery = untagged atoms of global + project scopes. Tags pull
+Default delivery = untagged atoms of global + project scopes (and
+the active workspace's, once that tier lands). Tags pull
 from anywhere — that's the hashtag lookup.
 
 ```mermaid
@@ -70,6 +76,7 @@ flowchart LR
     G["global tier\nscope = global\nalways included"] --> R
     CWD["cwd"] --> GIT["git root →\nremote origin URL →\nnormalized repo ID\n(fallback: dir name)"] --> P["project tier\nscope = repo ID"]
     P --> R["resolved CONTEXT\ndelivered to agent"]
+    CWD --> JJ["jj workspace list\nlongest-prefix match"] --> WS["workspace tier (planned)\nscope = <repo>/ws/<feat>"] --> R
     B["repository / bag\ntagged atoms\nany scope"] -- "hashtag pull\nresolve(tags)" --> R
     U["user phrase\n\"rust api, svelte app\""] -- "model maps\nto tags" --> B
 ```
