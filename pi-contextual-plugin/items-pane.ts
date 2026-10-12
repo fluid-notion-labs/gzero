@@ -1,4 +1,4 @@
-// items-pane.ts — persistent right-side pane of work items.
+// items-pane.ts — the workflow pane: persistent right-side work items.
 //
 // A non-capturing overlay (never takes keyboard focus) anchored top-right,
 // a la Claude Code's task panel. Refreshed on session start, after each
@@ -41,7 +41,7 @@ const STATUS_ICON: Record<string, { icon: string; color: "muted" | "accent" | "s
 
 const MAX_ROWS = 18;
 
-function run(
+export function run(
   cmd: string,
   args: string[],
   timeout = 5000,
@@ -156,7 +156,7 @@ export class ItemsPane implements Component {
     const inner = w - 4; // │ + space + content + space + │
     const lines: string[] = [];
 
-    const title = truncateToWidth(` items${this.scopeLabel ? " · " + this.scopeLabel : ""} `, inner);
+    const title = truncateToWidth(` workflow${this.scopeLabel ? " · " + this.scopeLabel : ""} `, inner);
     lines.push(
       theme.fg("borderMuted", "╭" + "─".repeat(w - 2) + "╮"),
     );

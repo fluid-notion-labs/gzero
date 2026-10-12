@@ -11,14 +11,18 @@ import type {
   ExtensionAPI,
   ExtensionCommandContext,
   ExtensionContext,
+  KeybindingsManager,
   Theme,
 } from "@earendil-works/pi-coding-agent";
+import { CustomEditor } from "@earendil-works/pi-coding-agent";
 import {
   Text,
   matchesKey,
   visibleWidth,
   type Component,
+  type EditorTheme,
   type Focusable,
+  type TUI,
 } from "@earendil-works/pi-tui";
 import { boxFrame, LineWindow, modalViewport, wrapPlain } from "./window.ts";
 import {
@@ -33,7 +37,7 @@ import {
   skillBody,
   type SkillEntry,
 } from "./skills.ts";
-import { ItemsPaneController } from "./items-pane.ts";
+import { ItemsPaneController, run as runProc } from "./items-pane.ts";
 import { messageText, registerReview, type ReviewDeps } from "./review.ts";
 import {
   ensureWorkstyles,
@@ -355,6 +359,98 @@ class TierViewer implements Component, Focusable {
   }
 }
 
+// ---- workflow sections: Ctrl+W full-screen viewer ----
+
+/** Fetch JSON from the cx CLI; throws with stderr's first line. */
+async function cxJson(args: string[]): Promise<unknown> {
+  const res = await runProc("cx", args);
+  if (res.code !== 0) {
+    throw new Error(res.stderr.trim().split("\n")[0] || `cx ${args[0]} failed`);
+  }
+  return JSON.parse(res.stdout);
+}
+
+async function loadWorkflowSections(): Promise<TierSection[]> {
+  const list = (await cxJson(["ws", "list", "--json"])) as {
+    name: string;
+    kind: string;
+    title: string;
+  }[];
+  const sections: TierSection[] = [];
+  for (const s of list) {
+    let body = "(empty)";
+    let title = s.title || s.name;
+    try {
+      const detail = (await cxJson(["ws", "show", s.name, "--json"])) as {
+        title?: string;
+        body?: string;
+      };
+      if (detail.body) body = detail.body;
+      if (detail.title) title = detail.title;
+    } catch {
+      // body fetch failed; the list entry still shows
+    }
+    sections.push({
+      label: `${s.name}${s.kind === "checklist" ? " ☑" : ""}`,
+      nodes: [{ label: title, text: body }],
+    });
+  }
+  return sections;
+}
+
+async function openWorkflowSections(ctx: ExtensionContext): Promise<void> {
+  if (ctx.mode !== "tui") {
+    ctx.ui.notify("Workflow sections need TUI mode", "warning");
+    return;
+  }
+  let sections: TierSection[];
+  try {
+    sections = await loadWorkflowSections();
+  } catch (e) {
+    ctx.ui.notify(
+      `Workflow sections unavailable: ${e instanceof Error ? e.message : String(e)}`,
+      "warning",
+    );
+    return;
+  }
+  if (sections.length === 0) {
+    ctx.ui.notify("No workflow sections yet — `cx ws set <name>` creates one", "info");
+    return;
+  }
+  await ctx.ui.custom(
+    (_tui, theme, _keybindings, done) =>
+      new TierViewer(sections, theme, done, `${sections.length} sections`),
+    {
+      overlay: true,
+      overlayOptions: { width: "100%", maxHeight: "100%", anchor: "center" },
+    },
+  );
+}
+
+/**
+ * Editor wrapper: intercepts Ctrl+W (opens the workflow sections
+ * viewer); every other key forwards unchanged. Note: Ctrl+W was
+ * `deleteWordBackward` — that remains available on alt+backspace.
+ */
+class WorkflowEditor extends CustomEditor {
+  constructor(
+    tui: TUI,
+    theme: EditorTheme,
+    keybindings: KeybindingsManager,
+    private openWorkflow: () => void,
+  ) {
+    super(tui, theme, keybindings);
+  }
+
+  handleInput(data: string): void {
+    if (matchesKey(data, "ctrl+w")) {
+      this.openWorkflow();
+      return;
+    }
+    super.handleInput(data);
+  }
+}
+
 export default function (pi: ExtensionAPI) {
   const itemsPane = new ItemsPaneController();
   let cxMcpPath: string | null | undefined;
@@ -510,6 +606,13 @@ export default function (pi: ExtensionAPI) {
     // Work-items pane: auto-opens in TUI sessions; auto-hides while empty.
     if (ctx.mode === "tui") {
       await itemsPane.open(ctx);
+      // Ctrl+W → full-screen workflow sections viewer.
+      ctx.ui.setEditorComponent(
+        (tui, theme, keybindings) =>
+          new WorkflowEditor(tui, theme, keybindings, () =>
+            void openWorkflowSections(ctx),
+          ),
+      );
     }
   });
 
@@ -532,6 +635,13 @@ export default function (pi: ExtensionAPI) {
       } else {
         await itemsPane.toggle(ctx);
       }
+    },
+  });
+
+  pi.registerCommand("workflow", {
+    description: "Open the workflow sections viewer (same as Ctrl+W)",
+    handler: async (_args: string, ctx: ExtensionCommandContext) => {
+      await openWorkflowSections(ctx);
     },
   });
 
