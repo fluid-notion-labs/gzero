@@ -54,18 +54,20 @@ a second crate yet:
 
 | doc | contents | status |
 |---|---|---|
-| `product.md` | what contextual/contexture does, for whom, overarching ideas, non-goals | to write — markdown now; migrates into the bag (§wsys rule) |
-| `architecture.md` | contexture umbrella (planes, moving parts) — promoted from `architecture2.md`, which is retired | exists — migrates into the bag (§wsys rule) |
-| `contextual/research/memory-plane.md` | bag components, resolution model, diagrams | exists, refreshed for elastic + kv annex — migrates (§wsys rule) |
-| `stories.md` | user stories / workflows — human and agent personas | to write — markdown now; migrates into the bag (§wsys rule) |
+| `product.md` | what contextual/contexture does, for whom, overarching ideas, non-goals | to write — markdown now; migrates into the bag (this rule) |
+| `architecture.md` | contexture umbrella (planes, moving parts) — promoted from `architecture2.md`, which is retired | exists — migrates into the bag (this rule) |
+| `contextual/research/memory-plane.md` | bag components, resolution model, diagrams | exists, refreshed for elastic + kv annex — migrates (this rule) |
+| `stories.md` | user stories / workflows — human and agent personas | to write — markdown now; migrates into the bag (this rule) |
 | `plan2.md` | this | — |
 | record-type specs | work-item schema, merge semantics, lifecycle | to write (can live in `stories.md` appendix or own doc) |
 
-## The wsys rule: workflow content is contexture data
+## Workflow content lives in the bag, not in files
 
-Once the record types carry it (L2–L3), **none of the workflow
-system's own content lives in repo `.md` files** — it all lives in
-contextual's store, stored/synced via automerge:
+("wsys" is just the author's shorthand for "workflow system" — an
+earlier draft mistook it for a rule name; the idea below is what
+matters.) Once the record types carry it (L2–L3), **none of the
+workflow system's own content lives in repo `.md` files** — it all
+lives in contextual's store, stored/synced via automerge:
 
 - **prose documents** (product description, user stories, the
   architecture essays) → the **kv annex**: dotted keys → documents,
@@ -206,7 +208,7 @@ reference reading only.
 - **Tool surface:** extend `cx` + `cx-mcp` with item verbs, or a
   separate `elastic-mcp`? Lean: extend cx (one MCP server, one tool
   vocabulary).
-- **Doc placement:** resolved by §wsys rule — markdown homes in
+- **Doc placement:** resolved by the rule above — markdown homes in
   `research/context/` until L2, then everything migrates into the bag
   (prose → kv documents, todos → work items).
 
@@ -224,7 +226,6 @@ reference reading only.
       flip the default store
 - [ ] L2: record types, per-field merge, tombstones, write stamps;
       atom import
-- [ ] L2: record types, per-field merge, tombstones, write stamps
 - [ ] L3: work-item record type, `cx item`, MCP tools
 - [ ] L4: capacity/policy, gates, scheduler ranking
 - [ ] L5: hub distribution of item state

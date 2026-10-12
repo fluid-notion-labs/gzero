@@ -2,7 +2,8 @@
 
 *Active plan (2026-10), written after a code audit. Supersedes
 `plan2.md`'s build-order TODO; plan2 stays as reference for the engine
-rationale, record-type schema, and the wsys rule. Ordering follows the
+rationale, record-type schema, and the workflow-content rule (workflow
+content lives in the bag, not in files). Ordering follows the
 re-phased build order in `architecture.md`: the workflow system (WS)
 built **locally**, then **distributed**; the resident track is far
 later and not planned here.*
@@ -37,7 +38,7 @@ Everything lives in this repo (`nursery/contextual`), crate
    `research/memory-plane.md`, which the restructure moved to
    `research/old/`.
 2. **The kv annex is SQLite-only** and outside the automerge doc —
-   the wsys rule needs kv documents as record data (W1).
+   workflow content must live in the bag as record data (W1).
 3. **Stale doc references**: `architecture.md` and `plan2.md` point at
    `contextual/research/memory-plane.md`, `research/context/…`, and
    `plan.md` — all now under `research/old/` after the restructure.
@@ -59,7 +60,8 @@ Everything lives in this repo (`nursery/contextual`), crate
   native history (actor/timestamp/seq on every change), append-only
   persistence. SQLite is demoted to a derived index (query/FTS),
   never truth.
-- **wsys rule**: prose → kv documents; state (todos, decisions,
+- **workflow content lives in the bag, not in files**: prose → kv
+  documents; state (todos, decisions,
   annotations) → record types; markdown stays the authoring format;
   files are inputs, the bag is the store.
 - **Work items are native** (not adopted): record type per plan2's
@@ -142,7 +144,7 @@ Everything lives in this repo (`nursery/contextual`), crate
 - *Acceptance:* stable ranking; every ranked item carries a
   human-readable why in `--json`.
 
-### W5 — doc-set migration (wsys rule completion)
+### W5 — doc-set migration (workflow-content rule complete)
 
 - Import the research prose (`architecture.md`, `plan2.md`,
   `plan3.md`, later `product.md`/`stories.md`) into kv documents;
@@ -184,8 +186,8 @@ session tree after that. The MCP surface stays stable throughout.
 
 ## TODO
 
-- [ ] land the `@` restructure (describe; housekeeping in plan2: duplicate L2 line, stale doc pointers, "L1 done" → "adopted in W0")
-- [ ] W0: adopt AutomergeStore (rebase orphan, tests green, both stores work)
+- [x] land the `@` restructure (describe; housekeeping in plan2: duplicate L2 line, stale doc pointers, "L1 done" → "adopted in W0")
+- [x] W0: adopt AutomergeStore (rebase orphan, tests green, both stores work; merged to main)
 - [ ] W1: sections as records (kv → automerge doc; `cx ws`; `ws_*` tools)
 - [ ] W2: work items (schema; `cx item`; `item_*` tools; `EXPECTED_TOOLS`)
 - [ ] W3: plan-task injection + skill-activation seed atom + plan tab

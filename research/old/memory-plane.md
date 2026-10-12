@@ -41,8 +41,9 @@ crate (`elastic` is the deferred name for the typed layer, if it is
 ever extracted).
 
 The kv annex is also where long-form workflow prose lives (product
-description, user stories, architecture essays — `plan2.md` §wsys
-rule): markdown stays the authoring format, the bag is the store.
+description, user stories, architecture essays — `plan2.md`'s
+workflow-content rule): markdown stays the authoring format, the bag
+is the store.
 
 **Status (2026-10, updated):** `nursery/bagflow` is cloned (its own
 repo, `fluid-notion-labs/bagflow`: DFIR dataflow, persistence,

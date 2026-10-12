@@ -194,9 +194,10 @@ Key flows:
   **elastic**: one event-sourced ledger + lattice merge (facts for
   immutable data, max-stamp registers for mutable fields,
   `datastore-survey.md`). One storage pattern, typed payloads. The
-  workflow system's own content follows the same rule (plan2 §wsys
-  rule): prose as kv documents, state as record types — markdown stays
-  the authoring format, the bag is the store.
+  workflow system's own content follows the same rule (plan2):
+  workflow content lives in the bag, not in files — prose as kv
+  documents, state as record types, markdown stays the authoring
+  format.
 - The hub generalizes from "context hub" to **replication hub**: bags,
   decision records, annotations, later session records — one Worker+DO,
   more record types (`ai-harness-memory` §3.9).
