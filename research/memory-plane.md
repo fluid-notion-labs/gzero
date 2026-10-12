@@ -7,14 +7,14 @@ Contexture umbrella). Companions: `research/context/lattice.md`
 (merge math), `sync.md` (transport), `distribution.md` (generalized
 mechanism), `data-shape.md` (data register), `persistence.md`
 (durability), `distributed-chaos-plan.md` (testing). Code:
-`nursery/contextual`, `nursery/lattic` (own repo,
-`fluid-notion-labs/bagflow` pending rename).
+`nursery/contextual`, `nursery/bagflow` (own repo,
+`fluid-notion-labs/bagflow`; rename to `elastic` pending, `plan2.md` L0).
 
 ## Naming (use it precisely)
 
 | term       | meaning                                              |
 |------------|------------------------------------------------------|
-| contextual | the system                                           |
+| contextual | the bag system — the Knowledge plane of contexture |                                           |
 | context    | what the agent receives: global ∪ project ∪ pulled-in |
 | bag        | the repository of *possible* contexts; pulled via hashtag |
 | atom       | one terse assertion: `{text, scope, node, tags}`; identity = text |
@@ -31,22 +31,22 @@ mechanism), `data-shape.md` (data register), `persistence.md`
 | `SqliteStore` | contextual| ledger backend behind the `Storage` trait       |
 | snapshot JSON | (format)  | the contract — identical shape in both crates   |
 | `kv` annex    | contextual| dotted keys → documents, `kv_*` MCP tools (local-first) |
-| `lattic`      | lattic    | the engine: event-sourced ledger, lattice merge, snapshot fold; formerly bagflow (`plan2.md`) |
+| `elastic`      | elastic    | the engine: event-sourced ledger, lattice merge, snapshot fold; formerly bagflow (`plan2.md`) |
 
 Two pools, one bridge: **contextual** is the product (SQLite ledger, live
-data); **lattic** is the engine (event-sourced ledger, lattice merge,
+data); **elastic** is the engine (event-sourced ledger, lattice merge,
 JSON snapshot fold). They share the snapshot format. Contextual
-adopts lattic behind the `Storage` trait at plan2 milestone L1.
+adopts elastic behind the `Storage` trait at plan2 milestone L1.
 
 **Status (2026-10, updated):** `nursery/bagflow` is cloned (its own
 repo, `fluid-notion-labs/bagflow`: DFIR dataflow, persistence,
 cross-machine merge, HTTP serve wrapper). **contextual has no
 dependency on it** (no hydroflow/dfir/lattices in its Cargo.toml; the
 merge is hand-rolled in `absorb_snapshot`). Per `plan2.md`: it is
-renamed to **lattic** and becomes the event-sourced engine for all
-record types; the crates.io `lattices` crate is the algebra dependency,
-`dfir_rs` stays optional (incremental views only). See `lattice.md` and
-`distributed-state.md`.
+renamed to **elastic** and becomes the event-sourced engine for all
+record types. Substrate since revised (`plan2.md` §Engine substrate):
+automerge-rs is the state/history/sync core; `dfir_rs` stays optional
+(incremental views only). See `lattice.md` and `distributed-state.md`.
 
 ## Resolution model — three tiers (+ workspace, planned)
 
@@ -58,7 +58,7 @@ Context is resolved automatically per session:
   `.git` suffix, leading host) → e.g. `fluid-notion-labs/context`. Stable
   across machines and checkout paths; falls back to cwd basename when
   no git repo. The local project's standing context.
-- **workspace tier (planned, `plan2.md`)** — scope =
+- **workspace tier (planned)** — scope =
   `<repo-id>/ws/<feat>`, detected from cwd via `jj workspace list`
   (longest-prefix match). Feature work always happens in a jj
   workspace at `.jj/workspaces/<feat>`; the tier carries that
@@ -194,17 +194,17 @@ irrelevant; a hub later would run the same `absorb`.
 flowchart TB
     subgraph NOW["Now — two pools, one bridge"]
         direction LR
-        C1["contextual\nSQLite ledger\n(product, live data)"] <..>|"snapshot JSON"| B1["lattic\nengine replicas\n(own crate)"]
+        C1["contextual\nSQLite ledger\n(product, live data)"] <..>|"snapshot JSON"| B1["elastic\nengine replicas\n(own crate)"]
     end
     subgraph L1["L1 — one engine"]
         direction LR
-        CX2["cx + cx-mcp"] --> ST["Storage trait"] --> EN["lattic: ledger\n+ merge + fold"] --> PS[("snapshot /\nSQLite op log")]
+        CX2["cx + cx-mcp"] --> ST["Storage trait"] --> EN["elastic: ledger\n+ merge + fold"] --> PS[("snapshot /\nSQLite op log")]
     end
     end
 ```
 
 Engine decision (plan2, milestone L1): the unified engine crate is
-**`lattic`** (the `contexture` name is reserved for the umbrella
+**`elastic`** (the `contexture` name is reserved for the umbrella
 system). SQLite stays for now — `Storage` is the plug point — with a
 noted no-SQL endgame: one JSON snapshot per machine as the store,
 `flock` + read-merge-write + atomic rename for same-machine races (the
@@ -212,10 +212,10 @@ lattice merge already handles cross-machine), so the lattice state is
 the file is the wire format. Until then:
 
 1. **Engine absorbs ledger**: contextual keeps its CLI/MCP and markdown
-   sync, but the bag behind `Storage` becomes the lattic ledger + fold;
+   sync, but the bag behind `Storage` becomes the elastic ledger + fold;
    SQLite becomes a projection. Strongest consistency story.
 2. **Ledger stays, merge delegates**: keep SQLite as source of truth,
-   route `absorb` through lattic's `merge` so per-source replace
+   route `absorb` through elastic's `merge` so per-source replace
    becomes true lattice merge. Cheapest change.
 
 ## Invariants
@@ -269,5 +269,6 @@ the file is the wire format. Until then:
 - ⬜ Cloudflare Artifacts backend (planned — see "host-agnostic" above)
 - ⬜ hub: live push (DO websockets) so pulls aren't per-session
 - ⬜ chaos harness (compose + syncd, see `distributed-chaos-plan.md`)
-- ⬜ L1 unification: adopt lattic behind `Storage` (`plan2.md`); the
-  contexture name is reserved for the umbrella
+- ⬜ L1 unification: adopt elastic behind `Storage` (`plan2.md` L1;
+  substrate = automerge-rs core; the contexture name is reserved for
+  the umbrella)
