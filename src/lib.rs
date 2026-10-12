@@ -443,7 +443,8 @@ pub fn resolve_tiers(
                 || r.tags.iter().any(|t| referenced.contains(t.as_str()))
         })
         .collect();
-    items.sort_by(|a, b| (&a.1.scope, &a.1.node, &a.0).cmp(&(&b.1.scope, &b.1.node, &b.0)));
+    // Stable sort keeps authored (rowid) order inside each scope/node.
+    items.sort_by(|a, b| (&a.1.scope, &a.1.node).cmp(&(&b.1.scope, &b.1.node)));
     Ok(items)
 }
 
@@ -503,32 +504,36 @@ pub fn closest_matches(store: &dyn Storage, needle: &str, limit: usize) -> Resul
 
 /// Distinct alive atoms, deduplicated by text: duplicate assertions merge
 /// (tags union; scope/node from the first source in storage order).
-/// Tombstoned texts are excluded.
+/// Tombstoned texts are excluded. Atoms come back in first-appearance
+/// (rowid) order — within a single source that is authored order.
 pub fn alive(store: &dyn Storage) -> Result<Vec<(String, Row)>> {
     let tombstones: HashSet<String> = store.tombstones()?.into_iter().map(|a| a.text).collect();
-    let mut merged: BTreeMap<String, Row> = BTreeMap::new();
+    let mut first: HashMap<String, usize> = HashMap::new();
+    let mut merged: Vec<(String, Row)> = Vec::new();
     for row in store.all()? {
         if tombstones.contains(&row.text) {
             continue;
         }
-        match merged.get_mut(&row.text) {
-            Some(kept) => kept.tags.extend(row.tags.iter().cloned()),
+        match first.get(&row.text) {
+            Some(&i) => merged[i].1.tags.extend(row.tags.iter().cloned()),
             None => {
-                merged.insert(row.text.clone(), row);
+                first.insert(row.text.clone(), merged.len());
+                merged.push((row.text.clone(), row));
             }
         }
     }
-    Ok(merged.into_iter().collect())
+    Ok(merged)
 }
 
-/// Atoms active by default (untagged) plus any referenced tags, sorted by
-/// (scope, node, text). Each fact once by construction.
+/// Atoms active by default (untagged) plus any referenced tags, grouped
+/// by (scope, node), authored order preserved within each group (stable
+/// sort over first-appearance order). Each fact once by construction.
 pub fn resolve(store: &dyn Storage, referenced: &BTreeSet<String>) -> Result<Vec<(String, Row)>> {
     let mut items: Vec<(String, Row)> = alive(store)?
         .into_iter()
         .filter(|(_, r)| r.tags.is_empty() || referenced.iter().any(|t| r.tags.contains(t)))
         .collect();
-    items.sort_by(|a, b| (&a.1.scope, &a.1.node, &a.0).cmp(&(&b.1.scope, &b.1.node, &b.0)));
+    items.sort_by(|a, b| (&a.1.scope, &a.1.node).cmp(&(&b.1.scope, &b.1.node)));
     Ok(items)
 }
 
@@ -846,6 +851,44 @@ mod tests {
         assert!(texts.contains(&"tagged global #rust"));
         // and it only adds — tier defaults remain
         assert!(texts.contains(&"project rule"));
+    }
+
+    #[test]
+    fn resolve_preserves_authored_order_within_node() {
+        let mut store = mem();
+        add_doc(
+            &mut store,
+            "s.md",
+            "# Context — global\n\n## usage\n- zeta line\n- alpha line\n- middle line\n",
+        );
+        let items = resolve_tiers(&store, None, &[]).unwrap();
+        let texts: Vec<&str> = items.iter().map(|(t, _)| t.as_str()).collect();
+        // alphabetical order is wrong for instruction lists — author order wins
+        assert_eq!(texts, ["zeta line", "alpha line", "middle line"]);
+    }
+
+    #[test]
+    fn seeds_fill_the_global_tier_and_resync_is_idempotent() {
+        let mut store = mem();
+        // fresh bag: seeds give the global tier its floor content
+        let stats = reconcile_seeds(&mut store).unwrap();
+        assert_eq!(stats[0].0, "seed:global");
+        assert!(stats[0].1.added > 0);
+        let items = resolve_tiers(&store, None, &[]).unwrap();
+        assert!(items
+            .iter()
+            .any(|(t, _)| t.contains("cx-mcp MCP tools") && t.contains("never a command-line program")));
+
+        // re-sync: nothing changes, nothing duplicates
+        let stats = reconcile_seeds(&mut store).unwrap();
+        assert_eq!(stats[0].1.added, 0);
+        assert_eq!(stats[0].1.removed, 0);
+
+        // a user tombstone survives re-seeding
+        store.remove_matching("command-line").unwrap();
+        reconcile_seeds(&mut store).unwrap();
+        let items = resolve_tiers(&store, None, &[]).unwrap();
+        assert!(!items.iter().any(|(t, _)| t.contains("command-line")));
     }
 
     #[test]

@@ -161,7 +161,9 @@ impl Storage for SqliteStore {
     fn all(&self) -> Result<Vec<Row>> {
         let mut stmt = self
             .conn
-            .prepare("SELECT text, source, scope, node, tags FROM atoms ORDER BY source, text")?;
+            // rowid order: within a source this is document (authored) order,
+            // because sync_source re-inserts in parse order.
+            .prepare("SELECT text, source, scope, node, tags FROM atoms ORDER BY rowid")?;
         let rows = stmt.query_map([], |r| {
             Ok((
                 r.get::<_, String>(0)?,
