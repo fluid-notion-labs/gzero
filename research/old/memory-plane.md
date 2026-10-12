@@ -351,6 +351,10 @@ metadata — the Events plane's op-log promise, for free.
 - ⬜ Cloudflare Artifacts backend (planned — see "host-agnostic" above)
 - ⬜ hub: live push (DO websockets) so pulls aren't per-session
 - ⬜ chaos harness (compose + syncd, see `distributed-chaos-plan.md`)
-- ⬜ L1 unification: automerge behind `Storage` — an `AutomergeStore`
-  in contextual (`plan2.md` L1; the contexture name is reserved for
-  the umbrella)
+- ✅ L1 store: `AutomergeStore` in contextual — one automerge doc per
+  bag, `Storage` trait intact, doc shape per §L1 design. Tests cover
+  per-source replace, tombstone permanence (re-assert never
+  resurrects), harvest retraction, persistence, and two-machine
+  convergence via change application
+- ⬜ L1 unification (rest): change-based push/pull; hub DO as the
+  change log; flip the default store (`plan2.md` L1)

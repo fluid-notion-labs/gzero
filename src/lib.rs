@@ -25,8 +25,10 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 pub mod hub;
+pub mod automerge_store;
 pub mod snapshot;
 pub mod sqlite;
+pub use automerge_store::AutomergeStore;
 pub use sqlite::SqliteStore;
 
 /// One atom's stored record: an assertion of `text` by `source`.
