@@ -668,7 +668,7 @@ export default function (pi: ExtensionAPI) {
           (_tui, theme, _keybindings, done) => new TierViewer(sections, theme, done, note),
           {
             overlay: true,
-            overlayOptions: { width: "75%", minWidth: 80, maxHeight: "85%", anchor: "center" },
+            overlayOptions: { width: "100%", maxHeight: "100%", anchor: "center" },
           },
         );
       } else {
