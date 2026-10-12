@@ -67,8 +67,12 @@ and related performance work is tracked in the implementation plan
 
 ```sh
 mkdir -p ~/.pi/agent/extensions
-cp -r pi ~/.pi/agent/extensions/contextual
+ln -s "$(pwd)/pi-contextual-plugin" ~/.pi/agent/extensions/contextual
 ```
+
+A symlink keeps the installed extension live-linked to the repo —
+plugin changes apply on the next pi restart, no re-copying. (A `cp -r`
+works too, but drifts: the copies go stale as the repo moves.)
 
 Requires `cx` and `cx-mcp` (the plugin offers to run
 `cargo install --git https://github.com/fluid-notion-labs/contextual`).
