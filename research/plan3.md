@@ -198,7 +198,19 @@ session tree after that. The MCP surface stays stable throughout.
       and --file/--body input; checklist render with ☐/☑ + count), four `ws_*`
       MCP tools (ws_get errors list available names), 11 new tests; doc file
       `CX_WS_DB` (default `~/.pi/agent/context.ws`), hashes sidecar alongside
-- [ ] W2: work items (schema; `cx item`; `item_*` tools; `EXPECTED_TOOLS`)
+- [x] W2: work items (schema; `cx item`; `item_*` tools; `EXPECTED_TOOLS`)
+      — done 2026-10: `items.rs` — LWW fields (title/priority/status/assignee/
+      design/acceptance), OR-set labels + append-only id-keyed notes, typed
+      edges (blocks/child_of/discovered_from) with target validation, short
+      random ids with prefix resolution and collision widening, legal
+      transitions only (closed → in_progress rejected), ready = fold (open
+      items with no open blockers, ranked; dangling blockers ignored), 10
+      tests. `cx item` add/list/ready/show/edit/claim/close/reopen/note/
+      label/edge/rm + `item_*` MCP tools (add/list/ready/get/edit/note/
+      delete); `EXPECTED_TOOLS` grew item_add/item_ready. Write stamps:
+      automerge actor+seq, as decided. Unimplemented from the schema:
+      graph/tree view (child_of data exists; `cx item graph` deferred),
+      priority-based `assignee` capacity policy (W4).
 - [ ] W3: plan-task injection + skill-activation seed atom + plan tab
 - [ ] W4: capacity/policy, gates, evidence-ranked scheduler
 - [ ] W5: doc migration into the bag; fix stale references

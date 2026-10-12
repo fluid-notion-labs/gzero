@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 use std::process::exit;
 
 use contextual::hub::{events_for_snapshot, Event, Hub};
+use contextual::items::{EdgeKind, ItemEdit, NewItem, Status, WorkItem};
 use contextual::sections::{checklist_progress, Section, SectionKind};
 use contextual::snapshot::Atom;
 use contextual::{source_counts, tag_counts, AutomergeStore, SqliteStore, Storage};
@@ -69,8 +70,21 @@ cx ws set <name> [--title T] [--type md|checklist] [--order N]
                  (body also read from stdin when piped; omit to edit metadata only)
 cx ws rm <name>   delete a section
 cx ws scopes      list scopes that have sections
+cx item add \"<title>\"      create a work item [--labels a,b] [--priority N]
+                 [--child-of ID] [--blocks ID] [--design TEXT | --design-file F]
+                 [--acceptance TEXT]
+cx item list [--json]      all items: id, status, priority, title, blocked
+cx item ready [--json]     the fold: open items with no open blockers, ranked
+cx item show <id> [--json] full item incl. notes
+cx item edit <id> [--title T] [--priority N] [--assignee A]
+                 [--design TEXT | --design-file F] [--status open|in_progress|closed]
+cx item claim <id> / close <id> / reopen <id>
+cx item note <id> \"<text>\" append a note (append-only)
+cx item label <id> add|rm <label>
+cx item edge <id> add|rm blocks|child-of|discovered-from <target>
+cx item rm <id>   delete an item
 env: CX_DB        bag location (default ~/.pi/agent/context.db)
-env: CX_WS_DB     workflow-sections doc (default ~/.pi/agent/context.ws)";
+env: CX_WS_DB     workflow doc: sections + items (default ~/.pi/agent/context.ws)";
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -373,6 +387,7 @@ fn main() {
             }
         }
         "ws" => ws_command(&args[1..]),
+        "item" => item_command(&args[1..]),
         "recommend" => {
             eprintln!("cx: recommend is gone — packs were dissolved (tagged atoms replace them; see plan.md M4)");
             eprintln!("pull build/workflow conventions via: cx '#rust' / cx '#npm'");
@@ -436,7 +451,8 @@ fn bag_path() -> PathBuf {
 /// Workflow sections (plan3 W1): keyed, typed documents for this
 /// project, stored in the automerge doc (`CX_WS_DB`, default
 /// `~/.pi/agent/context.ws`). Scope defaults to this repo's identity.
-fn ws_command(args: &[String]) {
+/// Split `--flag value` / `--json` flags from positional arguments.
+fn split_args(args: &[String], cmd: &str) -> (BTreeMap<String, String>, Vec<String>) {
     let mut flags: BTreeMap<String, String> = BTreeMap::new();
     let mut pos: Vec<String> = Vec::new();
     let mut i = 0;
@@ -452,7 +468,7 @@ fn ws_command(args: &[String]) {
                         i += 1;
                     }
                     None => {
-                        eprintln!("cx ws: --{f} needs a value");
+                        eprintln!("cx: --{f} needs a value ({cmd})");
                         exit(2);
                     }
                 }
@@ -462,6 +478,11 @@ fn ws_command(args: &[String]) {
         }
         i += 1;
     }
+    (flags, pos)
+}
+
+fn ws_command(args: &[String]) {
+    let (flags, pos) = split_args(args, "ws");
 
     let json = flags.contains_key("json");
     let sub = pos.first().map(String::as_str).unwrap_or("help");
@@ -673,6 +694,367 @@ fn ws_json(s: &Section) -> serde_json::Value {
 fn open_ws() -> AutomergeStore {
     let path = contextual::sections::default_ws_path();
     AutomergeStore::open(Some(&path)).unwrap_or_else(|e| panic!("cx: open {}: {e}", path.display()))
+}
+
+/// Work items (plan3 W2): named records with a lifecycle, stored in
+/// the same workflow doc as sections. Id prefixes resolve when unique.
+fn item_command(args: &[String]) {
+    let (flags, pos) = split_args(args, "item");
+    let json = flags.contains_key("json");
+    let sub = pos.first().map(String::as_str).unwrap_or("help");
+    let scope = flags
+        .get("scope")
+        .cloned()
+        .or_else(contextual::repo_identity)
+        .unwrap_or_else(|| "global".to_string());
+    let mut store = open_ws();
+
+    let id_of = |pos: &[String], i: usize, usage: &str| -> String {
+        let arg = pos.get(i).cloned().unwrap_or_else(|| {
+            eprintln!("cx item: usage: {usage}");
+            exit(2);
+        });
+        store
+            .item_resolve(&scope, &arg)
+            .unwrap_or_else(|e| die("cx item", e))
+    };
+
+    match sub {
+        "help" | "-h" | "--help" => println!("{USAGE}"),
+        "add" => {
+            let title = pos[1..].join(" ");
+            if title.trim().is_empty() {
+                eprintln!("cx item: usage: item add \"<title>\" [--labels a,b] [--priority N] ...");
+                exit(2);
+            }
+            let n = NewItem {
+                title,
+                priority: flags
+                    .get("priority")
+                    .map(|p| {
+                        p.parse::<i64>()
+                            .unwrap_or_else(|e| die("cx item: --priority", e.into()))
+                    })
+                    .unwrap_or(0),
+                assignee: flags.get("assignee").cloned().unwrap_or_default(),
+                labels: flag_list(&flags, "labels"),
+                blocks: flag_list(&flags, "blocks"),
+                discovered_from: flag_list(&flags, "discovered-from"),
+                child_of: flag_list(&flags, "child-of"),
+                acceptance: flags.get("acceptance").cloned().unwrap_or_default(),
+                design: flag_text(&flags, "design", "design-file"),
+            };
+            let it = store
+                .item_add(&scope, n)
+                .unwrap_or_else(|e| die("cx item", e));
+            if json {
+                println!("{}", serde_json::to_string_pretty(&item_json(&it)).unwrap());
+            } else {
+                println!("created {} {} \"{}\"", scope, it.id, it.title);
+            }
+        }
+        "list" | "ready" => {
+            let items = if sub == "ready" {
+                store
+                    .item_ready(&scope)
+                    .unwrap_or_else(|e| die("cx item", e))
+            } else {
+                let mut items = store
+                    .item_list(&scope)
+                    .unwrap_or_else(|e| die("cx item", e));
+                items.sort_by(|a, b| {
+                    let rank = |s: Status| match s {
+                        Status::Closed => 1,
+                        _ => 0,
+                    };
+                    rank(a.status)
+                        .cmp(&rank(b.status))
+                        .then(b.priority.cmp(&a.priority))
+                        .then(a.id.cmp(&b.id))
+                });
+                items
+            };
+            let open_blockers = |it: &WorkItem, all: &[WorkItem]| -> Vec<String> {
+                all.iter()
+                    .filter(|o| o.blocks.contains(&it.id) && o.status != Status::Closed)
+                    .map(|o| o.id.clone())
+                    .collect()
+            };
+            if sub == "list" {
+                let all = store
+                    .item_list(&scope)
+                    .unwrap_or_else(|e| die("cx item", e));
+                if json {
+                    let arr: Vec<_> = items
+                        .iter()
+                        .map(|it| {
+                            let mut o = item_json(it);
+                            o["blocked_by"] = serde_json::json!(open_blockers(it, &all));
+                            o
+                        })
+                        .collect();
+                    println!("{}", serde_json::to_string_pretty(&arr).unwrap());
+                    return;
+                }
+                if items.is_empty() {
+                    println!("(no items in {scope})");
+                    return;
+                }
+                for it in &items {
+                    let blocked = open_blockers(it, &all);
+                    let b = if blocked.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" (blocked by {})", blocked.join(", "))
+                    };
+                    println!(
+                        "{:<8} {:<12} p{:<3} {}{}",
+                        it.id,
+                        it.status.as_str(),
+                        it.priority,
+                        it.title,
+                        b
+                    );
+                }
+            } else {
+                if json {
+                    let arr: Vec<_> = items.iter().map(item_json).collect();
+                    println!("{}", serde_json::to_string_pretty(&arr).unwrap());
+                    return;
+                }
+                if items.is_empty() {
+                    println!("(nothing ready in {scope})");
+                    return;
+                }
+                for it in &items {
+                    println!("{:<8} p{:<3} {}", it.id, it.priority, it.title);
+                }
+            }
+        }
+        "show" => {
+            let id = id_of(&pos, 1, "item show <id>");
+            let it = store
+                .item_get(&scope, &id)
+                .unwrap_or_else(|e| die("cx item", e));
+            match it {
+                None => die("cx item", format!("no item {id} in {scope}").into()),
+                Some(it) => {
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&item_json(&it)).unwrap());
+                        return;
+                    }
+                    println!(
+                        "# {} [{}] ({}, p{})",
+                        it.title,
+                        it.id,
+                        it.status.as_str(),
+                        it.priority
+                    );
+                    if !it.assignee.is_empty() {
+                        println!("assignee: {}", it.assignee);
+                    }
+                    for (label, heading) in [(&it.design, "design"), (&it.acceptance, "acceptance")]
+                    {
+                        if !heading.is_empty() && !label.is_empty() {
+                            println!("\n## {heading}\n\n{label}");
+                        }
+                    }
+                    if !it.labels.is_empty() {
+                        let ls: Vec<_> = it.labels.iter().map(|l| format!("#{l}")).collect();
+                        println!("\nlabels: {}", ls.join(" "));
+                    }
+                    for (key, set) in [
+                        ("blocks", &it.blocks),
+                        ("child-of", &it.child_of),
+                        ("discovered-from", &it.discovered_from),
+                    ] {
+                        if !set.is_empty() {
+                            let ids: Vec<_> = set.iter().cloned().collect();
+                            println!("{key}: {}", ids.join(", "));
+                        }
+                    }
+                    if !it.notes.is_empty() {
+                        println!("\n## notes");
+                        for (nid, text) in &it.notes {
+                            println!("- [{nid}] {text}");
+                        }
+                    }
+                }
+            }
+        }
+        "edit" => {
+            let id = id_of(&pos, 1, "item edit <id> [--title T] [--priority N] [--assignee A] [--status S] [--design TEXT | --design-file F]");
+            let status = match flags.get("status").map(String::as_str) {
+                Some(s) => Some(Status::parse(s).unwrap_or_else(|| {
+                    die(
+                        "cx item: --status",
+                        "must be open|in_progress|closed".into(),
+                    )
+                })),
+                None => None,
+            };
+            let edit = ItemEdit {
+                title: flags.get("title").cloned(),
+                priority: flags.get("priority").map(|p| {
+                    p.parse::<i64>()
+                        .unwrap_or_else(|e| die("cx item: --priority", e.into()))
+                }),
+                assignee: flags.get("assignee").cloned(),
+                design: {
+                    let d = flag_text(&flags, "design", "design-file");
+                    (!d.is_empty()).then_some(d)
+                },
+                acceptance: flags.get("acceptance").cloned(),
+                status,
+            };
+            let it = store
+                .item_edit(&scope, &id, edit)
+                .unwrap_or_else(|e| die("cx item", e));
+            println!("edited {} [{}] -> {}", scope, it.id, it.status.as_str());
+        }
+        "claim" | "close" | "reopen" => {
+            let id = id_of(&pos, 1, "item <claim|close|reopen> <id>");
+            let it = match sub {
+                "claim" => store.item_claim(&scope, &id),
+                "close" => store.item_close(&scope, &id),
+                _ => store.item_reopen(&scope, &id),
+            }
+            .unwrap_or_else(|e| die("cx item", e));
+            println!("{} {} -> {}", scope, it.id, it.status.as_str());
+        }
+        "note" => {
+            let id = id_of(&pos, 1, "item note <id> \"<text>\"");
+            let text = flags
+                .get("text")
+                .cloned()
+                .unwrap_or_else(|| pos[2..].join(" "));
+            if text.trim().is_empty() {
+                eprintln!("cx item: note text is required");
+                exit(2);
+            }
+            let nid = store
+                .item_note(&scope, &id, &text)
+                .unwrap_or_else(|e| die("cx item", e));
+            println!("noted {scope}/{id} [{nid}]");
+        }
+        "label" => {
+            let id = id_of(&pos, 1, "item label <id> add|rm <label>");
+            let op = pos.get(2).map(String::as_str).unwrap_or("");
+            let label = pos.get(3).cloned().unwrap_or_default();
+            let add = match op {
+                "add" => true,
+                "rm" => false,
+                _ => die("cx item", "usage: item label <id> add|rm <label>".into()),
+            };
+            store
+                .item_label(&scope, &id, &label, add)
+                .unwrap_or_else(|e| die("cx item", e));
+            println!(
+                "{} {} {} {label}",
+                if add { "labeled" } else { "unlabeled" },
+                scope,
+                id
+            );
+        }
+        "edge" => {
+            let id = id_of(
+                &pos,
+                1,
+                "item edge <id> add|rm blocks|child-of|discovered-from <target>",
+            );
+            let op = pos.get(2).map(String::as_str).unwrap_or("");
+            let kind = match pos.get(3).map(String::as_str) {
+                Some("blocks") => EdgeKind::Blocks,
+                Some("child-of") => EdgeKind::ChildOf,
+                Some("discovered-from") => EdgeKind::DiscoveredFrom,
+                _ => die(
+                    "cx item",
+                    "edge kind must be blocks|child-of|discovered-from".into(),
+                ),
+            };
+            let add = match op {
+                "add" => true,
+                "rm" => false,
+                _ => die(
+                    "cx item",
+                    "usage: item edge <id> add|rm <kind> <target>".into(),
+                ),
+            };
+            let target = pos.get(4).cloned().unwrap_or_default();
+            let target = store
+                .item_resolve(&scope, &target)
+                .unwrap_or_else(|e| die("cx item", e));
+            store
+                .item_edge(&scope, &id, kind, &target, add)
+                .unwrap_or_else(|e| die("cx item", e));
+            println!(
+                "{} {} {} {} {}",
+                if add { "linked" } else { "unlinked" },
+                scope,
+                id,
+                kind.as_str(),
+                target
+            );
+        }
+        "rm" => {
+            let id = id_of(&pos, 1, "item rm <id>");
+            if store
+                .item_delete(&scope, &id)
+                .unwrap_or_else(|e| die("cx item", e))
+            {
+                println!("deleted {scope}/{id}");
+            } else {
+                die("cx item", format!("no item {id} in {scope}").into());
+            }
+        }
+        other => {
+            eprintln!("cx item: unknown subcommand {other:?} — see {USAGE}");
+            exit(2);
+        }
+    }
+}
+
+fn die(context: &str, err: Box<dyn std::error::Error + Send + Sync>) -> ! {
+    eprintln!("{context}: {err}");
+    exit(1);
+}
+
+/// Comma-separated list flag ("a,b") as Vec<String>.
+fn flag_list(flags: &BTreeMap<String, String>, key: &str) -> Vec<String> {
+    flags
+        .get(key)
+        .map(|v| {
+            v.split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(String::from)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Text from `--<key> TEXT` or `--<file_key> PATH` (empty when absent).
+fn flag_text(flags: &BTreeMap<String, String>, key: &str, file_key: &str) -> String {
+    if let Some(t) = flags.get(key) {
+        return t.clone();
+    }
+    if let Some(f) = flags.get(file_key) {
+        return std::fs::read_to_string(f).unwrap_or_else(|e| die("cx", e.into()));
+    }
+    String::new()
+}
+
+fn item_json(it: &WorkItem) -> serde_json::Value {
+    serde_json::json!({
+        "scope": it.scope, "id": it.id, "title": it.title,
+        "priority": it.priority, "status": it.status.as_str(),
+        "assignee": it.assignee, "created": it.created,
+        "labels": it.labels.iter().collect::<Vec<_>>(),
+        "notes": it.notes,
+        "blocks": it.blocks.iter().collect::<Vec<_>>(),
+        "child_of": it.child_of.iter().collect::<Vec<_>>(),
+        "discovered_from": it.discovered_from.iter().collect::<Vec<_>>(),
+    })
 }
 
 /// Canonical path used as a stable source identifier.

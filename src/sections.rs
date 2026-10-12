@@ -221,8 +221,8 @@ impl AutomergeStore {
         Ok(true)
     }
 
-    /// Integer field on a section record (0 when absent).
-    fn ival(&self, obj: &ObjId, key: &str) -> i64 {
+    /// Integer field on a record (0 when absent).
+    pub(crate) fn ival(&self, obj: &ObjId, key: &str) -> i64 {
         match self.doc.get(obj, key) {
             Ok(Some((automerge::Value::Scalar(s), _))) => match &*s {
                 automerge::ScalarValue::Int(v) => *v,

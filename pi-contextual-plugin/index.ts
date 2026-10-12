@@ -50,7 +50,15 @@ const REPO = "https://github.com/fluid-notion-labs/contextual";
 const INSTALL_CMD = `cargo install --git ${REPO}`;
 
 /** Tools every cx-mcp must expose; a stale install warns instead of failing. */
-const EXPECTED_TOOLS = ["resolve", "search", "add", "remove", "tags"];
+const EXPECTED_TOOLS = [
+  "resolve",
+  "search",
+  "add",
+  "remove",
+  "tags",
+  "item_add",
+  "item_ready",
+];
 
 /** Look up a binary on PATH (a lookup, not a long-running process). */
 function which(bin: string): Promise<string | null> {

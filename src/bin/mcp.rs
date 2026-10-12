@@ -29,6 +29,7 @@ use std::collections::BTreeSet;
 use std::io::{BufRead, Write};
 
 use contextual::hub::{Event, Hub};
+use contextual::items::{Status, WorkItem};
 use contextual::sections::{Section, SectionKind};
 use contextual::snapshot::Atom;
 use contextual::{
@@ -224,6 +225,19 @@ fn call_tool(
                 "ws_get" => tool_ws_get(&args, &ws)?,
                 "ws_list" => tool_ws_list(&args, &ws)?,
                 _ => tool_ws_delete(&args, &mut ws)?,
+            }
+        }
+        "item_add" | "item_list" | "item_ready" | "item_get" | "item_edit" | "item_note"
+        | "item_delete" => {
+            let mut ws = ws_store()?;
+            match name {
+                "item_add" => tool_item_add(&args, &mut ws)?,
+                "item_list" => tool_item_list(&args, &ws)?,
+                "item_ready" => tool_item_ready(&args, &ws)?,
+                "item_get" => tool_item_get(&args, &ws)?,
+                "item_edit" => tool_item_edit(&args, &mut ws)?,
+                "item_note" => tool_item_note(&args, &mut ws)?,
+                _ => tool_item_delete(&args, &mut ws)?,
             }
         }
         other => return Err(format!("unknown tool: {other}")),
@@ -565,6 +579,225 @@ fn tool_tags(store: &SqliteStore) -> Result<String, String> {
         .join(", "))
 }
 
+// ---- work items (plan3 W2) ----
+
+fn str_list(v: Option<&serde_json::Value>) -> Vec<String> {
+    match v {
+        Some(serde_json::Value::Array(items)) => items
+            .iter()
+            .filter_map(|x| x.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+            .collect(),
+        Some(serde_json::Value::String(s)) => s
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn item_id_arg(
+    args: &serde_json::Value,
+    store: &AutomergeStore,
+    tool: &str,
+) -> Result<(String, String), String> {
+    let scope = ws_scope_arg(args);
+    let arg = args
+        .get("id")
+        .and_then(|i| i.as_str())
+        .map(str::trim)
+        .filter(|i| !i.is_empty())
+        .ok_or(format!("{tool}: id is required"))?
+        .to_string();
+    let id = store
+        .item_resolve(&scope, &arg)
+        .map_err(|e| e.to_string())?;
+    Ok((scope, id))
+}
+
+fn item_json(it: &WorkItem) -> serde_json::Value {
+    serde_json::json!({
+        "scope": it.scope, "id": it.id, "title": it.title,
+        "priority": it.priority, "status": it.status.as_str(),
+        "assignee": it.assignee, "created": it.created,
+        "labels": it.labels.iter().collect::<Vec<_>>(),
+        "notes": it.notes,
+        "blocks": it.blocks.iter().collect::<Vec<_>>(),
+        "child_of": it.child_of.iter().collect::<Vec<_>>(),
+        "discovered_from": it.discovered_from.iter().collect::<Vec<_>>(),
+    })
+}
+
+fn tool_item_add(args: &serde_json::Value, store: &mut AutomergeStore) -> Result<String, String> {
+    let scope = ws_scope_arg(args);
+    let title = args
+        .get("title")
+        .and_then(|t| t.as_str())
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .ok_or("item_add: title is required")?
+        .to_string();
+    let n = contextual::items::NewItem {
+        title,
+        priority: args.get("priority").and_then(|p| p.as_i64()).unwrap_or(0),
+        assignee: args
+            .get("assignee")
+            .and_then(|a| a.as_str())
+            .unwrap_or("")
+            .to_string(),
+        labels: str_list(args.get("labels")),
+        blocks: str_list(args.get("blocks")),
+        discovered_from: str_list(args.get("discovered_from")),
+        child_of: str_list(args.get("child_of")),
+        acceptance: args
+            .get("acceptance")
+            .and_then(|a| a.as_str())
+            .unwrap_or("")
+            .to_string(),
+        design: args
+            .get("design")
+            .and_then(|a| a.as_str())
+            .unwrap_or("")
+            .to_string(),
+    };
+    let it = store.item_add(&scope, n).map_err(|e| e.to_string())?;
+    Ok(format!("created {} {} \"{}\"", scope, it.id, it.title))
+}
+
+fn item_lines(scope: &str, items: &[WorkItem], all: &[WorkItem]) -> String {
+    if items.is_empty() {
+        return format!("(no items in {scope})");
+    }
+    items
+        .iter()
+        .map(|it| {
+            let blocked: Vec<String> = all
+                .iter()
+                .filter(|o| o.blocks.contains(&it.id) && o.status != Status::Closed)
+                .map(|o| o.id.clone())
+                .collect();
+            let b = if blocked.is_empty() {
+                String::new()
+            } else {
+                format!(" (blocked by {})", blocked.join(", "))
+            };
+            format!(
+                "{:<8} {:<12} p{:<3} {}{}",
+                it.id,
+                it.status.as_str(),
+                it.priority,
+                it.title,
+                b
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn tool_item_list(args: &serde_json::Value, store: &AutomergeStore) -> Result<String, String> {
+    let scope = ws_scope_arg(args);
+    let mut items = store.item_list(&scope).map_err(|e| e.to_string())?;
+    items.sort_by(|a, b| {
+        let rank = |it: &WorkItem| if it.status == Status::Closed { 1 } else { 0 };
+        rank(a)
+            .cmp(&rank(b))
+            .then(b.priority.cmp(&a.priority))
+            .then(a.id.cmp(&b.id))
+    });
+    let all = items.clone();
+    Ok(item_lines(&scope, &items, &all))
+}
+
+fn tool_item_ready(args: &serde_json::Value, store: &AutomergeStore) -> Result<String, String> {
+    let scope = ws_scope_arg(args);
+    let ready = store.item_ready(&scope).map_err(|e| e.to_string())?;
+    Ok(item_lines(&scope, &ready, &[]))
+}
+
+fn tool_item_get(args: &serde_json::Value, store: &AutomergeStore) -> Result<String, String> {
+    let (scope, id) = item_id_arg(args, store, "item_get")?;
+    match store.item_get(&scope, &id).map_err(|e| e.to_string())? {
+        Some(it) => Ok(serde_json::to_string_pretty(&item_json(&it)).unwrap()),
+        None => Err(format!("item_get: no item {id:?} in {scope:?}")),
+    }
+}
+
+fn tool_item_edit(args: &serde_json::Value, store: &mut AutomergeStore) -> Result<String, String> {
+    let (scope, id) = {
+        let store: &AutomergeStore = store;
+        item_id_arg(args, store, "item_edit")?
+    };
+    let status = match args.get("status").and_then(|s| s.as_str()) {
+        Some(s) => Some(
+            contextual::items::Status::parse(s)
+                .ok_or("item_edit: status must be open|in_progress|closed")?,
+        ),
+        None => None,
+    };
+    let edit = contextual::items::ItemEdit {
+        title: args.get("title").and_then(|t| t.as_str()).map(String::from),
+        priority: args.get("priority").and_then(|p| p.as_i64()),
+        assignee: args
+            .get("assignee")
+            .and_then(|a| a.as_str())
+            .map(String::from),
+        design: args
+            .get("design")
+            .and_then(|d| d.as_str())
+            .map(String::from),
+        acceptance: args
+            .get("acceptance")
+            .and_then(|a| a.as_str())
+            .map(String::from),
+        status,
+    };
+    let it = store
+        .item_edit(&scope, &id, edit)
+        .map_err(|e| e.to_string())?;
+    Ok(format!(
+        "edited {} [{}] -> {}",
+        it.id,
+        it.title,
+        it.status.as_str()
+    ))
+}
+
+fn tool_item_note(args: &serde_json::Value, store: &mut AutomergeStore) -> Result<String, String> {
+    let (scope, id) = {
+        let store: &AutomergeStore = store;
+        item_id_arg(args, store, "item_note")?
+    };
+    let text = args
+        .get("text")
+        .and_then(|t| t.as_str())
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .ok_or("item_note: text is required")?;
+    let nid = store
+        .item_note(&scope, &id, text)
+        .map_err(|e| e.to_string())?;
+    Ok(format!("noted {scope}/{id} [{nid}]"))
+}
+
+fn tool_item_delete(
+    args: &serde_json::Value,
+    store: &mut AutomergeStore,
+) -> Result<String, String> {
+    let (scope, id) = {
+        let store: &AutomergeStore = store;
+        item_id_arg(args, store, "item_delete")?
+    };
+    if store.item_delete(&scope, &id).map_err(|e| e.to_string())? {
+        Ok(format!("deleted {scope}/{id}"))
+    } else {
+        Err(format!("item_delete: no item {id:?} in {scope:?}"))
+    }
+}
+
 // ---- workflow sections (plan3 W1) ----
 
 /// The ws doc, opened per call (sections are infrequent; D1 unifies stores).
@@ -842,6 +1075,91 @@ const TOOLS: &str = r#"[
         "scope": { "type": "string", "description": "Omit for the current project." }
       },
       "required": ["name"]
+    }
+  },
+  {
+    "name": "item_add",
+    "description": "Create a work item (task/bug/epic) for this project. Starts open. Optional: 'priority' (higher = more important), 'labels', 'blocks' (ids this item blocks), 'child_of' (parent id), 'discovered_from', 'design' and 'acceptance' (markdown text). Ids may be given as unique prefixes.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "priority": { "type": "integer" },
+        "assignee": { "type": "string" },
+        "labels": { "type": "string", "description": "Comma-separated or array." },
+        "blocks": { "type": "string" },
+        "child_of": { "type": "string" },
+        "discovered_from": { "type": "string" },
+        "design": { "type": "string" },
+        "acceptance": { "type": "string" },
+        "scope": { "type": "string", "description": "Omit for the current project." }
+      },
+      "required": ["title"]
+    }
+  },
+  {
+    "name": "item_list",
+    "description": "List work items for the current project: open first, then by priority. Lines show id, status, priority, title, and open blockers.",
+    "inputSchema": { "type": "object", "properties": { "scope": { "type": "string" } } }
+  },
+  {
+    "name": "item_ready",
+    "description": "The ready fold: open work items with no open blockers, ranked by priority. Use to pick the next thing to do.",
+    "inputSchema": { "type": "object", "properties": { "scope": { "type": "string" } } }
+  },
+  {
+    "name": "item_get",
+    "description": "Read one work item in full: fields, labels, notes, edges. Ids may be unique prefixes.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "scope": { "type": "string" }
+      },
+      "required": ["id"]
+    }
+  },
+  {
+    "name": "item_edit",
+    "description": "Edit a work item's fields. 'status' transitions: open -> in_progress -> closed; closed -> open reopens. Illegal transitions (closed -> in_progress) error.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "priority": { "type": "integer" },
+        "assignee": { "type": "string" },
+        "status": { "type": "string", "enum": ["open", "in_progress", "closed"] },
+        "design": { "type": "string" },
+        "acceptance": { "type": "string" },
+        "scope": { "type": "string" }
+      },
+      "required": ["id"]
+    }
+  },
+  {
+    "name": "item_note",
+    "description": "Append a note to a work item. Notes are append-only and id-keyed — history, not edits.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "text": { "type": "string" },
+        "scope": { "type": "string" }
+      },
+      "required": ["id", "text"]
+    }
+  },
+  {
+    "name": "item_delete",
+    "description": "Delete a work item. References to it in other items' edge sets remain but no longer block anything.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "scope": { "type": "string" }
+      },
+      "required": ["id"]
     }
   }
 ]"#;
@@ -1132,6 +1450,50 @@ mod tests {
         assert!(tool_ws_put(&json!({"name": "a b"}), &mut s).is_err());
         assert!(tool_ws_put(&json!({"name": ""}), &mut s).is_err());
         assert!(tool_ws_put(&json!({"name": "ok", "kind": "yaml"}), &mut s).is_err());
+    }
+
+    #[test]
+    fn item_full_lifecycle_via_tools() {
+        let mut s = AutomergeStore::in_memory().unwrap();
+        let reply =
+            tool_item_add(&json!({"title": "fix the gate", "priority": 2}), &mut s).unwrap();
+        assert!(reply.contains("created"), "{reply}");
+        // prefix resolution from the reply's id
+        let id = reply.split_whitespace().nth(2).unwrap().to_string();
+        tool_item_add(&json!({"title": "epic", "child_of": &id}), &mut s).unwrap();
+        let list = tool_item_list(&json!({}), &s).unwrap();
+        assert!(list.contains("fix the gate") && list.contains("epic"));
+        tool_item_edit(&json!({"id": &id, "status": "in_progress"}), &mut s).unwrap();
+        assert!(tool_item_list(&json!({}), &s)
+            .unwrap()
+            .contains("in_progress"));
+        tool_item_note(&json!({"id": &id, "text": "started"}), &mut s).unwrap();
+        let full = tool_item_get(&json!({"id": &id}), &s).unwrap();
+        assert!(full.contains("started") && full.contains("in_progress"));
+        // blocked sibling: ready fold excludes it
+        let kid = tool_item_add(&json!({"title": "kid", "blocks": &id}), &mut s).unwrap();
+        let kid_id = kid.split_whitespace().nth(2).unwrap().to_string();
+        let ready = tool_item_ready(&json!({}), &s).unwrap();
+        assert!(!ready.contains(&id), "blocked item must not be ready");
+        assert!(ready.contains(&kid_id));
+        // once the blocker closes, the claimed item becomes ready
+        tool_item_edit(&json!({"id": &kid_id, "status": "closed"}), &mut s).unwrap();
+        assert!(tool_item_ready(&json!({}), &s).unwrap().contains(&id));
+        tool_item_edit(&json!({"id": &id, "status": "closed"}), &mut s).unwrap();
+        // illegal transition
+        assert!(tool_item_edit(&json!({"id": &id, "status": "in_progress"}), &mut s).is_err());
+        assert!(tool_item_delete(&json!({"id": &id}), &mut s)
+            .unwrap()
+            .contains("deleted"));
+    }
+
+    #[test]
+    fn item_validation_errors() {
+        let mut s = AutomergeStore::in_memory().unwrap();
+        assert!(tool_item_add(&json!({"title": "  "}), &mut s).is_err());
+        assert!(tool_item_get(&json!({"id": "zz"}), &s).is_err());
+        assert!(tool_item_note(&json!({"id": "zz", "text": "x"}), &mut s).is_err());
+        assert!(tool_item_delete(&json!({"id": "zz"}), &mut s).is_err());
     }
 
     #[test]
