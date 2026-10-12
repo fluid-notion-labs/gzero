@@ -8,7 +8,8 @@ Contexture umbrella). Companions: `research/context/lattice.md`
 mechanism), `data-shape.md` (data register), `persistence.md`
 (durability), `distributed-chaos-plan.md` (testing). Code:
 `nursery/contextual`, `nursery/bagflow` (own repo,
-`fluid-notion-labs/bagflow`; rename to `elastic` pending, `plan2.md` L0).
+`fluid-notion-labs/bagflow`; reference prototype, not renamed —
+`plan2.md` §Engine packaging).
 
 ## Naming (use it precisely)
 
@@ -31,22 +32,24 @@ mechanism), `data-shape.md` (data register), `persistence.md`
 | `SqliteStore` | contextual| ledger backend behind the `Storage` trait       |
 | snapshot JSON | (format)  | the contract — identical shape in both crates   |
 | `kv` annex    | contextual| dotted keys → documents, `kv_*` MCP tools (local-first) |
-| `elastic`      | elastic    | the engine: event-sourced ledger, lattice merge, snapshot fold; formerly bagflow (`plan2.md`) |
+| automerge doc  | automerge-rs | state + history + sync core behind the `Storage` trait (L1); `elastic` = the deferred typed-layer crate |
 
-Two pools, one bridge: **contextual** is the product (SQLite ledger, live
-data); **elastic** is the engine (event-sourced ledger, lattice merge,
-JSON snapshot fold). They share the snapshot format. Contextual
-adopts elastic behind the `Storage` trait at plan2 milestone L1.
+One product, one core: **contextual** holds the CLI/MCP and the SQLite
+ledger today; at plan2 milestone L1 the engine core is **automerge-rs**
+behind the `Storage` trait, inside contextual — no separate engine
+crate (`elastic` is the deferred name for the typed layer, if it is
+ever extracted).
 
 **Status (2026-10, updated):** `nursery/bagflow` is cloned (its own
 repo, `fluid-notion-labs/bagflow`: DFIR dataflow, persistence,
 cross-machine merge, HTTP serve wrapper). **contextual has no
 dependency on it** (no hydroflow/dfir/lattices in its Cargo.toml; the
-merge is hand-rolled in `absorb_snapshot`). Per `plan2.md`: it is
-renamed to **elastic** and becomes the event-sourced engine for all
-record types. Substrate since revised (`plan2.md` §Engine substrate):
-automerge-rs is the state/history/sync core; `dfir_rs` stays optional
-(incremental views only). See `lattice.md` and `distributed-state.md`.
+merge is hand-rolled in `absorb_snapshot`). Per `plan2.md` it stays an
+unrenamed reference prototype: the engine core is **automerge-rs**
+behind the `Storage` trait, inside contextual, and the typed record
+layer starts as modules there too (`elastic` names the extraction, if
+ever). `dfir_rs` stays optional (incremental views only). See
+`lattice.md` and `distributed-state.md`.
 
 ## Resolution model — three tiers (+ workspace, planned)
 
@@ -194,17 +197,19 @@ irrelevant; a hub later would run the same `absorb`.
 flowchart TB
     subgraph NOW["Now — two pools, one bridge"]
         direction LR
-        C1["contextual\nSQLite ledger\n(product, live data)"] <..>|"snapshot JSON"| B1["elastic\nengine replicas\n(own crate)"]
+        C1["contextual\nSQLite ledger\n(product, live data)"] <..>|"snapshot JSON"| B1["automerge-rs\ndoc state + history\n(vendored crate)"]
     end
     subgraph L1["L1 — one engine"]
         direction LR
-        CX2["cx + cx-mcp"] --> ST["Storage trait"] --> EN["elastic: ledger\n+ merge + fold"] --> PS[("snapshot /\nSQLite op log")]
+        CX2["cx + cx-mcp"] --> ST["Storage trait"] --> EN["automerge behind\nStorage: fold +\nchange application"] --> PS[("automerge doc /\nSQLite projection")]
     end
     end
 ```
 
-Engine decision (plan2, milestone L1): the unified engine crate is
-**`elastic`** (the `contexture` name is reserved for the umbrella
+Engine decision (plan2, milestone L1): the engine core is
+**automerge-rs** behind the `Storage` trait, inside contextual — no
+separate engine crate; `elastic` names the typed layer only if it is
+ever extracted (the `contexture` name is reserved for the umbrella
 system). SQLite stays for now — `Storage` is the plug point — with a
 noted no-SQL endgame: one JSON snapshot per machine as the store,
 `flock` + read-merge-write + atomic rename for same-machine races (the
@@ -212,11 +217,11 @@ lattice merge already handles cross-machine), so the lattice state is
 the file is the wire format. Until then:
 
 1. **Engine absorbs ledger**: contextual keeps its CLI/MCP and markdown
-   sync, but the bag behind `Storage` becomes the elastic ledger + fold;
+   sync, but the bag behind `Storage` becomes the automerge doc + fold;
    SQLite becomes a projection. Strongest consistency story.
 2. **Ledger stays, merge delegates**: keep SQLite as source of truth,
-   route `absorb` through elastic's `merge` so per-source replace
-   becomes true lattice merge. Cheapest change.
+   route `absorb` through automerge change application so per-source
+   replace becomes true lattice merge. Cheapest change.
 
 ## Invariants
 
@@ -269,6 +274,6 @@ the file is the wire format. Until then:
 - ⬜ Cloudflare Artifacts backend (planned — see "host-agnostic" above)
 - ⬜ hub: live push (DO websockets) so pulls aren't per-session
 - ⬜ chaos harness (compose + syncd, see `distributed-chaos-plan.md`)
-- ⬜ L1 unification: adopt elastic behind `Storage` (`plan2.md` L1;
-  substrate = automerge-rs core; the contexture name is reserved for
+- ⬜ L1 unification: automerge behind `Storage` — an `AutomergeStore`
+  in contextual (`plan2.md` L1; the contexture name is reserved for
   the umbrella)

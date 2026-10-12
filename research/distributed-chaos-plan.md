@@ -5,10 +5,11 @@ N simulated machines, network faults and slowness, converge to the
 assumed end state. One directory: `nursery/contextual/tests/` holds the
 harness; this document holds the design. Related: `research/context/sync.md`.
 
-*Substrate note (2026-10): written before the automerge decision — with
-automerge-rs as the core (`plan2.md` §Engine substrate) the merge
-endpoints of `elastic-serve` become change exchange; the scenarios and
-convergence oracles below are unchanged.*
+*Substrate note (2026-10): written before the automerge decision — the
+core is now automerge-rs behind the `Storage` trait, inside contextual
+(no separate elastic crate; `plan2.md` §Engine packaging): the engine
+service below becomes change exchange, and `bagflow-serve` stays a
+prototype. The scenarios and convergence oracles below are unchanged.*
 
 ## Goal
 
@@ -21,8 +22,9 @@ across two laptops.
 Each simulated machine = one container running the real components:
 
 - `cx` binary (SQLite bag at `/data/context.db`) — authoring + local reads
-- `elastic` engine as a small HTTP service (new: `elastic-serve`, ~200
-  lines) — holds the in-memory lattice backed by `/data/bag.json`
+- the automerge-backed engine as a small HTTP service (a wrapper over
+  contextual's `AutomergeStore`, ~200 lines) — holds the doc state +
+  change history backed by `/data/`
 - a snapshot exchange directory mounted per-machine: `/sync/` — in the
   docker network this is a shared volume emulating the git repo
 
@@ -33,7 +35,7 @@ The exchange directory plays the role of the pushed repo: machine A drops
 ```
 while true:
   copy foreign snapshots that are new  (emulates pull)
-  cx absorb ...  /  HTTP merge into elastic service
+  cx absorb ...  /  HTTP change exchange with the engine service
   write own snapshot if changed   (emulates push)
   sleep $SYNC_INTERVAL ± jitter
 ```
@@ -71,7 +73,7 @@ while true:
 
 ### T5 — restart mid-flight (crash consistency)
 
-- kill -9 a client's elastic service while it is absorbing
+- kill -9 a client's engine service while it is absorbing
 - restart it; it reloads from `/data/bag.json`
 - **Assert:** no corruption, no lost atoms, converges with the others
 
@@ -110,7 +112,7 @@ order is normalized by the canonical sort.
 ## Instrumentation
 
 - every client exposes `GET /resolve`, `GET /snapshot`, `POST /merge` (the
-  elastic-serve endpoints)
+  engine service endpoints)
 - the runner records a timeline: publish events, absorb events, assertion
   timestamps — so failures show *which interval lost what*
 - syncd logs absorb counts (`+added -removed kept`), which map to the
@@ -118,9 +120,11 @@ order is normalized by the canonical sort.
 
 ## Build order
 
-1. ✅ `elastic-serve` (HTTP over Elastic: `PUT /atom`, `POST /merge`,
-   `GET /resolve`, `GET /snapshot`, `DELETE /atom?text=`) — done, with a
-   two-process smoke test (merge + delete propagation over HTTP verified)
+1. ✅ prototype exists: `bagflow-serve` (HTTP over the bagflow lattice:
+   `PUT /atom`, `POST /merge`, `GET /resolve`, `GET /snapshot`,
+   `DELETE /atom?text=`) — done, with a two-process smoke test (merge +
+   delete propagation over HTTP verified); the production shape is the
+   automerge-backed service above
 2. compose file + syncd script + T1 happy path
 3. oracle checker + T2, T3
 4. toxiproxy wiring + T4, T5
@@ -132,7 +136,7 @@ order is normalized by the canonical sort.
 
 - Does the sync worker need to diff foreign snapshots (mtime vs hash) to
   avoid re-absorbing? (Idempotence makes re-absorbing safe; only wasted IO.)
-- Should elastic-serve expose tombstone of *not-present* atoms (pre-kill
+- Should the engine service expose tombstone of *not-present* atoms (pre-kill
   switch)? Currently `remove` requires the atom; text-only tombstones need
   the merged representation — same decision as cx's.
 - Netem vs toxiproxy: toxiproxy only proxies TCP (HTTP), while sync is

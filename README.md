@@ -39,6 +39,6 @@ notes, JSON blobs, decision records.
 Live system: parser, resolve, SQLite ledger, hub sync, pi plugin,
 harvest, kv annex. Architecture: `research/memory-plane.md`; whole
 system: `research/context/architecture.md` (Contexture umbrella).
-Forward plan: `research/context/plan2.md` (elastic engine, record
-types, work items); memory-layer history and open items:
+Forward plan: `research/context/plan2.md` (automerge substrate,
+record types, work items); memory-layer history and open items:
 `research/context/plan.md`.
