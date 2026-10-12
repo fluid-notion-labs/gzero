@@ -24,8 +24,9 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
-pub mod hub;
 pub mod automerge_store;
+pub mod hub;
+pub mod sections;
 pub mod snapshot;
 pub mod sqlite;
 pub use automerge_store::AutomergeStore;
@@ -879,7 +880,8 @@ mod tests {
         let items = resolve_tiers(&store, None, &[]).unwrap();
         assert!(items
             .iter()
-            .any(|(t, _)| t.contains("cx-mcp MCP tools") && t.contains("never a command-line program")));
+            .any(|(t, _)| t.contains("cx-mcp MCP tools")
+                && t.contains("never a command-line program")));
 
         // re-sync: nothing changes, nothing duplicates
         let stats = reconcile_seeds(&mut store).unwrap();

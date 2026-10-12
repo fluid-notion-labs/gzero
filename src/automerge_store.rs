@@ -24,7 +24,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use automerge::transaction::Transactable;
-use automerge::{AutoCommit, ChangeHash, ObjId, ObjType, ReadDoc, ROOT, Value};
+use automerge::{AutoCommit, ChangeHash, ObjId, ObjType, ReadDoc, Value, ROOT};
 
 use crate::{ParsedAtom, Result, Row, Storage, SyncStats};
 
@@ -32,7 +32,7 @@ use crate::{ParsedAtom, Result, Row, Storage, SyncStats};
 const SEP: &str = "\u{1f}";
 
 pub struct AutomergeStore {
-    doc: AutoCommit,
+    pub(crate) doc: AutoCommit,
     /// Doc file; `None` = in-memory. Hashes sidecar lives beside it.
     path: Option<PathBuf>,
     /// Machine-local harvest hashes (sidecar JSON, never in the doc).
@@ -55,6 +55,10 @@ impl AutomergeStore {
         if !store.has(&ROOT, "atoms") {
             store.doc.put_object(ROOT, "atoms", ObjType::Map)?;
             store.doc.put_object(ROOT, "tombs", ObjType::Map)?;
+            store.doc.put_object(ROOT, "sections", ObjType::Map)?;
+            store.doc.commit();
+        } else if !store.has(&ROOT, "sections") {
+            store.doc.put_object(ROOT, "sections", ObjType::Map)?;
             store.doc.commit();
         }
         if let Some(p) = &store.path {
@@ -117,13 +121,10 @@ impl AutomergeStore {
     }
 
     /// Persist doc + hashes sidecar (no-op in memory).
-    fn flush(&mut self) -> Result<()> {
+    pub(crate) fn flush(&mut self) -> Result<()> {
         if let Some(p) = &self.path {
             std::fs::write(p, self.doc.save())?;
-            std::fs::write(
-                Self::hash_path(p),
-                serde_json::to_string(&self.hashes)?,
-            )?;
+            std::fs::write(Self::hash_path(p), serde_json::to_string(&self.hashes)?)?;
         }
         Ok(())
     }
@@ -131,11 +132,21 @@ impl AutomergeStore {
     // ---- doc accessors ----
 
     fn atoms_id(&self) -> ObjId {
-        self.doc.get(ROOT, "atoms").ok().flatten().expect("atoms object").1
+        self.doc
+            .get(ROOT, "atoms")
+            .ok()
+            .flatten()
+            .expect("atoms object")
+            .1
     }
 
     fn tombs_id(&self) -> ObjId {
-        self.doc.get(ROOT, "tombs").ok().flatten().expect("tombs object").1
+        self.doc
+            .get(ROOT, "tombs")
+            .ok()
+            .flatten()
+            .expect("tombs object")
+            .1
     }
 
     fn texts(&self) -> Vec<String> {
@@ -143,14 +154,22 @@ impl AutomergeStore {
     }
 
     fn rec_id(&self, text: &str) -> Option<ObjId> {
-        self.doc.get(self.atoms_id(), text).ok().flatten().map(|(_, id)| id)
+        self.doc
+            .get(self.atoms_id(), text)
+            .ok()
+            .flatten()
+            .map(|(_, id)| id)
     }
 
     fn sources_id(&self, rec: &ObjId) -> Option<ObjId> {
-        self.doc.get(rec, "sources").ok().flatten().map(|(_, id)| id)
+        self.doc
+            .get(rec, "sources")
+            .ok()
+            .flatten()
+            .map(|(_, id)| id)
     }
 
-    fn sval(&self, obj: &ObjId, key: &str) -> String {
+    pub(crate) fn sval(&self, obj: &ObjId, key: &str) -> String {
         match self.doc.get(obj, key) {
             Ok(Some((Value::Scalar(s), _))) => match &*s {
                 automerge::ScalarValue::Str(v) => v.to_string(),
@@ -161,7 +180,7 @@ impl AutomergeStore {
     }
 
     /// Key present in `obj`?
-    fn has(&self, obj: &ObjId, key: &str) -> bool {
+    pub(crate) fn has(&self, obj: &ObjId, key: &str) -> bool {
         matches!(self.doc.get(obj, key), Ok(Some(_)))
     }
 
@@ -199,7 +218,9 @@ impl AutomergeStore {
         if self.has(&tombs, atom.text.as_str()) {
             return Ok(false);
         }
-        let t = self.doc.put_object(&tombs, atom.text.as_str(), ObjType::Map)?;
+        let t = self
+            .doc
+            .put_object(&tombs, atom.text.as_str(), ObjType::Map)?;
         self.doc.put(&t, "scope", atom.scope.as_str())?;
         self.doc.put(&t, "node", atom.node.as_str())?;
         let tags: Vec<String> = atom.tags.iter().cloned().collect();
@@ -238,7 +259,9 @@ impl Storage for AutomergeStore {
             let rec = match self.rec_id(&atom.text) {
                 Some(rec) => rec,
                 None => {
-                    let r = self.doc.put_object(self.atoms_id(), atom.text.as_str(), ObjType::Map)?;
+                    let r =
+                        self.doc
+                            .put_object(self.atoms_id(), atom.text.as_str(), ObjType::Map)?;
                     self.doc.put_object(&r, "sources", ObjType::Map)?;
                     r
                 }
@@ -261,8 +284,12 @@ impl Storage for AutomergeStore {
     fn all(&self) -> Result<Vec<Row>> {
         let mut out = Vec::new();
         for text in self.texts() {
-            let Some(rec) = self.rec_id(&text) else { continue };
-            let Some(sources) = self.sources_id(&rec) else { continue };
+            let Some(rec) = self.rec_id(&text) else {
+                continue;
+            };
+            let Some(sources) = self.sources_id(&rec) else {
+                continue;
+            };
             for source in self.doc.keys(&sources) {
                 let Ok(Some((_, payload))) = self.doc.get(&sources, source.as_str()) else {
                     continue;
@@ -349,8 +376,12 @@ impl Storage for AutomergeStore {
         let merged: BTreeMap<String, Row> = crate::alive(self)?.into_iter().collect();
         let mut dying = Vec::new();
         for text in self.texts() {
-            let Some(rec) = self.rec_id(&text) else { continue };
-            let Some(sources) = self.sources_id(&rec) else { continue };
+            let Some(rec) = self.rec_id(&text) else {
+                continue;
+            };
+            let Some(sources) = self.sources_id(&rec) else {
+                continue;
+            };
             let source_keys: Vec<String> = self.doc.keys(&sources).collect();
             if !source_keys.iter().any(|s| s == source) {
                 continue; // nothing of ours here
@@ -546,4 +577,3 @@ mod tests {
         assert!(texts.contains(&"two".to_string()));
     }
 }
-

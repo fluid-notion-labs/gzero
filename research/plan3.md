@@ -20,7 +20,7 @@ Everything lives in this repo (`nursery/contextual`), crate
 | snapshot JSON (atoms + tombstones), the merge unit | `src/snapshot.rs` (77) | live |
 | hub client (`CX_HUB_URL`/`CX_TOKEN`: post_events, fetch_snapshot) | `src/hub.rs` (127) | live |
 | CLI: add / rm / rm-source / harvest / tags / sync / pull | `src/main.rs` (431) | live; no ws verbs yet |
-| MCP tools: resolve, search, add, remove, tags | `src/bin/mcp.rs` (885) | live, 12 tests; no harvest tool despite a comment claiming one |
+| MCP tools: resolve, search, add, remove, tags, harvest, ws_* | `src/bin/mcp.rs` | live, 15 tests |
 | pi plugin: per-turn injection, `/context` tier browser, review hook, skills, workstyles | `pi-contextual-plugin/*.ts` | live; `EXPECTED_TOOLS` gate = resolve/search/add/remove/tags |
 | global floor content, compiled in, reconciled at startup | `seeds/global.md` | live |
 | hub (deployed Worker + DO) | **not in this repo** | source location unknown — find before D1 |
@@ -192,7 +192,12 @@ session tree after that. The MCP surface stays stable throughout.
 - [x] land the `@` restructure (describe; housekeeping in plan2: duplicate L2 line, stale doc pointers, "L1 done" → "adopted in W0")
 - [x] W0: adopt AutomergeStore (rebase orphan, tests green, both stores work; merged to main)
 - [x] blat the kv annex (revert `b6ef929`; context atoms updated)
-- [ ] W1: sections as records (sections in the automerge doc; `cx ws`; `ws_*` tools)
+- [x] W1: sections as records (sections in the automerge doc; `cx ws`; `ws_*` tools)
+      — done 2026-10: `sections.rs` record model (scope/name/kind/title/body/order),
+      `cx ws list|show|set|rm|scopes` (metadata-only updates keep the body; stdin
+      and --file/--body input; checklist render with ☐/☑ + count), four `ws_*`
+      MCP tools (ws_get errors list available names), 11 new tests; doc file
+      `CX_WS_DB` (default `~/.pi/agent/context.ws`), hashes sidecar alongside
 - [ ] W2: work items (schema; `cx item`; `item_*` tools; `EXPECTED_TOOLS`)
 - [ ] W3: plan-task injection + skill-activation seed atom + plan tab
 - [ ] W4: capacity/policy, gates, evidence-ranked scheduler

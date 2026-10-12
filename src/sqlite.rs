@@ -190,8 +190,10 @@ impl Storage for SqliteStore {
                 )?;
             }
             None => {
-                self.conn
-                    .execute("DELETE FROM source_hashes WHERE source = ?1", params![source])?;
+                self.conn.execute(
+                    "DELETE FROM source_hashes WHERE source = ?1",
+                    params![source],
+                )?;
             }
         }
         Ok(())
@@ -203,9 +205,7 @@ impl Storage for SqliteStore {
         // living there — delete only this source's assertions.
         let own: Vec<(String, String, String, String)> = self
             .conn
-            .prepare(
-                "SELECT text, scope, node, tags FROM atoms WHERE source = ?1",
-            )?
+            .prepare("SELECT text, scope, node, tags FROM atoms WHERE source = ?1")?
             .query_map(params![source], |r| {
                 Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
             })?
@@ -230,8 +230,10 @@ impl Storage for SqliteStore {
         self.tombstone(&dying)?;
         self.conn
             .execute("DELETE FROM atoms WHERE source = ?1", params![source])?;
-        self.conn
-            .execute("DELETE FROM source_hashes WHERE source = ?1", params![source])?;
+        self.conn.execute(
+            "DELETE FROM source_hashes WHERE source = ?1",
+            params![source],
+        )?;
         Ok(dying)
     }
 }

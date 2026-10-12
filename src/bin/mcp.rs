@@ -12,6 +12,12 @@
 //! - `remove`  — tombstone atoms by substring (self-healing errors)
 //! - `tags`    — tag vocabulary with counts
 //!
+//! Workflow sections (`ws_*`): keyed, typed documents (md or checklist)
+//! per project scope — the workflow system's long-form content
+//! (vision, plan, checklists, user stories; plan3 W1). Stored in the
+//! automerge doc at `CX_WS_DB` (default ~/.pi/agent/context.ws),
+//! separate from the atom bag.
+//!
 //! Curation policy in the tool descriptions follows hermes' memory tool
 //! (see `research/context/curation.md`): WHEN/SKIP routing, declarative
 //! phrasing, swap-don't-skip via batched remove+add.
@@ -23,8 +29,11 @@ use std::collections::BTreeSet;
 use std::io::{BufRead, Write};
 
 use contextual::hub::{Event, Hub};
+use contextual::sections::{Section, SectionKind};
 use contextual::snapshot::Atom;
-use contextual::{resolve_tiers, search, tag_counts, ParsedAtom, Row, SqliteStore, Storage};
+use contextual::{
+    resolve_tiers, search, tag_counts, AutomergeStore, ParsedAtom, Row, SqliteStore, Storage,
+};
 
 const SOURCE: &str = "mcp";
 const FALLBACK_SCOPE: &str = "inbox";
@@ -208,6 +217,15 @@ fn call_tool(
         "remove" => tool_remove(&args, store)?,
         "tags" => tool_tags(store)?,
         "harvest" => tool_harvest(&args, store)?,
+        "ws_put" | "ws_get" | "ws_list" | "ws_delete" => {
+            let mut ws = ws_store()?;
+            match name {
+                "ws_put" => tool_ws_put(&args, &mut ws)?,
+                "ws_get" => tool_ws_get(&args, &ws)?,
+                "ws_list" => tool_ws_list(&args, &ws)?,
+                _ => tool_ws_delete(&args, &mut ws)?,
+            }
+        }
         other => return Err(format!("unknown tool: {other}")),
     };
     Ok(serde_json::json!({
@@ -547,6 +565,151 @@ fn tool_tags(store: &SqliteStore) -> Result<String, String> {
         .join(", "))
 }
 
+// ---- workflow sections (plan3 W1) ----
+
+/// The ws doc, opened per call (sections are infrequent; D1 unifies stores).
+fn ws_store() -> Result<AutomergeStore, String> {
+    let path = contextual::sections::default_ws_path();
+    AutomergeStore::open(Some(&path)).map_err(|e| format!("ws: open {}: {e}", path.display()))
+}
+
+fn ws_scope_arg(args: &serde_json::Value) -> String {
+    args.get("scope")
+        .and_then(|s| s.as_str())
+        .map(str::to_string)
+        .unwrap_or_else(|| contextual::repo_identity().unwrap_or_else(|| "global".to_string()))
+}
+
+fn tool_ws_put(args: &serde_json::Value, store: &mut AutomergeStore) -> Result<String, String> {
+    let name = args
+        .get("name")
+        .and_then(|n| n.as_str())
+        .map(str::trim)
+        .filter(|n| !n.is_empty())
+        .ok_or("ws_put: name is required")?
+        .to_string();
+    let scope = ws_scope_arg(args);
+    let order = args.get("order").and_then(|o| o.as_i64()).unwrap_or(0);
+    let existing = store
+        .section_get(&scope, &name)
+        .map_err(|e| e.to_string())?;
+    let kind = match args.get("kind").and_then(|k| k.as_str()) {
+        Some(k) => SectionKind::parse(k).ok_or("ws_put: kind must be md or checklist")?,
+        None => existing.as_ref().map_or(SectionKind::Md, |s| s.kind),
+    };
+    // Omitted body/title: keep the existing ones (metadata-only update).
+    let body = args
+        .get("body")
+        .and_then(|b| b.as_str())
+        .map(str::to_string)
+        .unwrap_or_else(|| {
+            existing
+                .as_ref()
+                .map(|s| s.body.clone())
+                .unwrap_or_default()
+        });
+    let title = args
+        .get("title")
+        .and_then(|t| t.as_str())
+        .map(str::to_string)
+        .unwrap_or_else(|| {
+            existing
+                .as_ref()
+                .map(|s| s.title.clone())
+                .unwrap_or_default()
+        });
+    let s = Section {
+        scope,
+        name,
+        kind,
+        title,
+        body,
+        order,
+    };
+    let replaced = store.section_put(&s).map_err(|e| e.to_string())?;
+    Ok(format!(
+        "{} {} ({}, {} bytes)",
+        if replaced { "set" } else { "created" },
+        format!("{}/{}", s.scope, s.name),
+        s.kind.as_str(),
+        s.body.len()
+    ))
+}
+
+fn tool_ws_get(args: &serde_json::Value, store: &AutomergeStore) -> Result<String, String> {
+    let name = args
+        .get("name")
+        .and_then(|n| n.as_str())
+        .ok_or("ws_get: name is required")?;
+    let scope = ws_scope_arg(args);
+    match store.section_get(&scope, name).map_err(|e| e.to_string())? {
+        Some(s) => Ok(s.body),
+        None => {
+            let names: Vec<String> = store
+                .section_list(&scope)
+                .map_err(|e| e.to_string())?
+                .into_iter()
+                .map(|s| s.name)
+                .collect();
+            if names.is_empty() {
+                Err(format!("ws_get: no sections in {scope:?}"))
+            } else {
+                Err(format!(
+                    "ws_get: no section {name:?} in {scope:?}. Available: {}",
+                    names.join(", ")
+                ))
+            }
+        }
+    }
+}
+
+fn tool_ws_list(args: &serde_json::Value, store: &AutomergeStore) -> Result<String, String> {
+    let scope = ws_scope_arg(args);
+    let items = store.section_list(&scope).map_err(|e| e.to_string())?;
+    if items.is_empty() {
+        return Ok(format!("(no sections in {scope})"));
+    }
+    Ok(items
+        .into_iter()
+        .map(|s| {
+            let prog = if s.kind == SectionKind::Checklist {
+                let (d, t) = contextual::sections::checklist_progress(&s.body);
+                format!(" {d}/{t}")
+            } else {
+                String::new()
+            };
+            format!(
+                "{:<22} {:<10} {}{}",
+                s.name,
+                s.kind.as_str(),
+                if s.title.is_empty() {
+                    &s.name
+                } else {
+                    &s.title
+                },
+                prog
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n"))
+}
+
+fn tool_ws_delete(args: &serde_json::Value, store: &mut AutomergeStore) -> Result<String, String> {
+    let name = args
+        .get("name")
+        .and_then(|n| n.as_str())
+        .ok_or("ws_delete: name is required")?;
+    let scope = ws_scope_arg(args);
+    if store
+        .section_delete(&scope, name)
+        .map_err(|e| e.to_string())?
+    {
+        Ok(format!("deleted {scope}/{name}"))
+    } else {
+        Err(format!("ws_delete: no section {name:?} in {scope:?}"))
+    }
+}
+
 const TOOLS: &str = r#"[
   {
     "name": "resolve",
@@ -630,12 +793,63 @@ const TOOLS: &str = r#"[
     "name": "tags",
     "description": "List the context repository's hashtag vocabulary with counts.",
     "inputSchema": { "type": "object", "properties": {} }
+  },
+  {
+    "name": "ws_put",
+    "description": "Create or replace a workflow section: a keyed, typed document for this project. Use for long-form workflow content — vision, plan, checklists, user stories, architecture notes. 'kind' is 'md' (default) or 'checklist' (body uses '- [ ]'/'- [x]' lines). Updating metadata only (title/kind/order) without 'body' keeps the existing body.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Slug, e.g. 'vision', 'plan', 'checklist.build'. Dots nest." },
+        "scope": { "type": "string", "description": "Project scope (repo identity). Omit for the current project (or global outside a repo)." },
+        "kind": { "type": "string", "enum": ["md", "checklist"] },
+        "title": { "type": "string" },
+        "body": { "type": "string", "description": "Markdown body. Omit to keep the existing body on update." },
+        "order": { "type": "integer", "description": "Sort key within the scope; lower shows first." }
+      },
+      "required": ["name"]
+    }
+  },
+  {
+    "name": "ws_get",
+    "description": "Read one workflow section body verbatim. Checklists keep their '- [ ]'/'- [x]' lines.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "scope": { "type": "string", "description": "Omit for the current project." }
+      },
+      "required": ["name"]
+    }
+  },
+  {
+    "name": "ws_list",
+    "description": "List workflow sections for a scope: one line each — name, kind, title, and done/total for checklists.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "scope": { "type": "string", "description": "Omit for the current project." }
+      }
+    }
+  },
+  {
+    "name": "ws_delete",
+    "description": "Delete a workflow section. Removal is immediate and local; sections have no tombstones yet.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "scope": { "type": "string", "description": "Omit for the current project." }
+      },
+      "required": ["name"]
+    }
   }
 ]"#;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     fn store() -> SqliteStore {
         SqliteStore::in_memory().unwrap()
@@ -868,6 +1082,56 @@ mod tests {
         )
         .unwrap();
         assert!(res.contains("prefer short answers"));
+    }
+
+    #[test]
+    fn ws_roundtrip_metadata_only_update() {
+        let mut s = AutomergeStore::in_memory().unwrap();
+        let reply = tool_ws_put(
+            &json!({"name": "vision", "title": "Vision", "body": "v1 body"}),
+            &mut s,
+        )
+        .unwrap();
+        assert!(
+            reply.contains("created") && reply.contains("vision"),
+            "{reply}"
+        );
+        assert_eq!(
+            tool_ws_get(&json!({"name": "vision"}), &s).unwrap(),
+            "v1 body"
+        );
+        // metadata-only update keeps the body
+        let reply = tool_ws_put(&json!({"name": "vision", "title": "New"}), &mut s).unwrap();
+        assert!(reply.contains("set"), "{reply}");
+        assert_eq!(
+            tool_ws_get(&json!({"name": "vision"}), &s).unwrap(),
+            "v1 body"
+        );
+    }
+
+    #[test]
+    fn ws_list_delete_and_missing() {
+        let mut s = AutomergeStore::in_memory().unwrap();
+        tool_ws_put(
+            &json!({"name": "plan", "kind": "checklist", "body": "- [x] a\n- [ ] b"}),
+            &mut s,
+        )
+        .unwrap();
+        let list = tool_ws_list(&json!({}), &s).unwrap();
+        assert!(list.contains("plan") && list.contains("checklist") && list.contains("1/2"));
+        assert!(tool_ws_delete(&json!({"name": "plan"}), &mut s)
+            .unwrap()
+            .contains("deleted"));
+        assert!(tool_ws_delete(&json!({"name": "plan"}), &mut s).is_err());
+        assert!(tool_ws_get(&json!({"name": "plan"}), &s).is_err());
+    }
+
+    #[test]
+    fn ws_bad_name_and_kind() {
+        let mut s = AutomergeStore::in_memory().unwrap();
+        assert!(tool_ws_put(&json!({"name": "a b"}), &mut s).is_err());
+        assert!(tool_ws_put(&json!({"name": ""}), &mut s).is_err());
+        assert!(tool_ws_put(&json!({"name": "ok", "kind": "yaml"}), &mut s).is_err());
     }
 
     #[test]

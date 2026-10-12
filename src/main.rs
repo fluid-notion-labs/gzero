@@ -9,13 +9,15 @@
 //! `cx rm-source <src>`  remove a whole source (tombstoned)
 //! `cx tags`            tag vocabulary with counts
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::process::exit;
 
 use contextual::hub::{events_for_snapshot, Event, Hub};
+use contextual::sections::{checklist_progress, Section, SectionKind};
 use contextual::snapshot::Atom;
-use contextual::{source_counts, tag_counts, SqliteStore, Storage};
+use contextual::{source_counts, tag_counts, AutomergeStore, SqliteStore, Storage};
 
 /// Post events to the hub if configured; warn (don't fail) otherwise.
 fn try_post_events(events: &[Event]) {
@@ -60,7 +62,15 @@ cx sources        per-source assertion counts
 cx rm <needle>    remove matching atoms (records tombstones)
 cx rm-source <s>  remove one whole source (tombstoned; substring must match exactly one)
 cx tags           tag vocabulary with counts
-env: CX_DB        bag location (default ~/.pi/agent/context.db)";
+cx ws list        workflow sections for this project (vision, plan, checklists, ...)
+cx ws show <name>          print one section (checklists render with boxes + count)
+cx ws set <name> [--title T] [--type md|checklist] [--order N]
+                 [--body TEXT | --file F]   create or update a section
+                 (body also read from stdin when piped; omit to edit metadata only)
+cx ws rm <name>   delete a section
+cx ws scopes      list scopes that have sections
+env: CX_DB        bag location (default ~/.pi/agent/context.db)
+env: CX_WS_DB     workflow-sections doc (default ~/.pi/agent/context.ws)";
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -362,6 +372,7 @@ fn main() {
                 println!("#{tag} {n}");
             }
         }
+        "ws" => ws_command(&args[1..]),
         "recommend" => {
             eprintln!("cx: recommend is gone — packs were dissolved (tagged atoms replace them; see plan.md M4)");
             eprintln!("pull build/workflow conventions via: cx '#rust' / cx '#npm'");
@@ -420,6 +431,248 @@ fn bag_path() -> PathBuf {
         return Path::new(&home).join(".pi/agent/context.db");
     }
     PathBuf::from("context.db")
+}
+
+/// Workflow sections (plan3 W1): keyed, typed documents for this
+/// project, stored in the automerge doc (`CX_WS_DB`, default
+/// `~/.pi/agent/context.ws`). Scope defaults to this repo's identity.
+fn ws_command(args: &[String]) {
+    let mut flags: BTreeMap<String, String> = BTreeMap::new();
+    let mut pos: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < args.len() {
+        let a = args[i].clone();
+        if let Some(f) = a.strip_prefix("--") {
+            if f == "json" {
+                flags.insert("json".into(), String::new());
+            } else {
+                match args.get(i + 1) {
+                    Some(v) => {
+                        flags.insert(f.to_string(), v.clone());
+                        i += 1;
+                    }
+                    None => {
+                        eprintln!("cx ws: --{f} needs a value");
+                        exit(2);
+                    }
+                }
+            }
+        } else {
+            pos.push(a);
+        }
+        i += 1;
+    }
+
+    let json = flags.contains_key("json");
+    let sub = pos.first().map(String::as_str).unwrap_or("help");
+    match sub {
+        "help" | "-h" | "--help" => println!("{USAGE}"),
+        "scopes" => {
+            let store = open_ws();
+            let scopes = store
+                .section_scopes()
+                .unwrap_or_else(|e| panic!("cx ws: {e}"));
+            for s in scopes {
+                println!("{s}");
+            }
+        }
+        "list" => {
+            let scope = ws_scope(pos.get(1));
+            let store = open_ws();
+            let items = store
+                .section_list(&scope)
+                .unwrap_or_else(|e| panic!("cx ws: {e}"));
+            if json {
+                let arr: Vec<_> = items
+                    .iter()
+                    .map(|s| {
+                        serde_json::json!({
+                            "name": s.name, "kind": s.kind.as_str(),
+                            "title": s.title, "order": s.order,
+                        })
+                    })
+                    .collect();
+                println!("{}", serde_json::to_string_pretty(&arr).unwrap());
+                return;
+            }
+            if items.is_empty() {
+                println!("(no sections in {scope})");
+                return;
+            }
+            for s in &items {
+                let extra = if s.kind == SectionKind::Checklist {
+                    let (d, t) = checklist_progress(&s.body);
+                    format!(" {d}/{t}")
+                } else {
+                    String::new()
+                };
+                println!(
+                    "{:<22} {:<10} {}{}",
+                    s.name,
+                    s.kind.as_str(),
+                    s.title,
+                    extra
+                );
+            }
+        }
+        "show" => {
+            let name = ws_arg(&pos, 1, "show <name> [scope]");
+            let scope = ws_scope(pos.get(2));
+            let store = open_ws();
+            let Some(s) = store
+                .section_get(&scope, &name)
+                .unwrap_or_else(|e| panic!("cx ws: {e}"))
+            else {
+                eprintln!("cx ws: no section {name:?} in {scope:?}");
+                exit(1);
+            };
+            if json {
+                println!("{}", serde_json::to_string_pretty(&ws_json(&s)).unwrap());
+                return;
+            }
+            println!(
+                "# {} ({})",
+                if s.title.is_empty() {
+                    &s.name
+                } else {
+                    &s.title
+                },
+                s.kind.as_str()
+            );
+            println!();
+            if s.kind == SectionKind::Checklist {
+                for line in s.body.lines() {
+                    let t = line.trim_start();
+                    if let Some(rest) = t.strip_prefix("- [ ] ") {
+                        println!("\u{2610} {rest}");
+                    } else if let Some(rest) = t
+                        .strip_prefix("- [x] ")
+                        .or_else(|| t.strip_prefix("- [X] "))
+                    {
+                        println!("\u{2611} {rest}");
+                    } else {
+                        println!("{line}");
+                    }
+                }
+                let (d, t) = checklist_progress(&s.body);
+                println!("\n({d}/{t} done)");
+            } else {
+                println!("{}", s.body);
+            }
+        }
+        "set" => {
+            let name = ws_arg(&pos, 1, "set <name> [scope] [--title T] [--type md|checklist] [--order N] [--body TEXT | --file F]");
+            let scope = ws_scope(pos.get(2));
+            let kind = match flags.get("type") {
+                Some(t) => SectionKind::parse(t).unwrap_or_else(|| {
+                    eprintln!("cx ws: --type must be md or checklist");
+                    exit(2);
+                }),
+                None => {
+                    let store = open_ws();
+                    store
+                        .section_get(&scope, &name)
+                        .unwrap_or_else(|e| panic!("cx ws: {e}"))
+                        .map_or(SectionKind::Md, |s| s.kind)
+                }
+            };
+            let mut store = open_ws();
+            let existing = store
+                .section_get(&scope, &name)
+                .unwrap_or_else(|e| panic!("cx ws: {e}"));
+            let body = if let Some(b) = flags.get("body") {
+                b.clone()
+            } else if let Some(f) = flags.get("file") {
+                std::fs::read_to_string(f).unwrap_or_else(|e| panic!("cx ws: {}: {e}", f))
+            } else if !std::io::stdin().is_terminal() {
+                let mut buf = String::new();
+                use std::io::Read;
+                let _ = std::io::stdin().read_to_string(&mut buf);
+                if buf.is_empty() {
+                    existing.as_ref().map_or(String::new(), |s| s.body.clone())
+                } else {
+                    buf
+                }
+            } else {
+                existing.as_ref().map_or(String::new(), |s| s.body.clone())
+            };
+            let order = match flags.get("order") {
+                Some(o) => o.parse::<i64>().unwrap_or_else(|e| {
+                    eprintln!("cx ws: --order must be a number: {e}");
+                    exit(2);
+                }),
+                None => existing.as_ref().map_or(0, |s| s.order),
+            };
+            let title = flags
+                .get("title")
+                .cloned()
+                .unwrap_or_else(|| existing.as_ref().map_or(String::new(), |s| s.title.clone()));
+            let sec = Section {
+                scope: scope.clone(),
+                name: name.clone(),
+                kind,
+                title,
+                body,
+                order,
+            };
+            let replaced = store
+                .section_put(&sec)
+                .unwrap_or_else(|e| panic!("cx ws: {e}"));
+            if json {
+                println!("{}", serde_json::to_string_pretty(&ws_json(&sec)).unwrap());
+            } else {
+                println!(
+                    "{} {scope}/{name} ({})",
+                    if replaced { "set" } else { "created" },
+                    kind.as_str()
+                );
+            }
+        }
+        "rm" => {
+            let name = ws_arg(&pos, 1, "rm <name> [scope]");
+            let scope = ws_scope(pos.get(2));
+            let mut store = open_ws();
+            let gone = store
+                .section_delete(&scope, &name)
+                .unwrap_or_else(|e| panic!("cx ws: {e}"));
+            if gone {
+                println!("removed {scope}/{name}");
+            } else {
+                eprintln!("cx ws: no section {name:?} in {scope:?}");
+                exit(1);
+            }
+        }
+        other => {
+            eprintln!("cx ws: unknown subcommand {other:?} — try list, show, set, rm, scopes");
+            exit(2);
+        }
+    }
+}
+
+fn ws_arg(pos: &[String], i: usize, usage: &str) -> String {
+    pos.get(i).cloned().unwrap_or_else(|| {
+        eprintln!("cx ws: usage: {usage}");
+        exit(2);
+    })
+}
+
+/// Scope for a ws command that omits it: this repo's identity, else `global`.
+fn ws_scope(arg: Option<&String>) -> String {
+    arg.cloned()
+        .or_else(contextual::repo_identity)
+        .unwrap_or_else(|| "global".to_string())
+}
+
+fn ws_json(s: &Section) -> serde_json::Value {
+    serde_json::json!({
+        "scope": s.scope, "name": s.name, "kind": s.kind.as_str(),
+        "title": s.title, "body": s.body, "order": s.order,
+    })
+}
+
+fn open_ws() -> AutomergeStore {
+    let path = contextual::sections::default_ws_path();
+    AutomergeStore::open(Some(&path)).unwrap_or_else(|e| panic!("cx: open {}: {e}", path.display()))
 }
 
 /// Canonical path used as a stable source identifier.
