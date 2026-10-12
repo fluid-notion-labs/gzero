@@ -454,6 +454,109 @@ impl AutomergeStore {
         Ok(out)
     }
 
+    // ---- pinned (W3: "put task X in my context") ----
+
+    fn pinned_opt(&self) -> Option<ObjId> {
+        self.doc.get(ROOT, "pinned").ok().flatten().map(|(_, id)| id)
+    }
+
+    fn ensure_pinned(&mut self) -> Result<ObjId> {
+        if let Some(id) = self.pinned_opt() {
+            return Ok(id);
+        }
+        let id = self.doc.put_object(ROOT, "pinned", ObjType::Map)?;
+        self.doc.commit();
+        Ok(id)
+    }
+
+    /// Pin or unpin an item for injection. Pinning is the user's
+    /// explicit "put task X in my context": resolve renders open pinned
+    /// items every session. Nothing is ever pinned automatically, so
+    /// the injected block stays small and stable.
+    pub fn item_pin(&mut self, scope: &str, id: &str, pinned: bool) -> Result<WorkItem> {
+        let full = self.item_resolve(scope, id)?;
+        let item = self
+            .item_get(scope, &full)?
+            .ok_or_else(|| format!("item: {full} not found"))?;
+        let pinned_map = self.ensure_pinned()?;
+        let scope_id = match self.doc.get(&pinned_map, scope)? {
+            Some((_, id)) => id,
+            None => self.doc.put_object(&pinned_map, scope, ObjType::Map)?,
+        };
+        if pinned {
+            self.doc.put(&scope_id, full.as_str(), true)?;
+        } else if self.doc.get(&scope_id, &full)?.is_some() {
+            self.doc.delete(&scope_id, &full)?;
+        }
+        self.flush()?;
+        Ok(item)
+    }
+
+    /// Pinned items for a scope, ready-style order. Items deleted
+    /// while pinned are skipped (and drop out on the next write).
+    pub fn item_pinned(&self, scope: &str) -> Result<Vec<WorkItem>> {
+        let ids = self.item_pinned_ids(scope)?;
+        let mut out = Vec::new();
+        for id in ids {
+            if let Some(it) = self.item_get(scope, &id)? {
+                out.push(it);
+            }
+        }
+        out.sort_by(|a, b| b.priority.cmp(&a.priority).then(a.id.cmp(&b.id)));
+        Ok(out)
+    }
+
+    /// Just the pinned ids, for marking lists.
+    pub fn item_pinned_ids(&self, scope: &str) -> Result<BTreeSet<String>> {
+        let mut out = BTreeSet::new();
+        if let Some(pinned) = self.pinned_opt() {
+            if let Some((_, scope_id)) = self.doc.get(&pinned, scope)? {
+                out.extend(self.doc.keys(&scope_id));
+            }
+        }
+        Ok(out)
+    }
+
+    /// plan_next fold: top ready items ranked, each with human-readable
+    /// evidence of why it is ready (unblocked, priority, labels,
+    /// notes, subtasks).
+    pub fn item_plan_next(&self, scope: &str, limit: usize) -> Result<Vec<(WorkItem, String)>> {
+        let all = self.item_list(scope)?;
+        Ok(self
+            .item_ready(scope)?
+            .into_iter()
+            .take(limit)
+            .map(|it| {
+                let mut parts = vec!["unblocked".to_string()];
+                if it.status == Status::InProgress {
+                    parts.push("in progress".to_string());
+                }
+                parts.push(format!("p{}", it.priority));
+                if !it.labels.is_empty() {
+                    parts.push(
+                        it.labels
+                            .iter()
+                            .cloned()
+                            .collect::<Vec<_>>()
+                            .join(","),
+                    );
+                }
+                let notes = it.notes.len();
+                if notes > 0 {
+                    parts.push(format!("{notes} notes"));
+                }
+                let kids = all
+                    .iter()
+                    .filter(|other| other.child_of.contains(&it.id))
+                    .count();
+                if kids > 0 {
+                    parts.push(format!("{kids} subtasks"));
+                }
+                (it, parts.join(" · "))
+            })
+            .collect())
+    }
+
     /// Items that are children of `id` (reverse `child_of` lookup).
     pub fn item_children(&self, scope: &str, id: &str) -> Result<Vec<WorkItem>> {
         let mut out: Vec<WorkItem> = self
@@ -655,6 +758,60 @@ mod tests {
         let ready = s.item_ready("sc").unwrap();
         assert_eq!(ready.len(), 1);
         assert_eq!(ready[0].title, "blocked");
+    }
+
+    #[test]
+    fn pin_roundtrip_and_ordering() {
+        let mut s = AutomergeStore::in_memory().unwrap();
+        let mut a = new("a");
+        a.priority = 1;
+        let a = s.item_add("sc", a).unwrap();
+        let mut b = new("b");
+        b.priority = 9;
+        let b = s.item_add("sc", b).unwrap();
+        assert!(s.item_pinned("sc").unwrap().is_empty());
+        s.item_pin("sc", &a.id, true).unwrap();
+        s.item_pin("sc", &b.id, true).unwrap();
+        let pinned: Vec<String> = s.item_pinned("sc").unwrap().into_iter().map(|i| i.id).collect();
+        // priority order, not pin order
+        assert_eq!(pinned, vec![b.id.clone(), a.id.clone()]);
+        // idempotent-ish: unpin by full id works
+        s.item_pin("sc", &a.id, false).unwrap();
+        assert_eq!(s.item_pinned("sc").unwrap().len(), 1);
+        // unpinned ids do not linger
+        assert!(!s.item_pinned_ids("sc").unwrap().contains("a"));
+    }
+
+    #[test]
+    fn pinned_skips_deleted_items() {
+        let mut s = AutomergeStore::in_memory().unwrap();
+        let a = s.item_add("sc", new("a")).unwrap();
+        s.item_pin("sc", &a.id, true).unwrap();
+        s.item_delete("sc", &a.id).unwrap();
+        assert!(s.item_pinned("sc").unwrap().is_empty());
+    }
+
+    #[test]
+    fn plan_next_ranks_and_explains() {
+        let mut s = AutomergeStore::in_memory().unwrap();
+        let mut a = new("alpha");
+        a.priority = 4;
+        let a = s.item_add("sc", a).unwrap();
+        s.item_note("sc", &a.id, "hello").unwrap();
+        let mut b = new("blocked");
+        b.priority = 9;
+        let blocked = s.item_add("sc", b).unwrap();
+        let mut r = new("root");
+        r.blocks = vec![blocked.id.clone()];
+        let root = s.item_add("sc", r).unwrap();
+        let pairs = s.item_plan_next("sc", 5).unwrap();
+        // alpha and the (unblocked) blocker are ready; blocked is not
+        assert_eq!(pairs.len(), 2, "blocked item is not ready");
+        assert_eq!(pairs[0].0.id, a.id, "higher priority ranks first");
+        assert!(pairs[0].1.contains("unblocked"));
+        assert!(pairs[0].1.contains("p4"));
+        assert!(pairs[0].1.contains("1 notes"));
+        assert_eq!(pairs[1].0.id, root.id);
     }
 
     #[test]

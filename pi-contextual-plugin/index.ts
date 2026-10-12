@@ -63,6 +63,8 @@ const EXPECTED_TOOLS = [
   "tags",
   "item_add",
   "item_ready",
+  "item_pin",
+  "plan_next",
 ];
 
 /** Look up a binary on PATH (a lookup, not a long-running process). */

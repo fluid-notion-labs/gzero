@@ -211,18 +211,26 @@ session tree after that. The MCP surface stays stable throughout.
       automerge actor+seq, as decided. Unimplemented from the schema:
       graph/tree view (child_of data exists; `cx item graph` deferred),
       priority-based `assignee` capacity policy (W4).
-- [ ] W3: plan-task injection + skill-activation seed atom + plan tab
-      — in progress 2026-10: the workflow pane shipped (`pi-contextual-
-      plugin/items-pane.ts`): non-capturing top-right overlay (Claude-Code-
-      style), data via `cx item list --json`, glyphs ○/●/✓ plus ⊘ for
-      blocked, refreshed on session start + agent_end + `/items refresh`;
-      auto-hides when empty, terminal < 100 cols, or cx is stale. `/items`
-      toggles. Plus Ctrl+W full-screen sections viewer (TierViewer over
-      `cx ws list/show --json`; `/workflow` command; editor wrapper
-      intercepts ctrl+w, deleteWordBackward remains on alt+backspace).
-      Install switched from copied files to a symlink — the copies had
-      drifted and stale installs silently hide new features. Remaining:
-      plan_next tool, pinned-items in context, seed atom.
+- [x] W3: plan-task injection + skill-activation seed atom + plan tab
+      — the workflow pane shipped (`pi-contextual-plugin/items-pane.ts`):
+      non-capturing top-right overlay, data via `cx item list --json`,
+      glyphs ○/●/✓ plus ⊘ for blocked, refreshed on session start +
+      agent_end + `/items refresh`; auto-hides when empty, terminal < 100
+      cols, or cx is stale; `/items` toggles. Plus Ctrl+W full-screen
+      sections viewer (TierViewer over `cx ws list/show --json`; the
+      editor wrapper intercepts ctrl+w, deleteWordBackward moved to
+      alt+backspace). Install switched to a symlink.
+      — done 2026-10: `item_pin` (pinned set in the workflow doc, root map
+      `pinned: Map<scope -> Map<id -> true>>`); open pinned items render
+      into every `resolve` call (the user's "put task X in my context" —
+      only explicit pins, never auto-flooding); `plan_next` MCP tool
+      returns top ready items ranked, each with evidence (unblocked,
+      priority, labels, notes, subtasks); `cx item pin|unpin`, list shows
+      ★ for pinned; skill-activation seed atom added to `seeds/global.md`
+      and the stale kv-annex seed line replaced by the workflow-system
+      line (retract-on-reconcile handles the old text). The plan tab is
+      superseded by the pane + Ctrl+W viewer. EXPECTED_TOOLS gained
+      item_pin, plan_next.
 - [ ] W4: capacity/policy, gates, evidence-ranked scheduler
 - [ ] W5: doc migration into the bag; fix stale references
 - [ ] locate hub Worker source

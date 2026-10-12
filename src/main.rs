@@ -75,6 +75,7 @@ cx item add \"<title>\"      create a work item [--labels a,b] [--priority N]
                  [--acceptance TEXT]
 cx item list [--json]      all items: id, status, priority, title, blocked
 cx item ready [--json]     the fold: open items with no open blockers, ranked
+cx item pin|unpin <id>     pin = rides in injected context (resolve) until done
 cx item show <id> [--json] full item incl. notes
 cx item edit <id> [--title T] [--priority N] [--assignee A]
                  [--design TEXT | --design-file F] [--status open|in_progress|closed]
@@ -784,6 +785,9 @@ fn item_command(args: &[String]) {
                 let all = store
                     .item_list(&scope)
                     .unwrap_or_else(|e| die("cx item", e));
+                let pinned = store
+                    .item_pinned_ids(&scope)
+                    .unwrap_or_default();
                 if json {
                     let arr: Vec<_> = items
                         .iter()
@@ -807,12 +811,14 @@ fn item_command(args: &[String]) {
                     } else {
                         format!(" (blocked by {})", blocked.join(", "))
                     };
+                    let pin = if pinned.contains(&it.id) { " ★" } else { "" };
                     println!(
-                        "{:<8} {:<12} p{:<3} {}{}",
+                        "{:<8} {:<12} p{:<3} {}{}{}",
                         it.id,
                         it.status.as_str(),
                         it.priority,
                         it.title,
+                        pin,
                         b
                     );
                 }
@@ -921,6 +927,20 @@ fn item_command(args: &[String]) {
             }
             .unwrap_or_else(|e| die("cx item", e));
             println!("{} {} -> {}", scope, it.id, it.status.as_str());
+        }
+        "pin" | "unpin" => {
+            let id = id_of(&pos, 1, "cx item pin|unpin <id>");
+            let it = store
+                .item_pin(&scope, &id, sub == "pin")
+                .unwrap_or_else(|e| die("cx item", e));
+            if sub == "pin" {
+                println!(
+                    "pinned {} — rides in injected context until unpinned or closed",
+                    it.id
+                );
+            } else {
+                println!("unpinned {}", it.id);
+            }
         }
         "note" => {
             let id = id_of(&pos, 1, "item note <id> \"<text>\"");

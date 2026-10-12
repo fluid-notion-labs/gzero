@@ -228,7 +228,7 @@ fn call_tool(
             }
         }
         "item_add" | "item_list" | "item_ready" | "item_get" | "item_edit" | "item_note"
-        | "item_delete" => {
+        | "item_delete" | "item_pin" => {
             let mut ws = ws_store()?;
             match name {
                 "item_add" => tool_item_add(&args, &mut ws)?,
@@ -237,8 +237,13 @@ fn call_tool(
                 "item_get" => tool_item_get(&args, &ws)?,
                 "item_edit" => tool_item_edit(&args, &mut ws)?,
                 "item_note" => tool_item_note(&args, &mut ws)?,
+                "item_pin" => tool_item_pin(&args, &mut ws)?,
                 _ => tool_item_delete(&args, &mut ws)?,
             }
+        }
+        "plan_next" => {
+            let ws = ws_store()?;
+            tool_plan_next(&args, &ws)?
         }
         other => return Err(format!("unknown tool: {other}")),
     };
@@ -292,7 +297,43 @@ fn tool_resolve(args: &serde_json::Value, store: &SqliteStore) -> Result<String,
     let refs: Vec<&str> = tags.iter().map(String::as_str).collect();
     let project = contextual::repo_identity();
     let items = resolve_tiers(store, project.as_deref(), &refs).map_err(|e| e.to_string())?;
-    Ok(render(items))
+    let mut out = render(items);
+    if let Some(block) = pinned_block() {
+        out.push_str(&block);
+    }
+    Ok(out)
+}
+
+/// Pinned open items ride in resolve output (W3): the user's explicit
+/// "put task X in my context". Only explicitly pinned items appear,
+/// so the block never floods; `plan_next` serves the on-demand view.
+fn pinned_block() -> Option<String> {
+    let project = contextual::repo_identity()?;
+    let path = contextual::sections::default_ws_path();
+    if !path.exists() {
+        return None;
+    }
+    let ws = AutomergeStore::open(Some(&path)).ok()?;
+    let open: Vec<_> = ws
+        .item_pinned(&project)
+        .ok()?
+        .into_iter()
+        .filter(|it| it.is_open())
+        .collect();
+    if open.is_empty() {
+        return None;
+    }
+    let mut out = String::from("\n\n## pinned tasks\n");
+    for it in open.iter().take(8) {
+        out.push_str(&format!(
+            "- [{}] {} (p{}, {})\n",
+            it.id,
+            it.title,
+            it.priority,
+            it.status.as_str()
+        ));
+    }
+    Some(out)
 }
 
 fn tool_search(args: &serde_json::Value, store: &SqliteStore) -> Result<String, String> {
@@ -718,6 +759,53 @@ fn tool_item_ready(args: &serde_json::Value, store: &AutomergeStore) -> Result<S
     Ok(item_lines(&scope, &ready, &[]))
 }
 
+fn tool_item_pin(args: &serde_json::Value, store: &mut AutomergeStore) -> Result<String, String> {
+    let id = args
+        .get("id")
+        .and_then(|v| v.as_str())
+        .ok_or("item_pin: missing id")?;
+    let pinned = args.get("pinned").and_then(|v| v.as_bool()).unwrap_or(true);
+    let scope = ws_scope_arg(args);
+    let it = store.item_pin(&scope, id, pinned).map_err(|e| e.to_string())?;
+    Ok(if pinned {
+        format!(
+            "pinned {} — it now rides in resolve output until unpinned or closed",
+            it.id
+        )
+    } else {
+        format!("unpinned {}", it.id)
+    })
+}
+
+fn tool_plan_next(args: &serde_json::Value, store: &AutomergeStore) -> Result<String, String> {
+    let scope = ws_scope_arg(args);
+    let limit = args
+        .get("limit")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(5)
+        .clamp(1, 20) as usize;
+    let pairs = store
+        .item_plan_next(&scope, limit)
+        .map_err(|e| e.to_string())?;
+    if pairs.is_empty() {
+        return Ok(format!(
+            "nothing ready: no open unblocked items in {scope}"
+        ));
+    }
+    let mut out = format!("next up in {scope} — top ready items, ranked:\n");
+    for (it, why) in &pairs {
+        out.push_str(&format!(
+            "- {} {} (p{}, {}) — {}\n",
+            it.id,
+            it.title,
+            it.priority,
+            it.status.as_str(),
+            why
+        ));
+    }
+    Ok(out)
+}
+
 fn tool_item_get(args: &serde_json::Value, store: &AutomergeStore) -> Result<String, String> {
     let (scope, id) = item_id_arg(args, store, "item_get")?;
     match store.item_get(&scope, &id).map_err(|e| e.to_string())? {
@@ -1106,6 +1194,30 @@ const TOOLS: &str = r#"[
     "name": "item_ready",
     "description": "The ready fold: open work items with no open blockers, ranked by priority. Use to pick the next thing to do.",
     "inputSchema": { "type": "object", "properties": { "scope": { "type": "string" } } }
+  },
+  {
+    "name": "item_pin",
+    "description": "Pin or unpin a work item. Pinned open items render into every resolve call (the user's 'put task X in my context'); unpin when done. Nothing is pinned automatically.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "pinned": { "type": "boolean", "description": "Default true; false unpins." },
+        "scope": { "type": "string", "description": "Omit for the current project." }
+      },
+      "required": ["id"]
+    }
+  },
+  {
+    "name": "plan_next",
+    "description": "What's next: top ready work items for this project, ranked, each with evidence (unblocked, priority, labels, notes, subtasks). Use at task start or when the user asks what's next.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "limit": { "type": "integer", "description": "Default 5, max 20." },
+        "scope": { "type": "string", "description": "Omit for the current project." }
+      }
+    }
   },
   {
     "name": "item_get",

@@ -24,14 +24,10 @@ moving parts with issues/considerations, not designed here.
 | tree model | the contract: op-based edits over immutable, content-addressed roots |
 | engine | jj-core: `Merge<T>`, `MergedTree`, builders, diff, op store (`resident-mcp/jj-extraction.md`) |
 | hub | **contexture** (the deployed Worker + DO; old name `contexture-hub`, URL unchanged): replication spine for bags, records, annotations |
-| elastic | the eventual typed layer over automerge (record types, folds, policy) — extracted from contextual only when a second consumer appears (`plan2.md`) |
+| elastic | the eventual typed layer over automerge (record types, folds, policy) — extracted from contextual only when a second consumer appears (`plan2.md`)  (probably shelved, we shall see) |
 | gate | the edit gate: structured outcomes (`applied/partial/edits-needed/error`) + recommendations |
 | devforge | process/service orchestrator + the task registry (`research/dev-lifecycle/`) |
 
-ize is **shelved** (2026-10): kernel/FUSE capture has too many fs-model
-problems and attribution ("which edit made the change") is unknowable
-at the VFS layer. Capture moves to the MCP layer — the construction
-point — where attribution is intrinsic.
 
 ## The five planes
 
@@ -50,7 +46,7 @@ the architecture; the moving parts just implement planes.
 Orthogonality rules:
 
 - Knowledge never enters content (annotations reference hashes; no
-  metadata in the tree beyond the core struct).
+  metadata in the tree beyond the core struct). We will probably have one way sync to external, legacy files. and manual agent guided ingestion. 
 - Derived never enters content (root hash subsumes inputs; same root ⇒
   same result — cache by root).
 - Events are derived-able from content but recorded anyway (audit,
