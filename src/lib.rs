@@ -16,7 +16,9 @@
 //! file) contributes one assertion per atom. Import is a source-scoped
 //! replace, so re-importing after edits is a correct sync — deletions
 //! propagate, duplicates don't accumulate. Storage is pluggable via
-//! [`Storage`]; SQLite is the first backend.
+//! [`Storage`]; SQLite is the first backend. The global tier's floor
+//! content ships as seed documents (`seeds/*.md`, compiled in via
+//! [`SEEDS`]) and is synced at startup ([`reconcile_seeds`]).
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
@@ -366,6 +368,27 @@ pub fn reconcile_harvest(
         }
     }
     Ok(result)
+}
+
+/// Built-in seed documents, compiled into the binary and synced into the
+/// bag at startup. This is what the global tier defaults to: the floor
+/// content that must exist even in a freshly wiped bag. Sources are
+/// namespaced `seed:<name>`; sync is a source-scoped replace, so seed
+/// edits propagate and seed removals retract. User tombstones win:
+/// `alive` excludes tombstoned texts, so an atom removed via the `remove`
+/// tool stays out even after re-seeding.
+pub const SEEDS: &[(&str, &str)] = &[("global", include_str!("../seeds/global.md"))];
+
+/// Sync every seed document into the bag. Returns per-seed stats.
+pub fn reconcile_seeds(store: &mut dyn Storage) -> Result<Vec<(String, SyncStats)>> {
+    SEEDS
+        .iter()
+        .map(|(name, md)| {
+            let source = format!("seed:{name}");
+            let stats = store.sync_source(&source, &parse(md))?;
+            Ok((source, stats))
+        })
+        .collect()
 }
 
 /// `git@host:owner/repo.git`, `https://host/owner/repo.git`,

@@ -38,6 +38,7 @@ const DEFAULT_NODE: &str = "notes";
 fn main() {
     let mut store = open_store();
     pull_from_hub(&mut store);
+    seed_on_startup(&mut store);
     reconcile_harvest_on_startup(&mut store);
     let stdin = std::io::stdin();
     let mut out = std::io::stdout().lock();
@@ -78,6 +79,14 @@ fn pull_from_hub(store: &mut SqliteStore) {
         }) {
         Ok(n) => eprintln!("cx-mcp: hub sync ({n} entries)"),
         Err(e) => eprintln!("cx-mcp: hub sync failed: {e}"),
+    }
+}
+
+/// Best-effort: sync the built-in seeds so the global tier always has its
+/// floor content, even in a freshly wiped bag. Never fatal.
+fn seed_on_startup(store: &mut SqliteStore) {
+    if let Err(e) = contextual::reconcile_seeds(store) {
+        eprintln!("cx-mcp: seed sync failed: {e}");
     }
 }
 
