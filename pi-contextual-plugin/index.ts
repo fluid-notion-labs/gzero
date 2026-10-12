@@ -645,8 +645,7 @@ export default function (pi: ExtensionAPI) {
       }
       // /context shows ground truth: exactly what is injected into the
       // system prompt this session — the <context> block (global + project
-      // tier defaults) and the <skills> block (session-loaded skills). The
-      // whole-bag browser lives at /bag.
+      // tier defaults) and the <skills> block (session-loaded skills).
       if (ctx.mode === "tui") {
         if (resolvedBody === null) {
           ctx.ui.notify("Nothing resolved for this project — /context add or tagged pulls", "info");
@@ -674,38 +673,6 @@ export default function (pi: ExtensionAPI) {
       } else {
         const full = `<context>\n${PREAMBLE}\n\n${resolvedBody}\n</context>`;
         ctx.ui.notify(full.length > 400 ? `${full.slice(0, 400)}…` : full, "info");
-      }
-    },
-  });
-
-  pi.registerCommand("bag", {
-    description: "Browse the whole bag by tier (global/local/skillbag)",
-    handler: async (_args, ctx) => {
-      const cxMcp = await findCxMcp();
-      if (!cxMcp) {
-        ctx.ui.notify(`cx-mcp not found. Install with: ${INSTALL_CMD}`, "error");
-        return;
-      }
-      if (ctx.mode !== "tui") {
-        ctx.ui.notify("The bag browser is available in TUI mode", "warning");
-        return;
-      }
-      try {
-        const rendered = await mcpCall(cxMcp, "resolve", { scope_prefix: "" });
-        const sections = bucketTiers(rendered).filter((s) => s.nodes.length > 0);
-        if (sections.length === 0) {
-          ctx.ui.notify("The bag is empty — /context add to start it", "info");
-          return;
-        }
-        await ctx.ui.custom(
-          (_tui, theme, _keybindings, done) => new TierViewer(sections, theme, done),
-          {
-            overlay: true,
-            overlayOptions: { width: "75%", minWidth: 80, maxHeight: "85%", anchor: "center" },
-          },
-        );
-      } catch (e) {
-        ctx.ui.notify(`Could not load the bag: ${e instanceof Error ? e.message : String(e)}`, "error");
       }
     },
   });

@@ -9,8 +9,8 @@ contextual only via MCP — no direct SQLite or hub access.
 - `/context` shows ground truth — exactly what is injected into the
   system prompt this session: the `<context>` block (global + project
   tier defaults) and the `<skills>` block (session-loaded skills).
-  `/bag` is the explorer for the whole bag. Both render as a tabbed
-  document: top-level tier menu bar (global / local / skills), and below
+  It renders as a tabbed document: top-level tier menu bar (global /
+  local / skills), and below
   it a flat scrollable document where each section opens with a
   horizontal divider carrying its title. Keys: ←→ switch tiers, ↑↓
   scroll line-wise, pgup/pgdn page-wise, ctrl+↓/ctrl+↑ jump
