@@ -187,16 +187,17 @@ Key flows:
 
 - Live: instruction atoms, SQLite ledger, snapshot JSON as merge unit,
   hand-rolled OR-set/tombstone merge; hub deployed (Worker + DO).
-- Also live in the same store: the kv annex (dotted keys → documents,
-  `kv_*` MCP tools, local-first). Record types — kv-facts, decision
-  records (`decision-memory-mcp`), annotations (diagnostics/build
-  state keyed by root hash), work items (`plan2.md`) — converge on
+- Long-form content rides the same record model — there is no separate
+  annex (a generic kv layer existed and was removed as a
+  pre-generalization artifact). Record types — section documents,
+  decision records (`decision-memory-mcp`), annotations (diagnostics/
+  build state keyed by root hash), work items (`plan2.md`) — converge on
   **elastic**: one event-sourced ledger + lattice merge (facts for
   immutable data, max-stamp registers for mutable fields,
   `datastore-survey.md`). One storage pattern, typed payloads. The
   workflow system's own content follows the same rule (plan2):
-  workflow content lives in the bag, not in files — prose as kv
-  documents, state as record types, markdown stays the authoring
+  workflow content lives in the bag, not in files — prose as section
+  records, state as record types, markdown stays the authoring
   format.
 - The hub generalizes from "context hub" to **replication hub**: bags,
   decision records, annotations, later session records — one Worker+DO,

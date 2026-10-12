@@ -56,7 +56,7 @@ a second crate yet:
 |---|---|---|
 | `product.md` | what contextual/contexture does, for whom, overarching ideas, non-goals | to write — markdown now; migrates into the bag (this rule) |
 | `architecture.md` | contexture umbrella (planes, moving parts) — promoted from `architecture2.md`, which is retired | exists — migrates into the bag (this rule) |
-| `contextual/research/memory-plane.md` | bag components, resolution model, diagrams | exists, refreshed for elastic + kv annex — migrates (this rule) |
+| `research/old/memory-plane.md` | bag components, resolution model, diagrams | exists (archived) — migrates (this rule) |
 | `stories.md` | user stories / workflows — human and agent personas | to write — markdown now; migrates into the bag (this rule) |
 | `plan2.md` | this | — |
 | record-type specs | work-item schema, merge semantics, lifecycle | to write (can live in `stories.md` appendix or own doc) |
@@ -70,22 +70,22 @@ workflow system's own content lives in repo `.md` files** — it all
 lives in contextual's store, stored/synced via automerge:
 
 - **prose documents** (product description, user stories, the
-  architecture essays) → the **kv annex**: dotted keys → documents,
-  synced as record data once kv lands in the L2 doc (local-first
-  until then)
+  architecture essays) → **section records** in the automerge store
+  (W1): keyed documents with a type field. (The kv annex they were
+  once slated for was removed — pre-generalization artifact.)
 - **structured state** (todos → work items, decisions, annotations,
   everything with lifecycle and history) → **record types** (L2),
   `cx item` verbs + MCP tools (L3)
 - **markdown stays the authoring format** — files are inputs, not the
   store: import (harvest pattern), then the file is a stub or deleted.
-  The bag is the single home; `cx export`/kv views regenerate the
+  The bag is the single home; `cx export`/section views regenerate the
   publishable prose on demand
 - **files remain files** for: code, binaries and GLB (Derived plane),
   vendored material — the rule is about workflow content, not Content
 - plan.md and plan2.md migrate the same way: `## TODO` sections become
-  items at L3, their prose becomes kv documents
+  items at L3, their prose becomes section records
 
-Interim: until kv sync and record types land, the docs keep their
+Interim: until section records land (W1), the docs keep their
 markdown homes in `research/context/` — migration is a one-time import
 per document (`cx harvest --take` shape).
 
@@ -210,7 +210,7 @@ reference reading only.
   vocabulary).
 - **Doc placement:** resolved by the rule above — markdown homes in
   `research/context/` until L2, then everything migrates into the bag
-  (prose → kv documents, todos → work items).
+  (prose → section records, todos → work items).
 
 ## TODO (the list, until it becomes items)
 

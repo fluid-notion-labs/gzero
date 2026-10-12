@@ -26,10 +26,6 @@ CREATE TABLE IF NOT EXISTS tombstones (
 CREATE TABLE IF NOT EXISTS source_hashes (
     source TEXT PRIMARY KEY,
     hash TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS kv (
-    key  TEXT PRIMARY KEY,
-    doc  TEXT NOT NULL
 );";
 
 /// SQLite-backed bag. One row per (text, source) assertion.
@@ -70,61 +66,6 @@ impl SqliteStore {
     /// In-memory store for tests.
     pub fn in_memory() -> Result<Self> {
         Self::open(":memory:")
-    }
-}
-
-/// Key–value annex: dotted keys ('a.b.c') map to whole documents.
-/// Independent of the atom bag — no tags, no tombstones, not synced to
-/// the hub; local to this database file.
-impl SqliteStore {
-    /// Upsert `key` → `doc`; returns true if the key already existed.
-    pub fn kv_put(&mut self, key: &str, doc: &str) -> Result<bool> {
-        let existed: bool = self
-            .conn
-            .query_row("SELECT 1 FROM kv WHERE key = ?1", params![key], |_| {
-                Ok(true)
-            })
-            .unwrap_or(false);
-        self.conn.execute(
-            "INSERT OR REPLACE INTO kv (key, doc) VALUES (?1, ?2)",
-            params![key, doc],
-        )?;
-        Ok(existed)
-    }
-
-    /// The document at exactly `key`, if any.
-    pub fn kv_get(&self, key: &str) -> Result<Option<String>> {
-        let mut stmt = self.conn.prepare("SELECT doc FROM kv WHERE key = ?1")?;
-        let mut rows = stmt.query_map(params![key], |r| r.get(0))?;
-        Ok(rows.next().transpose()?)
-    }
-
-    /// All (key, doc) pairs strictly under `prefix` (the exact key itself
-    /// excluded), sorted by key. Empty prefix matches every key.
-    pub fn kv_children(&self, prefix: &str) -> Result<Vec<(String, String)>> {
-        let stem = if prefix.is_empty() {
-            String::new()
-        } else {
-            format!("{prefix}.")
-        };
-        let mut stmt = self.conn.prepare("SELECT key, doc FROM kv ORDER BY key")?;
-        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
-        let mut out = Vec::new();
-        for row in rows {
-            let (key, doc): (String, String) = row?;
-            if key.starts_with(&stem) && key != prefix {
-                out.push((key, doc));
-            }
-        }
-        Ok(out)
-    }
-
-    /// Delete the document at exactly `key`; returns whether it existed.
-    pub fn kv_delete(&mut self, key: &str) -> Result<bool> {
-        let n = self
-            .conn
-            .execute("DELETE FROM kv WHERE key = ?1", params![key])?;
-        Ok(n > 0)
     }
 }
 
@@ -249,10 +190,8 @@ impl Storage for SqliteStore {
                 )?;
             }
             None => {
-                self.conn.execute(
-                    "DELETE FROM source_hashes WHERE source = ?1",
-                    params![source],
-                )?;
+                self.conn
+                    .execute("DELETE FROM source_hashes WHERE source = ?1", params![source])?;
             }
         }
         Ok(())
@@ -264,7 +203,9 @@ impl Storage for SqliteStore {
         // living there — delete only this source's assertions.
         let own: Vec<(String, String, String, String)> = self
             .conn
-            .prepare("SELECT text, scope, node, tags FROM atoms WHERE source = ?1")?
+            .prepare(
+                "SELECT text, scope, node, tags FROM atoms WHERE source = ?1",
+            )?
             .query_map(params![source], |r| {
                 Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
             })?
@@ -289,10 +230,8 @@ impl Storage for SqliteStore {
         self.tombstone(&dying)?;
         self.conn
             .execute("DELETE FROM atoms WHERE source = ?1", params![source])?;
-        self.conn.execute(
-            "DELETE FROM source_hashes WHERE source = ?1",
-            params![source],
-        )?;
+        self.conn
+            .execute("DELETE FROM source_hashes WHERE source = ?1", params![source])?;
         Ok(dying)
     }
 }

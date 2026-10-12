@@ -16,11 +16,11 @@ Everything lives in this repo (`nursery/contextual`), crate
 | component | file | state |
 |---|---|---|
 | markdown parser, resolve, harvest, seeds, snapshot merge, repo identity | `src/lib.rs` (1179) | live, 22 tests |
-| `Storage` trait + `SqliteStore` + kv annex (dotted keys → docs) | `src/sqlite.rs` (366) | live, 4 tests; kv is SQLite-only |
+| `Storage` trait + `SqliteStore` | `src/sqlite.rs` (305) | live, 4 tests; kv annex removed 2026-10 |
 | snapshot JSON (atoms + tombstones), the merge unit | `src/snapshot.rs` (77) | live |
 | hub client (`CX_HUB_URL`/`CX_TOKEN`: post_events, fetch_snapshot) | `src/hub.rs` (127) | live |
-| CLI: add / rm / rm-source / harvest / tags / sync / pull | `src/main.rs` (431) | live; no kv or ws verbs |
-| MCP tools: resolve, search, add, remove, tags, kv_put/get/list/delete | `src/bin/mcp.rs` (1157) | live, 17 tests; no harvest tool despite a comment claiming one |
+| CLI: add / rm / rm-source / harvest / tags / sync / pull | `src/main.rs` (431) | live; no ws verbs yet |
+| MCP tools: resolve, search, add, remove, tags | `src/bin/mcp.rs` (885) | live, 12 tests; no harvest tool despite a comment claiming one |
 | pi plugin: per-turn injection, `/context` tier browser, review hook, skills, workstyles | `pi-contextual-plugin/*.ts` | live; `EXPECTED_TOOLS` gate = resolve/search/add/remove/tags |
 | global floor content, compiled in, reconciled at startup | `seeds/global.md` | live |
 | hub (deployed Worker + DO) | **not in this repo** | source location unknown — find before D1 |
@@ -37,8 +37,10 @@ Everything lives in this repo (`nursery/contextual`), crate
    current tip and adopted (W0). Expected conflict: only
    `research/memory-plane.md`, which the restructure moved to
    `research/old/`.
-2. **The kv annex is SQLite-only** and outside the automerge doc —
-   workflow content must live in the bag as record data (W1).
+2. ~~The kv annex is SQLite-only and outside the automerge doc~~
+   **resolved 2026-10:** the annex was removed entirely — zero usage,
+   a pre-generalization artifact (revert of `b6ef929`). Workflow
+   content lives in the bag as record data (W1).
 3. **Stale doc references**: `architecture.md` and `plan2.md` point at
    `contextual/research/memory-plane.md`, `research/context/…`, and
    `plan.md` — all now under `research/old/` after the restructure.
@@ -47,7 +49,8 @@ Everything lives in this repo (`nursery/contextual`), crate
 5. **MCP surface gaps**: no `harvest` tool (the mcp.rs header comment
    says the model can call one); `EXPECTED_TOOLS` in the pi plugin
    must grow when item/ws tools land or stale installs won't warn.
-6. **kv tools are MCP-only** — the `cx` CLI has no kv/ws verbs.
+6. ~~kv tools are MCP-only~~ — moot after the annex removal; the
+   `cx` CLI has no ws verbs yet.
 7. **The research restructure in `@` is uncommitted** — describe and
    land it before anything rebases onto it.
 8. **Hub Worker source is not in this repo** — locate it before D1.
@@ -60,8 +63,8 @@ Everything lives in this repo (`nursery/contextual`), crate
   native history (actor/timestamp/seq on every change), append-only
   persistence. SQLite is demoted to a derived index (query/FTS),
   never truth.
-- **workflow content lives in the bag, not in files**: prose → kv
-  documents; state (todos, decisions,
+- **workflow content lives in the bag, not in files**: prose → section
+  records; state (todos, decisions,
   annotations) → record types; markdown stays the authoring format;
   files are inputs, the bag is the store.
 - **Work items are native** (not adopted): record type per plan2's
@@ -88,9 +91,10 @@ Everything lives in this repo (`nursery/contextual`), crate
 
 ### W1 — WS data model: sections as records
 
-- Move kv documents into the automerge doc: dotted keys → documents
-  as record data (syncable later at D1). SQLite `kv_*` becomes a
-  projection or is replaced.
+- Sections live directly in the automerge doc as record data
+  (syncable later at D1). The kv annex they were once slated for was
+  removed (2026-10, revert of `b6ef929`): never used, superseded by
+  typed sections.
 - **Section record**: `{ key (dotted, project-scoped), type (md |
   checklist), title, body (LWW text), order }`. Project scoping via
   `repo_identity_in` (already in lib.rs).
@@ -147,9 +151,9 @@ Everything lives in this repo (`nursery/contextual`), crate
 ### W5 — doc-set migration (workflow-content rule complete)
 
 - Import the research prose (`architecture.md`, `plan2.md`,
-  `plan3.md`, later `product.md`/`stories.md`) into kv documents;
+  `plan3.md`, later `product.md`/`stories.md`) into section records;
   `## TODO` sections become work items with `source` links back to
-  the doc; files become stubs or are deleted; `cx export`/kv views
+  the doc; files become stubs or are deleted; `cx export`/section views
   regenerate publishable prose on demand.
 - Fix the stale references (finding 3) as part of this.
 - *Acceptance:* the docs read back from the bag; repo `.md` files are
@@ -175,9 +179,8 @@ session tree after that. The MCP surface stays stable throughout.
 
 ## Open questions
 
-- Tool naming: keep `kv_*` for raw documents and add `ws_*` as the
-  typed view, or promote kv to ws wholesale? (Lean: keep both — kv is
-  the storage shape, ws is the workflow shape.)
+- ~~Tool naming~~ **resolved 2026-10:** the kv annex was removed;
+  `ws_*` is the only document tool surface.
 - Do checklist sections and work items share one representation (a
   checklist section is a saved query over items), or stay separate?
 - Exact wording of the skill-activation workflow atom in the global
@@ -188,7 +191,8 @@ session tree after that. The MCP surface stays stable throughout.
 
 - [x] land the `@` restructure (describe; housekeeping in plan2: duplicate L2 line, stale doc pointers, "L1 done" → "adopted in W0")
 - [x] W0: adopt AutomergeStore (rebase orphan, tests green, both stores work; merged to main)
-- [ ] W1: sections as records (kv → automerge doc; `cx ws`; `ws_*` tools)
+- [x] blat the kv annex (revert `b6ef929`; context atoms updated)
+- [ ] W1: sections as records (sections in the automerge doc; `cx ws`; `ws_*` tools)
 - [ ] W2: work items (schema; `cx item`; `item_*` tools; `EXPECTED_TOOLS`)
 - [ ] W3: plan-task injection + skill-activation seed atom + plan tab
 - [ ] W4: capacity/policy, gates, evidence-ranked scheduler
