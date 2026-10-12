@@ -33,7 +33,7 @@ import {
   skillBody,
   type SkillEntry,
 } from "./skills.ts";
-import { registerReview, type ReviewDeps } from "./review.ts";
+import { messageText, registerReview, type ReviewDeps } from "./review.ts";
 import {
   ensureWorkstyles,
   extractWorkstyleRefs,
@@ -579,7 +579,8 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerCommand("context", {
-    description: "Show exactly what is sent to the model; 'reload' re-resolves; 'add <text>' saves an atom",
+    description:
+      "Show exactly what is sent to the model; 'reload' re-resolves; 'add <text>' saves an atom; 'local|global <text>' condenses via the model then saves to that tier",
     handler: async (args: string, ctx: ExtensionCommandContext) => {
       const cxMcp = await findCxMcp();
       if (!cxMcp) {
@@ -600,6 +601,64 @@ export default function (pi: ExtensionAPI) {
           );
         } catch (e) {
           ctx.ui.notify(`Reload failed: ${e instanceof Error ? e.message : String(e)}`, "error");
+        }
+        return;
+      }
+
+      // local/global: the model condenses the raw note into one terse
+      // atom, the confirm dialog shows the query and the rewrite, then it
+      // is saved to the chosen tier (local = this repo's project scope,
+      // global = scope "global").
+      if (sub === "local" || sub === "global") {
+        const tier = sub as "local" | "global";
+        let note = argText;
+        if (!note) {
+          note =
+            (await ctx.ui.input(
+              `Add to ${tier}`,
+              "the raw note — it will be condensed into one atom",
+            )) ?? "";
+        }
+        if (!note.trim()) return;
+
+        const model = ctx.model;
+        if (!model) {
+          ctx.ui.notify("No model available to condense the note", "error");
+          return;
+        }
+        const query =
+          `Rewrite the note below as a single terse, durable instruction atom for a context bag. Rules:\n` +
+          `- one sentence, plain declarative, addressed to a coding agent\n` +
+          `- keep concrete details (names, commands, paths); drop filler\n` +
+          `- no markdown, no quotes, no hashtags, under 25 words\n` +
+          `- reply with only the atom text, nothing else\n\n` +
+          `Note:\n${note.trim()}`;
+        let polished = "";
+        try {
+          const result = await ctx.modelRegistry.complete(
+            model,
+            { messages: [{ role: "user", content: query, timestamp: Date.now() }] },
+            { maxTokens: 200 },
+          );
+          polished = messageText(result).trim();
+        } catch (e) {
+          ctx.ui.notify(`Condense failed: ${e instanceof Error ? e.message : String(e)}`, "error");
+          return;
+        }
+        if (!polished) {
+          ctx.ui.notify("The model returned nothing — nothing saved", "error");
+          return;
+        }
+        const confirmed = await ctx.ui.confirm(`Add to ${tier}`, `"${polished}"\n\nquery:\n${query}`);
+        if (!confirmed) return;
+        try {
+          const result = await mcpCall(cxMcp, "add", {
+            text: polished,
+            scope: tier === "global" ? "global" : undefined,
+          });
+          ctx.ui.notify(`Context: ${result}`, "info");
+        } catch (e) {
+          ctx.ui.notify(`Add failed: ${e instanceof Error ? e.message : String(e)}`, "error");
         }
         return;
       }

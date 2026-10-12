@@ -21,7 +21,10 @@ contextual only via MCP — no direct SQLite or hub access.
   `add`/`remove` calls, `/context add`, `cx` in a shell, another
   session — is picked up on the next turn. `/context reload` forces a
   re-resolve without waiting; `/context add <text>` saves an atom with
-  a confirm dialog
+  a confirm dialog; `/context local|global <text>` sends the raw note
+  to the session model for a one-atom condense, shows the query and
+  rewrite in a confirm dialog, and saves to the chosen tier (local =
+  this repo's project scope, global = scope "global")
 - alt-s or `/skills` opens the skills picker: type-to-search over the
   vendored `SKILL.md` files (title + description), enter reads the full
   skill in a scrollable overlay, esc backs out, and enter again in the

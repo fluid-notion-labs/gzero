@@ -22,7 +22,7 @@ interface ReviewSave {
 }
 
 /** Extract plain text from a message whose content is a string or parts. */
-function messageText(message: { role?: string; content?: unknown }): string {
+export function messageText(message: { role?: string; content?: unknown }): string {
   const c = message.content;
   if (typeof c === "string") return c;
   if (Array.isArray(c)) {
