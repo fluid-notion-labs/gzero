@@ -212,6 +212,12 @@ session tree after that. The MCP surface stays stable throughout.
       graph/tree view (child_of data exists; `cx item graph` deferred),
       priority-based `assignee` capacity policy (W4).
 - [ ] W3: plan-task injection + skill-activation seed atom + plan tab
+      — in progress 2026-10: the items pane shipped (`pi-contextual-plugin/
+      items-pane.ts`): non-capturing top-right overlay (Claude-Code-style),
+      data via `cx item list --json`, glyphs ○/●/✓ plus ⊘ for blocked,
+      refreshed on session start + agent_end + `/items refresh`; auto-hides
+      when empty, terminal < 100 cols, or cx is stale. `/items` toggles.
+      Remaining: plan_next tool, pinned-items in context, seed atom.
 - [ ] W4: capacity/policy, gates, evidence-ranked scheduler
 - [ ] W5: doc migration into the bag; fix stale references
 - [ ] locate hub Worker source

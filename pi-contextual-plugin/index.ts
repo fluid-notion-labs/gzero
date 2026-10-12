@@ -33,6 +33,7 @@ import {
   skillBody,
   type SkillEntry,
 } from "./skills.ts";
+import { ItemsPaneController } from "./items-pane.ts";
 import { messageText, registerReview, type ReviewDeps } from "./review.ts";
 import {
   ensureWorkstyles,
@@ -355,6 +356,7 @@ class TierViewer implements Component, Focusable {
 }
 
 export default function (pi: ExtensionAPI) {
+  const itemsPane = new ItemsPaneController();
   let cxMcpPath: string | null | undefined;
   /** Resolved default context for this session; injected every turn. */
   let resolvedBody: string | null = null;
@@ -505,6 +507,32 @@ export default function (pi: ExtensionAPI) {
     } catch {
       // tools/list failure shouldn't block the session; injection degrades anyway.
     }
+    // Work-items pane: auto-opens in TUI sessions; auto-hides while empty.
+    if (ctx.mode === "tui") {
+      await itemsPane.open(ctx);
+    }
+  });
+
+  pi.on("agent_end", async () => {
+    await itemsPane.refresh();
+  });
+
+  pi.on("session_shutdown", () => {
+    itemsPane.close();
+  });
+
+  pi.registerCommand("items", {
+    description: "Toggle the work-items pane; 'refresh' refetches now",
+    handler: async (args: string, ctx: ExtensionCommandContext) => {
+      const sub = args.trim().split(/\s+/)[0] ?? "";
+      if (sub === "off") {
+        itemsPane.close();
+      } else if (sub === "refresh") {
+        await itemsPane.refresh();
+      } else {
+        await itemsPane.toggle(ctx);
+      }
+    },
   });
 
   pi.on("before_agent_start", async (event, ctx) => {
