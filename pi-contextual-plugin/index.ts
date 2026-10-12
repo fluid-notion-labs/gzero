@@ -42,6 +42,9 @@ import {
   registerWorkstyles,
 } from "./workstyles.ts";
 import { execFile, spawn } from "node:child_process";
+import { stat } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 
 const REPO = "https://github.com/fluid-notion-labs/contextual";
 const INSTALL_CMD = `cargo install --git ${REPO}`;
@@ -137,6 +140,28 @@ async function mcpTools(cxMcp: string): Promise<string[]> {
 
 /** Framing block injected before the resolved atoms (curation.md §4). */
 const PREAMBLE = `The context below is persistent memory: carried across sessions and machines, present in every session. Tagged knowledge is not shown here — when the user names technologies or domains, pull it via mcp__context__resolve with tags; discover hashtags with search. Facts that belong here apply to every session; task-specific learnings get tags instead. When saving: declarative facts, never imperatives to yourself; batch changes; consolidate rather than skip.`;
+
+/**
+ * Newest mtime across the bag's SQLite files (db + WAL): WAL mode means a
+ * write may touch only the -wal file, and a checkpoint moves content back
+ * into the db. -shm is deliberately excluded — readers update its wal-index,
+ * so its mtime is not a write signal. This is the "bag changed on disk"
+ * signal that lets the injected context pick up any writer — the model's
+ * MCP add/remove, /context add, cx in a shell, another session, hub sync —
+ * without needing hooks per writer. 0 when nothing exists yet.
+ */
+async function bagStamp(): Promise<number> {
+  const db = process.env.CX_DB || path.join(os.homedir(), ".pi", "agent", "context.db");
+  let newest = 0;
+  for (const suffix of ["", "-wal"]) {
+    try {
+      newest = Math.max(newest, (await stat(db + suffix)).mtimeMs);
+    } catch {
+      // missing file (e.g. no -wal) is normal; try the rest
+    }
+  }
+  return newest;
+}
 
 interface TierNode {
   /** Section label within the tier, e.g. "git" or "jj-skills/jj-workflow". */
@@ -331,6 +356,8 @@ export default function (pi: ExtensionAPI) {
   let cxMcpPath: string | null | undefined;
   /** Resolved default context for this session; injected every turn. */
   let resolvedBody: string | null = null;
+  /** Newest bag-file mtime when resolvedBody was produced (see bagStamp). */
+  let bagStampAtResolve = 0;
   /** The #skill autocomplete stacks once per process; sessions may start more than once. */
   let autocompleteInstalled = false;
   /** Skill references already distilled into the bag this session. */
@@ -383,12 +410,25 @@ export default function (pi: ExtensionAPI) {
     return cxMcpPath;
   };
 
-  /** Resolve once and cache; returns null when nothing usable came back. */
+  /** Resolve once and cache; returns null when nothing usable came back.
+   * Stamps the cache after resolving so our own resolve's bag writes
+   * (a fresh cx-mcp pulls from the hub at startup) don't count as changes. */
   const resolveContext = async (cxMcp: string): Promise<string | null> => {
     const text = await mcpCall(cxMcp, "resolve", {});
     const body = text.trim();
+    bagStampAtResolve = await bagStamp();
     if (!body || body === "(no matching context)") return null;
     return body;
+  };
+
+  /** Cached resolution, invalidated when the bag changed on disk since it
+   * was resolved. Returns null when nothing is resolved for this project
+   * (an empty resolution is not cached; the next turn re-resolves so newly
+   * added atoms appear without a manual reload). */
+  const cachedResolved = async (cxMcp: string): Promise<string | null> => {
+    if (resolvedBody !== null && (await bagStamp()) > bagStampAtResolve) resolvedBody = null;
+    if (resolvedBody === null) resolvedBody = await resolveContext(cxMcp);
+    return resolvedBody;
   };
 
   // The model's MCP tools. Registered in the factory; pi connects the
@@ -529,14 +569,14 @@ export default function (pi: ExtensionAPI) {
     }
     if (cxMcp) {
       try {
-        if (resolvedBody === null) resolvedBody = await resolveContext(cxMcp);
+        resolvedBody = await cachedResolved(cxMcp);
         if (resolvedBody !== null) {
-        // A fresh normalized copy arrives every turn; the returned options
-        // become the turn's system prompt, so the section must be set
-        // every turn or it is dropped from the prompt diff.
-        event.systemPromptOptions.sections["context"] =
-          `<context>\n${PREAMBLE}\n\n${resolvedBody}\n</context>`;
-      }
+          // A fresh normalized copy arrives every turn; the returned options
+          // become the turn's system prompt, so the section must be set
+          // every turn or it is dropped from the prompt diff.
+          event.systemPromptOptions.sections["context"] =
+            `<context>\n${PREAMBLE}\n\n${resolvedBody}\n</context>`;
+        }
       } catch (e) {
         resolvedBody = null; // resolve failed → retry next turn
         // Degrade silently: pi still works without injection.
@@ -597,14 +637,13 @@ export default function (pi: ExtensionAPI) {
       }
 
       // Plain /context: show what the model is injected. In TUI mode a
-      // scrollable overlay; elsewhere a notification.
-      if (resolvedBody === null) {
-        try {
-          resolvedBody = await resolveContext(cxMcp);
-        } catch {
-          ctx.ui.notify("Could not resolve context", "error");
-          return;
-        }
+      // scrollable overlay; elsewhere a notification. Uses the same cache
+      // as injection, so this shows exactly what the model gets.
+      try {
+        resolvedBody = await cachedResolved(cxMcp);
+      } catch {
+        ctx.ui.notify("Could not resolve context", "error");
+        return;
       }
       if (resolvedBody === null) {
         ctx.ui.notify("Nothing resolved for this project — /context add or tagged pulls", "info");

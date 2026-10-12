@@ -16,8 +16,12 @@ contextual only via MCP — no direct SQLite or hub access.
   tiers, ↑↓ scroll line-wise, pgup/pgdn page-wise, ctrl+↓/ctrl+↑ jump
   sections, esc/q close. Note the skillbag is *not* sent to the model —
   its atoms load only when a tag is pulled or a skill is
-  referenced/loaded. `/context reload` re-resolves; `/context add
-  <text>` saves an atom with a confirm dialog
+  referenced/loaded. The injection refreshes itself: the cache is
+  stamped with the bag file's mtime, so any change — the model's
+  `add`/`remove` calls, `/context add`, `cx` in a shell, another
+  session — is picked up on the next turn. `/context reload` forces a
+  re-resolve without waiting; `/context add <text>` saves an atom with
+  a confirm dialog
 - alt-s or `/skills` opens the skills picker: type-to-search over the
   vendored `SKILL.md` files (title + description), enter reads the full
   skill in a scrollable overlay, esc backs out, and enter again in the
