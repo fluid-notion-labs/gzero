@@ -1,0 +1,3043 @@
+{
+  "version": 1,
+  "atoms": [
+    {
+      "text": "`research/` — documentation only: assays, notes, designs, findings. No buildable code.",
+      "scope": "explorations",
+      "node": "layout",
+      "tags": []
+    },
+    {
+      "text": "`nursery/` — all software: prototypes, tools, scripts, experiments. One directory per project.",
+      "scope": "explorations",
+      "node": "layout",
+      "tags": []
+    },
+    {
+      "text": "`vendor/` — third-party clones used as research sources (git-ignored).",
+      "scope": "explorations",
+      "node": "layout",
+      "tags": []
+    },
+    {
+      "text": "Code written into `nursery/<name>/` gets a symlink from the motivating `research/<topic>/` doc (e.g. `cargo-gpui -> ../../nursery/cargo-gpui`) plus a one-line pointer near the top: \"Prototype at `nursery/<name>/`\".",
+      "scope": "explorations",
+      "node": "linking",
+      "tags": []
+    },
+    {
+      "text": "Nurseries self-contained: own `Cargo.toml`/README stating what it is and which research doc it belongs to.",
+      "scope": "explorations",
+      "node": "linking",
+      "tags": []
+    },
+    {
+      "text": "Research references code through the symlink path, not `nursery/` directly.",
+      "scope": "explorations",
+      "node": "linking",
+      "tags": []
+    },
+    {
+      "text": "Research dirs stay greppable, publishable prose — no target dirs, no lockfiles.",
+      "scope": "explorations",
+      "node": "rationale",
+      "tags": []
+    },
+    {
+      "text": "Code stays buildable and isolated in nursery; graduates to its own repo without dragging research along.",
+      "scope": "explorations",
+      "node": "rationale",
+      "tags": []
+    },
+    {
+      "text": "`cargo check` for fast iteration; `cargo build` and `cargo test` to verify.",
+      "scope": "rust",
+      "node": "build",
+      "tags": [
+        "rust"
+      ]
+    },
+    {
+      "text": "`cargo clippy` before done; `cargo fmt` on changed files.",
+      "scope": "rust",
+      "node": "build",
+      "tags": [
+        "rust"
+      ]
+    },
+    {
+      "text": "Respect `rust-toolchain.toml` MSRV when present.",
+      "scope": "rust",
+      "node": "build",
+      "tags": [
+        "rust"
+      ]
+    },
+    {
+      "text": "Binary thin, library fat: logic in lib modules, testable without the CLI.",
+      "scope": "rust",
+      "node": "layout",
+      "tags": [
+        "rust"
+      ]
+    },
+    {
+      "text": "Workspace for multi-crate; one concern per crate.",
+      "scope": "rust",
+      "node": "layout",
+      "tags": [
+        "rust"
+      ]
+    },
+    {
+      "text": "Prefer std and small maintained crates; pin with `=` only for engines or audited releases.",
+      "scope": "rust",
+      "node": "deps",
+      "tags": [
+        "rust"
+      ]
+    },
+    {
+      "text": "Use the package manager matching the lockfile: pnpm-lock.yaml → pnpm, yarn.lock → yarn, else npm.",
+      "scope": "npm",
+      "node": "build",
+      "tags": [
+        "npm"
+      ]
+    },
+    {
+      "text": "TypeScript: `tsc --noEmit` before done; tests via the repo's configured runner.",
+      "scope": "npm",
+      "node": "build",
+      "tags": [
+        "npm"
+      ]
+    },
+    {
+      "text": "Lockfile committed, node_modules never.",
+      "scope": "npm",
+      "node": "layout",
+      "tags": [
+        "npm"
+      ]
+    },
+    {
+      "text": "Scripts in package.json are the interface: build, test, lint.",
+      "scope": "npm",
+      "node": "layout",
+      "tags": [
+        "npm"
+      ]
+    },
+    {
+      "text": "`agents:` — add the instruction that follows to this AGENTS.md, then commit the change. E.g. `agents: always commit after finishing a logical unit of work`.",
+      "scope": "fluid-notion-labs/scene-mcp",
+      "node": "commands",
+      "tags": []
+    },
+    {
+      "text": "`ac:` — \"add command\": register a new command in this section, then commit the change. Form: `ac: <word>: <what it does>`; afterwards the command is invoked as `<word>:` in messages. E.g. `ac: log: append a dated line to docs/log.md`.",
+      "scope": "fluid-notion-labs/scene-mcp",
+      "node": "commands",
+      "tags": []
+    },
+    {
+      "text": "`vendor:` — clone the given repos (one or more URLs or local paths, space-separated) into `./vendor/`, then commit the change. Use for third-party sources kept as research references. E.g. `vendor: https://github.com/KhronosGroup/glTF ../other/repo`.",
+      "scope": "fluid-notion-labs/scene-mcp",
+      "node": "commands",
+      "tags": []
+    },
+    {
+      "text": "`fv:` — fork the given repo(s) with `gh` and clone the fork into `./vendor/`, then commit the change. If `gh` is not installed, ask the user before installing it. E.g. `fv: https://github.com/Dicklesworthstone/beads_rust.git`.",
+      "scope": "fluid-notion-labs/scene-mcp",
+      "node": "commands",
+      "tags": []
+    },
+    {
+      "text": "`sv:` — shallow clone (`git clone --depth 1`) the given repo(s) into `./vendor/`, then commit the change. E.g. `sv: https://github.com/gastownhall/beads.git`.",
+      "scope": "fluid-notion-labs/scene-mcp",
+      "node": "commands",
+      "tags": []
+    },
+    {
+      "text": "`s:` — status: check the status of this repository (git state, cursors in `features.md`, recent commits) and get up to speed on where things stand. Read-only; no commit. When the scene-mcp MCP tools are available in the session, also call `get_viewer_logs` to check what the browser viewer has been reporting and `get_viewer_photos` to see if the user uploaded reference photos (then `get_viewer_photo` to view one).",
+      "scope": "fluid-notion-labs/scene-mcp",
+      "node": "commands",
+      "tags": []
+    },
+    {
+      "text": "Always commit after finishing a logical unit of work (coding, documentation, etc).",
+      "scope": "fluid-notion-labs/scene-mcp",
+      "node": "commands",
+      "tags": []
+    },
+    {
+      "text": "**`features.md`** is the feature queue. It is *append-only, check-off, move the cursor*: 1. New ideas get appended to the bottom of the Queue, one entry per feature: checkbox, sequence number, one-line description, acceptance criteria, milestone tag if it belongs to one. 2. Slots are ordered by implementation order — slot an entry into place only *before* work starts. Once the cursor passes an item, don't reorder above it. 3. Work strictly top-down from the cursor (`◀ HERE`). 4. On completion: check the box, move the cursor down, keep the entry (it becomes the record that the feature shipped).",
+      "scope": "fluid-notion-labs/scene-mcp",
+      "node": "doc-workflow",
+      "tags": []
+    },
+    {
+      "text": "**`docs/architecture.md`** is the living description of what is built. Update it *when implementing a feature that changes* the data model, id scheme, extras mapping, tool surface, or crate layering — not after the fact. It reflects reality, never the plan.",
+      "scope": "fluid-notion-labs/scene-mcp",
+      "node": "doc-workflow",
+      "tags": []
+    },
+    {
+      "text": "**README.md** Status/Milestone lines track the coarse milestone position only (M0–M5); detail lives in the two docs above.",
+      "scope": "fluid-notion-labs/scene-mcp",
+      "node": "doc-workflow",
+      "tags": []
+    },
+    {
+      "text": "**Research doc** (`research/scene-mcp/README.md`, parent repo): update only for decisions, not implementation progress.",
+      "scope": "fluid-notion-labs/scene-mcp",
+      "node": "doc-workflow",
+      "tags": []
+    },
+    {
+      "text": "Directive `jj-workspaces`: parallel streams (tasks, agent sessions) each get their own jj workspace — `jj workspace add ../<name> -m \"msg\"`, always `-m` (no editor), named after the task, not the branch. #skill:jj-workspaces",
+      "scope": "explorations",
+      "node": "workstyle",
+      "tags": [
+        "skill"
+      ]
+    },
+    {
+      "text": "Directive `feat-nesting`: bookmarks nest `feat/<family>/<leaf>` (e.g. `feat/distributed/lattice`); a family integrates children-first, rebasing up the tree to `main`. #skill:jj-workspaces",
+      "scope": "explorations",
+      "node": "workstyle",
+      "tags": [
+        "skill"
+      ]
+    },
+    {
+      "text": "Directive `main-periodic`: finished `feat/*` work pulls into `main` periodically (rebase, then move the bookmark); `main` tracks reality, and remaining `feat/*` streams rebase onto it after each pull. #skill:jj-workspaces",
+      "scope": "explorations",
+      "node": "workstyle",
+      "tags": [
+        "skill"
+      ]
+    },
+    {
+      "text": "Two-agent coordination — conflict funnel, integration postures, workspaces as the unit of attribution: `research/context/lockstep.md`. #jj",
+      "scope": "explorations",
+      "node": "workstyle",
+      "tags": [
+        "jj"
+      ]
+    },
+    {
+      "text": "Use when implementing any feature or bugfix, before writing implementation code #testing",
+      "scope": "skills/superpowers",
+      "node": "test-driven-development",
+      "tags": [
+        "testing"
+      ]
+    },
+    {
+      "text": "when-to-use: Always:; New features; Bug fixes; Refactoring; Behavior changes #testing",
+      "scope": "skills/superpowers",
+      "node": "test-driven-development",
+      "tags": [
+        "testing"
+      ]
+    },
+    {
+      "text": "red-flags---stop-and-start-over: Code before test; Test after implementation; Test passes immediately; Can't explain why test failed; Tests added \"later\" #testing",
+      "scope": "skills/superpowers",
+      "node": "test-driven-development",
+      "tags": [
+        "testing"
+      ]
+    },
+    {
+      "text": "Use when encountering any bug, test failure, or unexpected behavior, before proposing fixes #debugging",
+      "scope": "skills/superpowers",
+      "node": "systematic-debugging",
+      "tags": [
+        "debugging"
+      ]
+    },
+    {
+      "text": "when-to-use: Use for ANY technical issue:; Test failures; Bugs in production; Unexpected behavior; Performance problems; Build failures #debugging",
+      "scope": "skills/superpowers",
+      "node": "systematic-debugging",
+      "tags": [
+        "debugging"
+      ]
+    },
+    {
+      "text": "the-four-phases: You MUST complete each phase before proceeding to the next. #debugging",
+      "scope": "skills/superpowers",
+      "node": "systematic-debugging",
+      "tags": [
+        "debugging"
+      ]
+    },
+    {
+      "text": "red-flags---stop-and-follow-process: If you catch yourself thinking:; \"Quick fix for now, investigate later\"; \"Just try changing X and see if it works\" #debugging",
+      "scope": "skills/superpowers",
+      "node": "systematic-debugging",
+      "tags": [
+        "debugging"
+      ]
+    },
+    {
+      "text": "your-human-partner's-signals-you're-doing-it-wrong: Watch for these redirections:; \"Is that not happening?\"; You assumed without verifying; \"Will it show us...?\" #debugging",
+      "scope": "skills/superpowers",
+      "node": "systematic-debugging",
+      "tags": [
+        "debugging"
+      ]
+    },
+    {
+      "text": "Use when completing tasks, implementing major features, or before merging to verify work meets requirements #code-review",
+      "scope": "skills/superpowers",
+      "node": "requesting-code-review",
+      "tags": [
+        "code-review"
+      ]
+    },
+    {
+      "text": "when-to-request-review: Mandatory:; After each task in subagent-driven development; After completing major feature; Before merge to main #code-review",
+      "scope": "skills/superpowers",
+      "node": "requesting-code-review",
+      "tags": [
+        "code-review"
+      ]
+    },
+    {
+      "text": "red-flags: Never:; Skip review because \"it's simple\"; Ignore Critical issues; Proceed with unfixed Important issues #code-review",
+      "scope": "skills/superpowers",
+      "node": "requesting-code-review",
+      "tags": [
+        "code-review"
+      ]
+    },
+    {
+      "text": "Use when receiving code review feedback, before implementing suggestions, especially if feedback seems unclear or technically questionable #code-review",
+      "scope": "skills/superpowers",
+      "node": "receiving-code-review",
+      "tags": [
+        "code-review"
+      ]
+    },
+    {
+      "text": "forbidden-responses: NEVER:; \"You're absolutely right!\" (explicit instruction-file violation); \"Great point!\" / \"Excellent feedback!\" (performative) #code-review",
+      "scope": "skills/superpowers",
+      "node": "receiving-code-review",
+      "tags": [
+        "code-review"
+      ]
+    },
+    {
+      "text": "Use when you have a spec or requirements for a multi-step task, before touching code #planning",
+      "scope": "skills/superpowers",
+      "node": "writing-plans",
+      "tags": [
+        "planning"
+      ]
+    },
+    {
+      "text": "scope-check: If the spec covers multiple independent subsystems, it should have been broken into sub-project specs during brainstorming. #planning",
+      "scope": "skills/superpowers",
+      "node": "writing-plans",
+      "tags": [
+        "planning"
+      ]
+    },
+    {
+      "text": "file-structure: Before defining tasks, map out which files will be created or modified and what each one is responsible for. #planning",
+      "scope": "skills/superpowers",
+      "node": "writing-plans",
+      "tags": [
+        "planning"
+      ]
+    },
+    {
+      "text": "task-right-sizing: A task is the smallest unit that carries its own test cycle and is worth a fresh reviewer's gate. #planning",
+      "scope": "skills/superpowers",
+      "node": "writing-plans",
+      "tags": [
+        "planning"
+      ]
+    },
+    {
+      "text": "step-granularity: Each step is one action with a checkable result:; \"Write the failing test\"; step; \"Run it to make sure it fails\"; step #planning",
+      "scope": "skills/superpowers",
+      "node": "writing-plans",
+      "tags": [
+        "planning"
+      ]
+    },
+    {
+      "text": "global-constraints: [The spec's project-wide requirements — version floors, dependency limits, naming and copy rules, platform requirements — one line each #planning",
+      "scope": "skills/superpowers",
+      "node": "writing-plans",
+      "tags": [
+        "planning"
+      ]
+    },
+    {
+      "text": "Use when executing an implementation plan in the current session as the implementer yourself — your human partner chose inline execution #planning",
+      "scope": "skills/superpowers",
+      "node": "executing-plans",
+      "tags": [
+        "planning"
+      ]
+    },
+    {
+      "text": "when-to-use: You have a plan from superpowers:writing-plans and your human partner chose inline execution at the handoff #planning",
+      "scope": "skills/superpowers",
+      "node": "executing-plans",
+      "tags": [
+        "planning"
+      ]
+    },
+    {
+      "text": "setup: Ensure the work happens in an isolated workspace: use superpowers:using-git-worktrees to create one or verify the existing one. #planning",
+      "scope": "skills/superpowers",
+      "node": "executing-plans",
+      "tags": [
+        "planning"
+      ]
+    },
+    {
+      "text": "the-task-loop: Everything you print, and every tool result, stays resident in your context for the rest of the session. #planning",
+      "scope": "skills/superpowers",
+      "node": "executing-plans",
+      "tags": [
+        "planning"
+      ]
+    },
+    {
+      "text": "final-review: Run ../subagent-driven-development/scripts/review-package PLAN_FILE MERGE_BASE HEAD (MERGE_BASE = the commit the branch started from, e.g. #planning",
+      "scope": "skills/superpowers",
+      "node": "executing-plans",
+      "tags": [
+        "planning"
+      ]
+    },
+    {
+      "text": "finish: Before you delete anything, collect every ledger line containing Ruling: into your final message under \"Rulings I made\" #planning",
+      "scope": "skills/superpowers",
+      "node": "executing-plans",
+      "tags": [
+        "planning"
+      ]
+    },
+    {
+      "text": "Use when about to claim work is complete, fixed, or passing, before committing or creating PRs #verification",
+      "scope": "skills/superpowers",
+      "node": "verification-before-completion",
+      "tags": [
+        "verification"
+      ]
+    },
+    {
+      "text": "red-flags---stop: Using \"should\", \"probably\", \"seems to\"; Expressing satisfaction before verification (\"Great!\", \"Perfect!\", \"Done!\", etc.) #verification",
+      "scope": "skills/superpowers",
+      "node": "verification-before-completion",
+      "tags": [
+        "verification"
+      ]
+    },
+    {
+      "text": "key-patterns: Tests: ✅ [Run test command] [See: 34/34 pass] \"All tests pass\" ❌ \"Should pass now\" / \"Looks correct\" #verification",
+      "scope": "skills/superpowers",
+      "node": "verification-before-completion",
+      "tags": [
+        "verification"
+      ]
+    },
+    {
+      "text": "Use when starting feature work that needs isolation from current workspace or before executing implementation plans #git",
+      "scope": "skills/superpowers",
+      "node": "using-git-worktrees",
+      "tags": [
+        "git"
+      ]
+    },
+    {
+      "text": "step-0-detect-existing-isolation: Before creating anything, check if you are already in an isolated workspace. #git",
+      "scope": "skills/superpowers",
+      "node": "using-git-worktrees",
+      "tags": [
+        "git"
+      ]
+    },
+    {
+      "text": "step-1-create-isolated-workspace: You have two mechanisms. #git",
+      "scope": "skills/superpowers",
+      "node": "using-git-worktrees",
+      "tags": [
+        "git"
+      ]
+    },
+    {
+      "text": "You MUST use this before any creative work; creating features, building components, adding functionality, modifying behavior, or planning anything new #planning",
+      "scope": "skills/superpowers",
+      "node": "brainstorming",
+      "tags": [
+        "planning"
+      ]
+    },
+    {
+      "text": "first-what-do-you-actually-know?: Before you reply, ask yourself: what do I know about what they want, and why? #planning",
+      "scope": "skills/superpowers",
+      "node": "brainstorming",
+      "tags": [
+        "planning"
+      ]
+    },
+    {
+      "text": "the-conversation: Each message ends with one question: a single sentence with no list of example answers hanging off it. #planning",
+      "scope": "skills/superpowers",
+      "node": "brainstorming",
+      "tags": [
+        "planning"
+      ]
+    },
+    {
+      "text": "play-it-back: Play back as you go. #planning",
+      "scope": "skills/superpowers",
+      "node": "brainstorming",
+      "tags": [
+        "planning"
+      ]
+    },
+    {
+      "text": "size-the-work: Once you understand what they want, pick a size and say it in plain words. #planning",
+      "scope": "skills/superpowers",
+      "node": "brainstorming",
+      "tags": [
+        "planning"
+      ]
+    },
+    {
+      "text": "the-written-design: For a project, write a plain document a talented builder in the domain could plan from without going back to your human partner. #planning",
+      "scope": "skills/superpowers",
+      "node": "brainstorming",
+      "tags": [
+        "planning"
+      ]
+    },
+    {
+      "text": "Use when facing 2+ independent tasks that can be worked on without shared state or sequential dependencies #agents #planning",
+      "scope": "skills/superpowers",
+      "node": "dispatching-parallel-agents",
+      "tags": [
+        "agents",
+        "planning"
+      ]
+    },
+    {
+      "text": "agent-prompt-structure: Good agent prompts are: 1. #agents #planning",
+      "scope": "skills/superpowers",
+      "node": "dispatching-parallel-agents",
+      "tags": [
+        "agents",
+        "planning"
+      ]
+    },
+    {
+      "text": "common-mistakes: ❌ Too broad: \"Fix all the tests\"; agent gets lost ✅ Specific: \"Fix agent-tool-abort.test.ts\"; focused scope #agents #planning",
+      "scope": "skills/superpowers",
+      "node": "dispatching-parallel-agents",
+      "tags": [
+        "agents",
+        "planning"
+      ]
+    },
+    {
+      "text": "when-not-to-use: Related failures: Fixing one might fix others; investigate together first Need full context: Understanding requires seeing entire system #agents #planning",
+      "scope": "skills/superpowers",
+      "node": "dispatching-parallel-agents",
+      "tags": [
+        "agents",
+        "planning"
+      ]
+    },
+    {
+      "text": "real-example-from-session: Scenario: 6 test failures across 3 files after major refactoring #agents #planning",
+      "scope": "skills/superpowers",
+      "node": "dispatching-parallel-agents",
+      "tags": [
+        "agents",
+        "planning"
+      ]
+    },
+    {
+      "text": "Use when executing implementation plans with independent tasks in the current session #agents #planning",
+      "scope": "skills/superpowers",
+      "node": "subagent-driven-development",
+      "tags": [
+        "agents",
+        "planning"
+      ]
+    },
+    {
+      "text": "setup: Ensure the work happens in an isolated workspace: use superpowers:using-git-worktrees to create one or verify the existing one. #agents #planning",
+      "scope": "skills/superpowers",
+      "node": "subagent-driven-development",
+      "tags": [
+        "agents",
+        "planning"
+      ]
+    },
+    {
+      "text": "model-selection: Use the least powerful model that can handle each role to conserve cost and increase speed. #agents #planning",
+      "scope": "skills/superpowers",
+      "node": "subagent-driven-development",
+      "tags": [
+        "agents",
+        "planning"
+      ]
+    },
+    {
+      "text": "the-task-loop: Batch small same-shape work. #agents #planning",
+      "scope": "skills/superpowers",
+      "node": "subagent-driven-development",
+      "tags": [
+        "agents",
+        "planning"
+      ]
+    },
+    {
+      "text": "final-review: The final whole-branch review gets a package too: run bash scripts/review-package PLAN_FILE MERGE_BASE HEAD (MERGE_BASE = the commit the #agents #planning",
+      "scope": "skills/superpowers",
+      "node": "subagent-driven-development",
+      "tags": [
+        "agents",
+        "planning"
+      ]
+    },
+    {
+      "text": "Use when implementation is complete, all tests pass, and you need to decide how to integrate the work #git",
+      "scope": "skills/superpowers",
+      "node": "finishing-a-development-branch",
+      "tags": [
+        "git"
+      ]
+    },
+    {
+      "text": "step-1-verify-tests: Run the project's full test suite (npm test / cargo test / pytest / go test ./...). #git",
+      "scope": "skills/superpowers",
+      "node": "finishing-a-development-branch",
+      "tags": [
+        "git"
+      ]
+    },
+    {
+      "text": "step-3-determine-base-branch: The base branch is whatever this work forked from — usually named in the plan, the conversation, or the branch's upstream. #git",
+      "scope": "skills/superpowers",
+      "node": "finishing-a-development-branch",
+      "tags": [
+        "git"
+      ]
+    },
+    {
+      "text": "step-6-cleanup-workspace: Runs for Option 1 and confirmed discards. #git",
+      "scope": "skills/superpowers",
+      "node": "finishing-a-development-branch",
+      "tags": [
+        "git"
+      ]
+    },
+    {
+      "text": "Use when starting any conversation; establishes how to find and use skills, requiring skill invocation before ANY response including clarifying questions #skills #meta",
+      "scope": "skills/superpowers",
+      "node": "using-superpowers",
+      "tags": [
+        "meta",
+        "skills"
+      ]
+    },
+    {
+      "text": "the-rule: Invoke relevant or requested skills BEFORE any response or action — including clarifying questions, exploring the codebase #skills #meta",
+      "scope": "skills/superpowers",
+      "node": "using-superpowers",
+      "tags": [
+        "meta",
+        "skills"
+      ]
+    },
+    {
+      "text": "skill-priority: When multiple skills apply, process skills come first — they set the approach, then implementation skills (frontend-design #skills #meta",
+      "scope": "skills/superpowers",
+      "node": "using-superpowers",
+      "tags": [
+        "meta",
+        "skills"
+      ]
+    },
+    {
+      "text": "Use when creating new skills, editing existing skills, or verifying skills work before deployment #skills #meta",
+      "scope": "skills/superpowers",
+      "node": "writing-skills",
+      "tags": [
+        "meta",
+        "skills"
+      ]
+    },
+    {
+      "text": "what-is-a-skill?: A skill is a reference guide for proven techniques, patterns, or tools. #skills #meta",
+      "scope": "skills/superpowers",
+      "node": "writing-skills",
+      "tags": [
+        "meta",
+        "skills"
+      ]
+    },
+    {
+      "text": "when-to-create-a-skill: Create when:; Technique wasn't intuitively obvious to you; You'd reference this again across projects #skills #meta",
+      "scope": "skills/superpowers",
+      "node": "writing-skills",
+      "tags": [
+        "meta",
+        "skills"
+      ]
+    },
+    {
+      "text": "skill.md-structure: Frontmatter (YAML):; Two required fields: name and description (see [agentskills.io/specification](https://agentskills.io/specification) #skills #meta",
+      "scope": "skills/superpowers",
+      "node": "writing-skills",
+      "tags": [
+        "meta",
+        "skills"
+      ]
+    },
+    {
+      "text": "Guides stable API and interface design. #api #design",
+      "scope": "skills/agent-skills",
+      "node": "api-and-interface-design",
+      "tags": [
+        "api",
+        "design"
+      ]
+    },
+    {
+      "text": "when-to-use: Designing new API endpoints; Defining module boundaries or contracts between teams; Creating component prop interfaces #api #design",
+      "scope": "skills/agent-skills",
+      "node": "api-and-interface-design",
+      "tags": [
+        "api",
+        "design"
+      ]
+    },
+    {
+      "text": "red-flags: Endpoints that return different shapes depending on conditions; Inconsistent error formats across endpoints #api #design",
+      "scope": "skills/agent-skills",
+      "node": "api-and-interface-design",
+      "tags": [
+        "api",
+        "design"
+      ]
+    },
+    {
+      "text": "Creates specs before coding. #planning #spec",
+      "scope": "skills/agent-skills",
+      "node": "spec-driven-development",
+      "tags": [
+        "planning",
+        "spec"
+      ]
+    },
+    {
+      "text": "when-to-use: Starting a new project or feature; Requirements are ambiguous or incomplete; The change touches multiple files or modules #planning #spec",
+      "scope": "skills/agent-skills",
+      "node": "spec-driven-development",
+      "tags": [
+        "planning",
+        "spec"
+      ]
+    },
+    {
+      "text": "the-gated-workflow: Spec-driven development has four phases, preceded by a scope check (Phase 0) that activates only when one request bundles several #planning #spec",
+      "scope": "skills/agent-skills",
+      "node": "spec-driven-development",
+      "tags": [
+        "planning",
+        "spec"
+      ]
+    },
+    {
+      "text": "Drives development with tests using the red-green-refactor loop. #testing",
+      "scope": "skills/agent-skills",
+      "node": "test-driven-development",
+      "tags": [
+        "testing"
+      ]
+    },
+    {
+      "text": "when-to-use: Implementing any new logic or behavior; Fixing any bug (the Prove-It Pattern); Modifying existing functionality; Adding edge case handling #testing",
+      "scope": "skills/agent-skills",
+      "node": "test-driven-development",
+      "tags": [
+        "testing"
+      ]
+    },
+    {
+      "text": "discover-the-stack-first: The TDD cycle is universal; the commands are not. #testing",
+      "scope": "skills/agent-skills",
+      "node": "test-driven-development",
+      "tags": [
+        "testing"
+      ]
+    },
+    {
+      "text": "the-prove-it-pattern-(bug-fixes): When a bug is reported, do not start by trying to fix it. #testing",
+      "scope": "skills/agent-skills",
+      "node": "test-driven-development",
+      "tags": [
+        "testing"
+      ]
+    },
+    {
+      "text": "Guides systematic root-cause debugging. #debugging",
+      "scope": "skills/agent-skills",
+      "node": "debugging-and-error-recovery",
+      "tags": [
+        "debugging"
+      ]
+    },
+    {
+      "text": "when-to-use: Tests fail after a code change; The build breaks; Runtime behavior doesn't match expectations; A bug report arrives #debugging",
+      "scope": "skills/agent-skills",
+      "node": "debugging-and-error-recovery",
+      "tags": [
+        "debugging"
+      ]
+    },
+    {
+      "text": "the-triage-checklist: Work through these steps in order. #debugging",
+      "scope": "skills/agent-skills",
+      "node": "debugging-and-error-recovery",
+      "tags": [
+        "debugging"
+      ]
+    },
+    {
+      "text": "instrumentation-guidelines: Add logging only when it helps. #debugging",
+      "scope": "skills/agent-skills",
+      "node": "debugging-and-error-recovery",
+      "tags": [
+        "debugging"
+      ]
+    },
+    {
+      "text": "Conducts multi-axis code review. #code-review",
+      "scope": "skills/agent-skills",
+      "node": "code-review-and-quality",
+      "tags": [
+        "code-review"
+      ]
+    },
+    {
+      "text": "when-to-use: Before merging any PR or change; After completing a feature implementation; When another agent or model produced code you need to evaluate #code-review",
+      "scope": "skills/agent-skills",
+      "node": "code-review-and-quality",
+      "tags": [
+        "code-review"
+      ]
+    },
+    {
+      "text": "structural-remedies: When you flag a structural problem, propose the move — not just the problem. #code-review",
+      "scope": "skills/agent-skills",
+      "node": "code-review-and-quality",
+      "tags": [
+        "code-review"
+      ]
+    },
+    {
+      "text": "change-sizing: Small, focused changes are easier to review, faster to merge, and safer to deploy. #code-review",
+      "scope": "skills/agent-skills",
+      "node": "code-review-and-quality",
+      "tags": [
+        "code-review"
+      ]
+    },
+    {
+      "text": "change-descriptions: Every change needs a description that stands alone in version control history. #code-review",
+      "scope": "skills/agent-skills",
+      "node": "code-review-and-quality",
+      "tags": [
+        "code-review"
+      ]
+    },
+    {
+      "text": "Optimizes application performance across frontend, backend, queries, and databases. #performance",
+      "scope": "skills/agent-skills",
+      "node": "performance-optimization",
+      "tags": [
+        "performance"
+      ]
+    },
+    {
+      "text": "when-to-use: Performance requirements exist in the spec (load time budgets, response time SLAs); Users or monitoring report slow behavior #performance",
+      "scope": "skills/agent-skills",
+      "node": "performance-optimization",
+      "tags": [
+        "performance"
+      ]
+    },
+    {
+      "text": "see-also: For detailed performance checklists, optimization commands, and anti-pattern reference, see ../../references/performance-checklist.md. #performance",
+      "scope": "skills/agent-skills",
+      "node": "performance-optimization",
+      "tags": [
+        "performance"
+      ]
+    },
+    {
+      "text": "red-flags: Optimization without profiling data to justify it; N+1 query patterns in data fetching #performance",
+      "scope": "skills/agent-skills",
+      "node": "performance-optimization",
+      "tags": [
+        "performance"
+      ]
+    },
+    {
+      "text": "Hardens code against vulnerabilities. #security",
+      "scope": "skills/agent-skills",
+      "node": "security-and-hardening",
+      "tags": [
+        "security"
+      ]
+    },
+    {
+      "text": "when-to-use: Building anything that accepts user input; Implementing authentication or authorization; Storing or transmitting sensitive data #security",
+      "scope": "skills/agent-skills",
+      "node": "security-and-hardening",
+      "tags": [
+        "security"
+      ]
+    },
+    {
+      "text": "process-threat-model-first: Controls bolted on without a threat model are guesses. #security",
+      "scope": "skills/agent-skills",
+      "node": "security-and-hardening",
+      "tags": [
+        "security"
+      ]
+    },
+    {
+      "text": "hardening-controls: The rules below are the workflow; a concrete implementation of each lives in #security",
+      "scope": "skills/agent-skills",
+      "node": "security-and-hardening",
+      "tags": [
+        "security"
+      ]
+    },
+    {
+      "text": "review-checklist: Before sign-off, walk ../../references/security-checklist.md: it covers authentication, authorization, input, data protection and privacy #security",
+      "scope": "skills/agent-skills",
+      "node": "security-and-hardening",
+      "tags": [
+        "security"
+      ]
+    },
+    {
+      "text": "Automates CI/CD pipeline setup. #ci",
+      "scope": "skills/agent-skills",
+      "node": "ci-cd-and-automation",
+      "tags": [
+        "ci"
+      ]
+    },
+    {
+      "text": "when-to-use: Setting up a new project's CI pipeline; Adding or modifying automated checks; Configuring deployment pipelines #ci",
+      "scope": "skills/agent-skills",
+      "node": "ci-cd-and-automation",
+      "tags": [
+        "ci"
+      ]
+    },
+    {
+      "text": "feeding-ci-failures-back-to-agents: The power of CI with AI agents is the feedback loop. #ci",
+      "scope": "skills/agent-skills",
+      "node": "ci-cd-and-automation",
+      "tags": [
+        "ci"
+      ]
+    },
+    {
+      "text": "Builds production-quality, accessible, responsive user-facing UIs. #frontend",
+      "scope": "skills/agent-skills",
+      "node": "frontend-ui-engineering",
+      "tags": [
+        "frontend"
+      ]
+    },
+    {
+      "text": "when-to-use: Building new UI components or pages; Modifying existing user-facing interfaces; Implementing responsive layouts #frontend",
+      "scope": "skills/agent-skills",
+      "node": "frontend-ui-engineering",
+      "tags": [
+        "frontend"
+      ]
+    },
+    {
+      "text": "Use when designing REST or GraphQL APIs, creating OpenAPI specifications, or planning API architecture. #api #design",
+      "scope": "skills/claude-skills",
+      "node": "api-designer",
+      "tags": [
+        "api",
+        "design"
+      ]
+    },
+    {
+      "text": "output-checklist: When delivering an API design, provide: 1. #api #design",
+      "scope": "skills/claude-skills",
+      "node": "api-designer",
+      "tags": [
+        "api",
+        "design"
+      ]
+    },
+    {
+      "text": "knowledge-reference: REST architecture, OpenAPI 3.1, GraphQL, HTTP semantics, JSON:API, HATEOAS, OAuth 2.0, JWT, RFC 7807 Problem Details #api #design",
+      "scope": "skills/claude-skills",
+      "node": "api-designer",
+      "tags": [
+        "api",
+        "design"
+      ]
+    },
+    {
+      "text": "Use when designing new high-level system architecture, reviewing existing designs, or making architectural decisions. #architecture",
+      "scope": "skills/claude-skills",
+      "node": "architecture-designer",
+      "tags": [
+        "architecture"
+      ]
+    },
+    {
+      "text": "role-definition: You are a principal architect with 15+ years of experience designing scalable, distributed systems. #architecture",
+      "scope": "skills/claude-skills",
+      "node": "architecture-designer",
+      "tags": [
+        "architecture"
+      ]
+    },
+    {
+      "text": "when-to-use-this-skill: Designing new system architecture; Choosing between architectural patterns; Reviewing existing architecture #architecture",
+      "scope": "skills/claude-skills",
+      "node": "architecture-designer",
+      "tags": [
+        "architecture"
+      ]
+    },
+    {
+      "text": "output-templates: When designing architecture, provide: 1. #architecture",
+      "scope": "skills/claude-skills",
+      "node": "architecture-designer",
+      "tags": [
+        "architecture"
+      ]
+    },
+    {
+      "text": "Analyzes code diffs and files to identify bugs, security vulnerabilities (SQL injection, XSS, insecure deserialization), code smells, N+1 queries #code-review",
+      "scope": "skills/claude-skills",
+      "node": "code-reviewer",
+      "tags": [
+        "code-review"
+      ]
+    },
+    {
+      "text": "when-to-use-this-skill: Reviewing pull requests; Conducting code quality audits; Identifying refactoring opportunities; Checking for security vulnerabilities #code-review",
+      "scope": "skills/claude-skills",
+      "node": "code-reviewer",
+      "tags": [
+        "code-review"
+      ]
+    },
+    {
+      "text": "output-template: Code review report must include: 1. #code-review",
+      "scope": "skills/claude-skills",
+      "node": "code-reviewer",
+      "tags": [
+        "code-review"
+      ]
+    },
+    {
+      "text": "Optimizes database queries and improves performance across PostgreSQL and MySQL systems. #database",
+      "scope": "skills/claude-skills",
+      "node": "database-optimizer",
+      "tags": [
+        "database"
+      ]
+    },
+    {
+      "text": "when-to-use-this-skill: Analyzing slow queries and execution plans; Designing optimal index strategies; Tuning database configuration parameters #database",
+      "scope": "skills/claude-skills",
+      "node": "database-optimizer",
+      "tags": [
+        "database"
+      ]
+    },
+    {
+      "text": "output-templates: When optimizing database performance, provide: 1. #database",
+      "scope": "skills/claude-skills",
+      "node": "database-optimizer",
+      "tags": [
+        "database"
+      ]
+    },
+    {
+      "text": "Parses error messages, traces execution flow through stack traces, correlates log entries to identify failure points #debugging",
+      "scope": "skills/claude-skills",
+      "node": "debugging-wizard",
+      "tags": [
+        "debugging"
+      ]
+    },
+    {
+      "text": "common-debugging-commands: Python (pdb) bash python -m pdb script.py # launch debugger #debugging",
+      "scope": "skills/claude-skills",
+      "node": "debugging-wizard",
+      "tags": [
+        "debugging"
+      ]
+    },
+    {
+      "text": "output-templates: When debugging, provide: 1. #debugging",
+      "scope": "skills/claude-skills",
+      "node": "debugging-wizard",
+      "tags": [
+        "debugging"
+      ]
+    },
+    {
+      "text": "Use when building CLI tools, implementing argument parsing, or adding interactive prompts. #cli",
+      "scope": "skills/claude-skills",
+      "node": "cli-developer",
+      "tags": [
+        "cli"
+      ]
+    },
+    {
+      "text": "output-templates: When implementing CLI features, provide: 1. #cli",
+      "scope": "skills/claude-skills",
+      "node": "cli-developer",
+      "tags": [
+        "cli"
+      ]
+    },
+    {
+      "text": "knowledge-reference: CLI frameworks (commander, yargs, oclif, click, typer, argparse, cobra, viper), terminal UI (chalk, inquirer, rich, bubbletea) #cli",
+      "scope": "skills/claude-skills",
+      "node": "cli-developer",
+      "tags": [
+        "cli"
+      ]
+    },
+    {
+      "text": "Creates Dockerfiles, configures CI/CD pipelines, writes Kubernetes manifests, and generates Terraform/Pulumi infrastructure templates. #devops",
+      "scope": "skills/claude-skills",
+      "node": "devops-engineer",
+      "tags": [
+        "devops"
+      ]
+    },
+    {
+      "text": "role-definition: You are a senior DevOps engineer with 10+ years of experience. #devops",
+      "scope": "skills/claude-skills",
+      "node": "devops-engineer",
+      "tags": [
+        "devops"
+      ]
+    },
+    {
+      "text": "when-to-use-this-skill: Setting up CI/CD pipelines (GitHub Actions, GitLab CI, Jenkins); Containerizing applications (Docker, Docker Compose) #devops",
+      "scope": "skills/claude-skills",
+      "node": "devops-engineer",
+      "tags": [
+        "devops"
+      ]
+    },
+    {
+      "text": "output-templates: Provide: CI/CD pipeline config, Dockerfile, K8s/Terraform files, deployment verification, rollback procedure #devops",
+      "scope": "skills/claude-skills",
+      "node": "devops-engineer",
+      "tags": [
+        "devops"
+      ]
+    },
+    {
+      "text": "Use when building high-performance async Python APIs with FastAPI and Pydantic V2. #python #api",
+      "scope": "skills/claude-skills",
+      "node": "fastapi-expert",
+      "tags": [
+        "api",
+        "python"
+      ]
+    },
+    {
+      "text": "when-to-use-this-skill: Building REST APIs with FastAPI; Implementing Pydantic V2 validation schemas; Setting up async database operations #python #api",
+      "scope": "skills/claude-skills",
+      "node": "fastapi-expert",
+      "tags": [
+        "api",
+        "python"
+      ]
+    },
+    {
+      "text": "Use when building Django web applications or REST APIs with Django REST Framework. #python",
+      "scope": "skills/claude-skills",
+      "node": "django-expert",
+      "tags": [
+        "python"
+      ]
+    },
+    {
+      "text": "when-to-use-this-skill: Building Django web applications or REST APIs; Designing Django models with proper relationships #python",
+      "scope": "skills/claude-skills",
+      "node": "django-expert",
+      "tags": [
+        "python"
+      ]
+    },
+    {
+      "text": "minimal-working-example: The snippet below demonstrates the core MUST DO constraints: indexed fields, select_related, serializer validation #python",
+      "scope": "skills/claude-skills",
+      "node": "django-expert",
+      "tags": [
+        "python"
+      ]
+    },
+    {
+      "text": "output-templates: When implementing Django features, provide: 1. #python",
+      "scope": "skills/claude-skills",
+      "node": "django-expert",
+      "tags": [
+        "python"
+      ]
+    },
+    {
+      "text": "Use when building Python 3.11+ applications requiring type safety, async programming, or robust error handling. #python",
+      "scope": "skills/claude-skills",
+      "node": "python-pro",
+      "tags": [
+        "python"
+      ]
+    },
+    {
+      "text": "when-to-use-this-skill: Writing type-safe Python with complete type coverage; Implementing async/await patterns for I/O operations #python",
+      "scope": "skills/claude-skills",
+      "node": "python-pro",
+      "tags": [
+        "python"
+      ]
+    },
+    {
+      "text": "output-templates: When implementing Python features, provide: 1. #python",
+      "scope": "skills/claude-skills",
+      "node": "python-pro",
+      "tags": [
+        "python"
+      ]
+    },
+    {
+      "text": "Writes, reviews, and debugs idiomatic Rust code with memory safety and zero-cost abstractions. #rust",
+      "scope": "skills/claude-skills",
+      "node": "rust-engineer",
+      "tags": [
+        "rust"
+      ]
+    },
+    {
+      "text": "output-templates: When implementing Rust features, provide: 1. #rust",
+      "scope": "skills/claude-skills",
+      "node": "rust-engineer",
+      "tags": [
+        "rust"
+      ]
+    },
+    {
+      "text": "knowledge-reference: Rust 2021, Cargo, ownership/borrowing, lifetimes, traits, generics, async/await, tokio, Result/Option, thiserror/anyhow, serde, clippy #rust",
+      "scope": "skills/claude-skills",
+      "node": "rust-engineer",
+      "tags": [
+        "rust"
+      ]
+    },
+    {
+      "text": "Implements advanced TypeScript type systems, creates custom type guards, utility types, and branded types, and configures tRPC for end-to-end type safety. #typescript",
+      "scope": "skills/claude-skills",
+      "node": "typescript-pro",
+      "tags": [
+        "typescript"
+      ]
+    },
+    {
+      "text": "output-templates: When implementing TypeScript features, provide: 1. #typescript",
+      "scope": "skills/claude-skills",
+      "node": "typescript-pro",
+      "tags": [
+        "typescript"
+      ]
+    },
+    {
+      "text": "knowledge-reference: TypeScript 5.0+, generics, conditional types, mapped types, template literal types, discriminated unions, type guards, branded types, tRPC #typescript",
+      "scope": "skills/claude-skills",
+      "node": "typescript-pro",
+      "tags": [
+        "typescript"
+      ]
+    },
+    {
+      "text": "Writes, debugs, and refactors JavaScript code using modern ES2023+ features, async/await patterns, ESM module systems, and Node.js APIs. #javascript",
+      "scope": "skills/claude-skills",
+      "node": "javascript-pro",
+      "tags": [
+        "javascript"
+      ]
+    },
+    {
+      "text": "when-to-use-this-skill: Building vanilla JavaScript applications; Implementing async/await patterns and Promise handling #javascript",
+      "scope": "skills/claude-skills",
+      "node": "javascript-pro",
+      "tags": [
+        "javascript"
+      ]
+    },
+    {
+      "text": "output-templates: When implementing JavaScript features, provide: 1. #javascript",
+      "scope": "skills/claude-skills",
+      "node": "javascript-pro",
+      "tags": [
+        "javascript"
+      ]
+    },
+    {
+      "text": "Use when building React 18+ applications in .jsx or .tsx files, Next.js App Router projects, or create-react-app setups. #frontend #react",
+      "scope": "skills/claude-skills",
+      "node": "react-expert",
+      "tags": [
+        "frontend",
+        "react"
+      ]
+    },
+    {
+      "text": "when-to-use-this-skill: Building new React components or features; Implementing state management (local, Context, Redux, Zustand); Optimizing React performance #frontend #react",
+      "scope": "skills/claude-skills",
+      "node": "react-expert",
+      "tags": [
+        "frontend",
+        "react"
+      ]
+    },
+    {
+      "text": "output-templates: When implementing React features, provide: 1. #frontend #react",
+      "scope": "skills/claude-skills",
+      "node": "react-expert",
+      "tags": [
+        "frontend",
+        "react"
+      ]
+    },
+    {
+      "text": "Use when building Next.js 14+ applications with App Router, server components, or server actions. #frontend #nextjs",
+      "scope": "skills/claude-skills",
+      "node": "nextjs-developer",
+      "tags": [
+        "frontend",
+        "nextjs"
+      ]
+    },
+    {
+      "text": "output-templates: When implementing Next.js features, provide: 1. #frontend #nextjs",
+      "scope": "skills/claude-skills",
+      "node": "nextjs-developer",
+      "tags": [
+        "frontend",
+        "nextjs"
+      ]
+    },
+    {
+      "text": "knowledge-reference: Next.js 14+, App Router, React Server Components, Server Actions, Streaming SSR, Partial Prerendering, next/image, next/font, Metadata API #frontend #nextjs",
+      "scope": "skills/claude-skills",
+      "node": "nextjs-developer",
+      "tags": [
+        "frontend",
+        "nextjs"
+      ]
+    },
+    {
+      "text": "Use when writing E2E tests with Playwright, setting up test infrastructure, or debugging flaky browser tests. #testing #web",
+      "scope": "skills/claude-skills",
+      "node": "playwright-expert",
+      "tags": [
+        "testing",
+        "web"
+      ]
+    },
+    {
+      "text": "output-templates: When implementing Playwright tests, provide: 1. #testing #web",
+      "scope": "skills/claude-skills",
+      "node": "playwright-expert",
+      "tags": [
+        "testing",
+        "web"
+      ]
+    },
+    {
+      "text": "knowledge-reference: Playwright, Page Object Model, auto-waiting, locators, fixtures, API mocking, trace viewer, visual comparisons, parallel execution #testing #web",
+      "scope": "skills/claude-skills",
+      "node": "playwright-expert",
+      "tags": [
+        "testing",
+        "web"
+      ]
+    },
+    {
+      "text": "Generates test files, creates mocking strategies, analyzes code coverage, designs test architectures #testing",
+      "scope": "skills/claude-skills",
+      "node": "test-master",
+      "tags": [
+        "testing"
+      ]
+    },
+    {
+      "text": "constraints: MUST DO; Test happy paths AND error/edge cases (e.g., empty input, null, boundary values) #testing",
+      "scope": "skills/claude-skills",
+      "node": "test-master",
+      "tags": [
+        "testing"
+      ]
+    },
+    {
+      "text": "output-templates: When creating test plans, provide: 1. #testing",
+      "scope": "skills/claude-skills",
+      "node": "test-master",
+      "tags": [
+        "testing"
+      ]
+    },
+    {
+      "text": "Use when optimizing PostgreSQL queries, configuring replication, or implementing advanced database features. #database #postgres",
+      "scope": "skills/claude-skills",
+      "node": "postgres-pro",
+      "tags": [
+        "database",
+        "postgres"
+      ]
+    },
+    {
+      "text": "when-to-use-this-skill: Analyzing and optimizing slow queries with EXPLAIN; Implementing JSONB storage and indexing strategies #database #postgres",
+      "scope": "skills/claude-skills",
+      "node": "postgres-pro",
+      "tags": [
+        "database",
+        "postgres"
+      ]
+    },
+    {
+      "text": "output-templates: When implementing PostgreSQL solutions, provide: 1. #database #postgres",
+      "scope": "skills/claude-skills",
+      "node": "postgres-pro",
+      "tags": [
+        "database",
+        "postgres"
+      ]
+    },
+    {
+      "text": "Optimizes SQL queries, designs database schemas, and troubleshoots performance issues. #database",
+      "scope": "skills/claude-skills",
+      "node": "sql-pro",
+      "tags": [
+        "database"
+      ]
+    },
+    {
+      "text": "output-templates: When implementing SQL solutions, provide: 1. #database",
+      "scope": "skills/claude-skills",
+      "node": "sql-pro",
+      "tags": [
+        "database"
+      ]
+    },
+    {
+      "text": "Use when deploying or managing Kubernetes workloads. #kubernetes #devops",
+      "scope": "skills/claude-skills",
+      "node": "kubernetes-specialist",
+      "tags": [
+        "devops",
+        "kubernetes"
+      ]
+    },
+    {
+      "text": "when-to-use-this-skill: Deploying workloads (Deployments, StatefulSets, DaemonSets, Jobs); Configuring networking (Services, Ingress, NetworkPolicies) #kubernetes #devops",
+      "scope": "skills/claude-skills",
+      "node": "kubernetes-specialist",
+      "tags": [
+        "devops",
+        "kubernetes"
+      ]
+    },
+    {
+      "text": "Use when implementing infrastructure as code with Terraform across AWS, Azure, or GCP. #terraform #devops",
+      "scope": "skills/claude-skills",
+      "node": "terraform-engineer",
+      "tags": [
+        "devops",
+        "terraform"
+      ]
+    },
+    {
+      "text": "output-format: When implementing Terraform solutions, provide: module structure (main.tf, variables.tf, outputs.tf), backend and provider configuration #terraform #devops",
+      "scope": "skills/claude-skills",
+      "node": "terraform-engineer",
+      "tags": [
+        "devops",
+        "terraform"
+      ]
+    },
+    {
+      "text": "Configures monitoring systems, implements structured logging pipelines, creates Prometheus/Grafana dashboards, defines alerting rules #monitoring #devops",
+      "scope": "skills/claude-skills",
+      "node": "monitoring-expert",
+      "tags": [
+        "devops",
+        "monitoring"
+      ]
+    },
+    {
+      "text": "Designs distributed system architectures, decomposes monoliths into bounded-context services, recommends communication patterns #architecture",
+      "scope": "skills/claude-skills",
+      "node": "microservices-architect",
+      "tags": [
+        "architecture"
+      ]
+    },
+    {
+      "text": "output-templates: When designing microservices architecture, provide: 1. #architecture",
+      "scope": "skills/claude-skills",
+      "node": "microservices-architect",
+      "tags": [
+        "architecture"
+      ]
+    },
+    {
+      "text": "knowledge-reference: Domain-driven design, bounded contexts, event storming, REST/gRPC, message queues (Kafka, RabbitMQ), service mesh (Istio, Linkerd) #architecture",
+      "scope": "skills/claude-skills",
+      "node": "microservices-architect",
+      "tags": [
+        "architecture"
+      ]
+    },
+    {
+      "text": "Reverse-engineering specialist that extracts specifications from existing codebases. #architecture #spec",
+      "scope": "skills/claude-skills",
+      "node": "spec-miner",
+      "tags": [
+        "architecture",
+        "spec"
+      ]
+    },
+    {
+      "text": "role-definition: You operate with two perspectives: Arch Hat for system architecture and data flows, and QA Hat for observable behaviors and edge cases. #architecture #spec",
+      "scope": "skills/claude-skills",
+      "node": "spec-miner",
+      "tags": [
+        "architecture",
+        "spec"
+      ]
+    },
+    {
+      "text": "when-to-use-this-skill: Understanding legacy or undocumented systems; Creating documentation for existing code; Onboarding to a new codebase #architecture #spec",
+      "scope": "skills/claude-skills",
+      "node": "spec-miner",
+      "tags": [
+        "architecture",
+        "spec"
+      ]
+    },
+    {
+      "text": "output-templates: Save specification as: specs/{project_name}_reverse_spec.md #architecture #spec",
+      "scope": "skills/claude-skills",
+      "node": "spec-miner",
+      "tags": [
+        "architecture",
+        "spec"
+      ]
+    },
+    {
+      "text": "Generates, formats, and validates technical documentation — including docstrings, OpenAPI/Swagger specs, JSDoc annotations, doc portals, and user guides. #docs",
+      "scope": "skills/claude-skills",
+      "node": "code-documenter",
+      "tags": [
+        "docs"
+      ]
+    },
+    {
+      "text": "when-to-use-this-skill: Adding docstrings to functions, classes, and modules; Writing OpenAPI/Swagger specs or JSDoc annotations #docs",
+      "scope": "skills/claude-skills",
+      "node": "code-documenter",
+      "tags": [
+        "docs"
+      ]
+    },
+    {
+      "text": "output-formats: Depending on the task, provide: 1. #docs",
+      "scope": "skills/claude-skills",
+      "node": "code-documenter",
+      "tags": [
+        "docs"
+      ]
+    },
+    {
+      "text": "Identifies security vulnerabilities, generates structured audit reports with severity ratings, and provides actionable remediation guidance. #security #code-review",
+      "scope": "skills/claude-skills",
+      "node": "security-reviewer",
+      "tags": [
+        "code-review",
+        "security"
+      ]
+    },
+    {
+      "text": "when-to-use-this-skill: Code review and SAST scanning; Vulnerability scanning and dependency audits; Secrets scanning and credential detection #security #code-review",
+      "scope": "skills/claude-skills",
+      "node": "security-reviewer",
+      "tags": [
+        "code-review",
+        "security"
+      ]
+    },
+    {
+      "text": "knowledge-reference: OWASP Top 10, CWE, Semgrep, Bandit, ESLint Security, gosec, npm audit, gitleaks, trufflehog, CVSS scoring, nmap, Burp Suite, sqlmap, Trivy #security #code-review",
+      "scope": "skills/claude-skills",
+      "node": "security-reviewer",
+      "tags": [
+        "code-review",
+        "security"
+      ]
+    },
+    {
+      "text": "Use when building, debugging, or extending MCP servers or clients that connect AI systems with external tools and data sources. #mcp",
+      "scope": "skills/claude-skills",
+      "node": "mcp-developer",
+      "tags": [
+        "mcp"
+      ]
+    },
+    {
+      "text": "output-templates: When implementing MCP features, provide: 1. #mcp",
+      "scope": "skills/claude-skills",
+      "node": "mcp-developer",
+      "tags": [
+        "mcp"
+      ]
+    },
+    {
+      "text": "Writes, refactors, and evaluates prompts for LLMs — generating optimized prompt templates, structured output schemas, evaluation rubrics, and test suites. #prompting",
+      "scope": "skills/claude-skills",
+      "node": "prompt-engineer",
+      "tags": [
+        "prompting"
+      ]
+    },
+    {
+      "text": "when-to-use-this-skill: Designing prompts for new LLM applications; Optimizing existing prompts for better accuracy or efficiency #prompting",
+      "scope": "skills/claude-skills",
+      "node": "prompt-engineer",
+      "tags": [
+        "prompting"
+      ]
+    },
+    {
+      "text": "output-templates: When delivering prompt work, provide: 1. #prompting",
+      "scope": "skills/claude-skills",
+      "node": "prompt-engineer",
+      "tags": [
+        "prompting"
+      ]
+    },
+    {
+      "text": "Use when challenging ideas, plans, decisions, or proposals using structured critical reasoning. #decision #review",
+      "scope": "skills/claude-skills",
+      "node": "the-fool",
+      "tags": [
+        "decision",
+        "review"
+      ]
+    },
+    {
+      "text": "when-to-use-this-skill: Stress-testing a plan, architecture, or strategy before committing; Challenging technology, vendor, or approach choices #decision #review",
+      "scope": "skills/claude-skills",
+      "node": "the-fool",
+      "tags": [
+        "decision",
+        "review"
+      ]
+    },
+    {
+      "text": "mode-selection: Use AskUserQuestion to let the user choose how to challenge their idea. #decision #review",
+      "scope": "skills/claude-skills",
+      "node": "the-fool",
+      "tags": [
+        "decision",
+        "review"
+      ]
+    },
+    {
+      "text": "Guides Claude on using Jujutsu (jj) version control system. #jj #vcs",
+      "scope": "skills/jj-skills",
+      "node": "jj-workflow",
+      "tags": [
+        "jj",
+        "vcs"
+      ]
+    },
+    {
+      "text": "minimal-output: Every read command MUST be bounded and summary-level. #jj #vcs",
+      "scope": "skills/jj-skills",
+      "node": "jj-workflow",
+      "tags": [
+        "jj",
+        "vcs"
+      ]
+    },
+    {
+      "text": "sandbox: Jujutsu can be configured to sign commits (can be checked with jj config list --include-overridden | grep -i sign). #jj #vcs",
+      "scope": "skills/jj-skills",
+      "node": "jj-workflow",
+      "tags": [
+        "jj",
+        "vcs"
+      ]
+    },
+    {
+      "text": "Guides Claude on jj workspaces — multiple working directories backed by one repository, without branch locking (git calls the same idea worktrees). #jj #vcs",
+      "scope": "skills/jj-skills",
+      "node": "jj-workspaces",
+      "tags": [
+        "jj",
+        "vcs"
+      ]
+    },
+    {
+      "text": "minimal-output: jj workspace list is small; print it whole when asked.; Inspect a workspace's state through its log line in jj log, not by cd-ing around. #jj #vcs",
+      "scope": "skills/jj-skills",
+      "node": "jj-workspaces",
+      "tags": [
+        "jj",
+        "vcs"
+      ]
+    },
+    {
+      "text": "naming: The name defaults to the destination directory's basename: ../feature becomes workspace feature. #jj #vcs",
+      "scope": "skills/jj-skills",
+      "node": "jj-workspaces",
+      "tags": [
+        "jj",
+        "vcs"
+      ]
+    },
+    {
+      "text": "Removes the local jj bookmarks, revisions, and workspaces left behind by merged or closed GitHub pull requests #jj #vcs",
+      "scope": "skills/jj-skills",
+      "node": "jj-cleanup",
+      "tags": [
+        "jj",
+        "vcs"
+      ]
+    },
+    {
+      "text": "prerequisite-binary-plus-aliases: If jj cleanup or jj cl report an unknown alias, or jj-cleanup is not on PATH, the tool is not installed. #jj #vcs",
+      "scope": "skills/jj-skills",
+      "node": "jj-cleanup",
+      "tags": [
+        "jj",
+        "vcs"
+      ]
+    },
+    {
+      "text": "workflow: jj cleanup runs a fetch before planning unless --no-fetch is passed. #jj #vcs",
+      "scope": "skills/jj-skills",
+      "node": "jj-cleanup",
+      "tags": [
+        "jj",
+        "vcs"
+      ]
+    },
+    {
+      "text": "why-a-bookmark-is-kept: A bookmark is a candidate only when it has at least one associated pull request, none of those pull requests is open #jj #vcs",
+      "scope": "skills/jj-skills",
+      "node": "jj-cleanup",
+      "tags": [
+        "jj",
+        "vcs"
+      ]
+    },
+    {
+      "text": "locks: jj cleanup lock <bookmark>... #jj #vcs",
+      "scope": "skills/jj-skills",
+      "node": "jj-cleanup",
+      "tags": [
+        "jj",
+        "vcs"
+      ]
+    },
+    {
+      "text": "workspaces: Workspaces participate by default. #jj #vcs",
+      "scope": "skills/jj-skills",
+      "node": "jj-cleanup",
+      "tags": [
+        "jj",
+        "vcs"
+      ]
+    },
+    {
+      "text": "Creates GitHub pull requests from Jujutsu changes with AI-generated descriptions. #jj #vcs #github",
+      "scope": "skills/jj-skills",
+      "node": "jj-create-pr",
+      "tags": [
+        "github",
+        "jj",
+        "vcs"
+      ]
+    },
+    {
+      "text": "complete-example: User: \"Create a PR for @-\" #jj #vcs #github",
+      "scope": "skills/jj-skills",
+      "node": "jj-create-pr",
+      "tags": [
+        "github",
+        "jj",
+        "vcs"
+      ]
+    },
+    {
+      "text": "Updates existing GitHub pull request descriptions with AI-generated content based on the current diff. #jj #vcs #github",
+      "scope": "skills/jj-skills",
+      "node": "jj-update-pr",
+      "tags": [
+        "github",
+        "jj",
+        "vcs"
+      ]
+    },
+    {
+      "text": "permission-requirements: CRITICAL: This workflow requires jj and gh CLI access with authentication. #jj #vcs #github",
+      "scope": "skills/jj-skills",
+      "node": "jj-update-pr",
+      "tags": [
+        "github",
+        "jj",
+        "vcs"
+      ]
+    },
+    {
+      "text": "complete-example: User: \"Update the PR for @-\" #jj #vcs #github",
+      "scope": "skills/jj-skills",
+      "node": "jj-update-pr",
+      "tags": [
+        "github",
+        "jj",
+        "vcs"
+      ]
+    },
+    {
+      "text": "Manages GitHub stacked PRs from a Jujutsu (jj) repository with the gh stack CLI. #jj #vcs #github",
+      "scope": "skills/jj-skills",
+      "node": "jj-gh-stack",
+      "tags": [
+        "github",
+        "jj",
+        "vcs"
+      ]
+    },
+    {
+      "text": "model: One layer = one mutable jj commit on top of trunk plus one bookmark per layer #jj #vcs #github",
+      "scope": "skills/jj-skills",
+      "node": "jj-gh-stack",
+      "tags": [
+        "github",
+        "jj",
+        "vcs"
+      ]
+    },
+    {
+      "text": "bookmark-list-in-stack-order: link needs bottom-to-top. #jj #vcs #github",
+      "scope": "skills/jj-skills",
+      "node": "jj-gh-stack",
+      "tags": [
+        "github",
+        "jj",
+        "vcs"
+      ]
+    },
+    {
+      "text": "Build and edit 3D scenes, architectural models, and diagrams through the scene-mcp MCP server — parametric primitives with real dimensions, part metadata #scene #mcp #3d",
+      "scope": "skills/scene-mcp-skill",
+      "node": "scene-mcp",
+      "tags": [
+        "3d",
+        "mcp",
+        "scene"
+      ]
+    },
+    {
+      "text": "Guide for creating high-quality MCP (Model Context Protocol) servers that enable LLMs to interact with external services through well-designed tools. #mcp",
+      "scope": "skills/skills",
+      "node": "mcp-builder",
+      "tags": [
+        "mcp"
+      ]
+    },
+    {
+      "text": "Toolkit for interacting with and testing local web applications using Playwright. #testing #web",
+      "scope": "skills/skills",
+      "node": "webapp-testing",
+      "tags": [
+        "testing",
+        "web"
+      ]
+    },
+    {
+      "text": "common-pitfall: ❌ Don't inspect the DOM before waiting for networkidle on dynamic apps ✅ Do wait for page.wait_for_load_state('networkidle') before #testing #web",
+      "scope": "skills/skills",
+      "node": "webapp-testing",
+      "tags": [
+        "testing",
+        "web"
+      ]
+    },
+    {
+      "text": "best-practices: Use bundled scripts as black boxes; To accomplish a task, consider whether one of the scripts available in scripts/ can help. #testing #web",
+      "scope": "skills/skills",
+      "node": "webapp-testing",
+      "tags": [
+        "testing",
+        "web"
+      ]
+    },
+    {
+      "text": "Guidance for distinctive, intentional visual design when building new UI or reshaping an existing one. #frontend #design",
+      "scope": "skills/skills",
+      "node": "frontend-design",
+      "tags": [
+        "design",
+        "frontend"
+      ]
+    },
+    {
+      "text": "ground-your-designs-in-the-subject-matter: If the brief does not identify what the product or subject matter is, identify it yourself before designing, and confirm with the client. #frontend #design",
+      "scope": "skills/skills",
+      "node": "frontend-design",
+      "tags": [
+        "design",
+        "frontend"
+      ]
+    },
+    {
+      "text": "design-principles: For web designs, the hero is the first thing viewers will see. #frontend #design",
+      "scope": "skills/skills",
+      "node": "frontend-design",
+      "tags": [
+        "design",
+        "frontend"
+      ]
+    },
+    {
+      "text": "process-plan,-review-against-the-brief,-build,-critique: For calibration, AI-generated design right now clusters around some traits: 1. #frontend #design",
+      "scope": "skills/skills",
+      "node": "frontend-design",
+      "tags": [
+        "design",
+        "frontend"
+      ]
+    },
+    {
+      "text": "restraint-and-self-critique: Spend your boldness in one place. #frontend #design",
+      "scope": "skills/skills",
+      "node": "frontend-design",
+      "tags": [
+        "design",
+        "frontend"
+      ]
+    },
+    {
+      "text": "more-on-writing-in-design: Words appear in a design for one reason: to make it easier to understand and use. #frontend #design",
+      "scope": "skills/skills",
+      "node": "frontend-design",
+      "tags": [
+        "design",
+        "frontend"
+      ]
+    },
+    {
+      "text": "Create new skills, modify and improve existing skills, and measure skill performance. #skills #meta",
+      "scope": "skills/skills",
+      "node": "skill-creator",
+      "tags": [
+        "meta",
+        "skills"
+      ]
+    },
+    {
+      "text": "communicating-with-the-user: The skill creator is liable to be used by people across a wide range of familiarity with coding jargon. #skills #meta",
+      "scope": "skills/skills",
+      "node": "skill-creator",
+      "tags": [
+        "meta",
+        "skills"
+      ]
+    },
+    {
+      "text": "report-structure: Examples pattern; It's useful to include examples. #skills #meta",
+      "scope": "skills/skills",
+      "node": "skill-creator",
+      "tags": [
+        "meta",
+        "skills"
+      ]
+    },
+    {
+      "text": "executive-summary: Examples pattern; It's useful to include examples. #skills #meta",
+      "scope": "skills/skills",
+      "node": "skill-creator",
+      "tags": [
+        "meta",
+        "skills"
+      ]
+    },
+    {
+      "text": "key-findings: Examples pattern; It's useful to include examples. #skills #meta",
+      "scope": "skills/skills",
+      "node": "skill-creator",
+      "tags": [
+        "meta",
+        "skills"
+      ]
+    },
+    {
+      "text": "recommendations: Examples pattern; It's useful to include examples. #skills #meta",
+      "scope": "skills/skills",
+      "node": "skill-creator",
+      "tags": [
+        "meta",
+        "skills"
+      ]
+    },
+    {
+      "text": "before-you-start: Scan the target file (or, if no target file, the prompt and project) for non-Anthropic provider markers #claude #api",
+      "scope": "skills/skills",
+      "node": "claude-api",
+      "tags": [
+        "api",
+        "claude"
+      ]
+    },
+    {
+      "text": "warning-api-drift---your-training-prior-may-be-stale: Several common Claude API shapes changed in 2025-2026. #claude #api",
+      "scope": "skills/skills",
+      "node": "claude-api",
+      "tags": [
+        "api",
+        "claude"
+      ]
+    },
+    {
+      "text": "subcommands: If the User Request at the bottom of this prompt is a bare subcommand string (no prose), search every Subcommands table in this document #claude #api",
+      "scope": "skills/skills",
+      "node": "claude-api",
+      "tags": [
+        "api",
+        "claude"
+      ]
+    },
+    {
+      "text": "language-detection: Before reading code examples, determine which language the user is working in (exception: for the prompt-audit subcommand #claude #api",
+      "scope": "skills/skills",
+      "node": "claude-api",
+      "tags": [
+        "api",
+        "claude"
+      ]
+    },
+    {
+      "text": "Suite of tools for creating elaborate, multi-component claude.ai HTML artifacts using modern frontend web technologies (React, Tailwind CSS, shadcn/ui). #frontend #web",
+      "scope": "skills/skills",
+      "node": "web-artifacts-builder",
+      "tags": [
+        "frontend",
+        "web"
+      ]
+    },
+    {
+      "text": "design-&-style-guidelines: VERY IMPORTANT: To avoid what is often referred to as \"AI slop\", avoid using excessive centered layouts, purple gradients #frontend #web",
+      "scope": "skills/skills",
+      "node": "web-artifacts-builder",
+      "tags": [
+        "frontend",
+        "web"
+      ]
+    },
+    {
+      "text": "Guide users through a structured workflow for co-authoring documentation. #docs #writing",
+      "scope": "skills/skills",
+      "node": "doc-coauthoring",
+      "tags": [
+        "docs",
+        "writing"
+      ]
+    },
+    {
+      "text": "when-to-offer-this-workflow: Trigger conditions:; User mentions writing documentation: \"write a doc\", \"draft a proposal\", \"create a spec\", \"write up\" #docs #writing",
+      "scope": "skills/skills",
+      "node": "doc-coauthoring",
+      "tags": [
+        "docs",
+        "writing"
+      ]
+    },
+    {
+      "text": "stage-1-context-gathering: Goal: Close the gap between what the user knows and what Claude knows, enabling smart guidance later. #docs #writing",
+      "scope": "skills/skills",
+      "node": "doc-coauthoring",
+      "tags": [
+        "docs",
+        "writing"
+      ]
+    },
+    {
+      "text": "stage-2-refinement-&-structure: Goal: Build the document section by section through brainstorming, curation, and iterative refinement. #docs #writing",
+      "scope": "skills/skills",
+      "node": "doc-coauthoring",
+      "tags": [
+        "docs",
+        "writing"
+      ]
+    },
+    {
+      "text": "stage-3-reader-testing: Goal: Test the document with a fresh Claude (no context bleed) to verify it works for readers. #docs #writing",
+      "scope": "skills/skills",
+      "node": "doc-coauthoring",
+      "tags": [
+        "docs",
+        "writing"
+      ]
+    },
+    {
+      "text": "final-review: When Reader Testing passes: Announce the doc has passed Reader Claude testing. #docs #writing",
+      "scope": "skills/skills",
+      "node": "doc-coauthoring",
+      "tags": [
+        "docs",
+        "writing"
+      ]
+    },
+    {
+      "text": "tips-for-effective-guidance: Tone:; Be direct and procedural; Explain rationale briefly when it affects user behavior; Don't try to \"sell\" the approach; just execute it #docs #writing",
+      "scope": "skills/skills",
+      "node": "doc-coauthoring",
+      "tags": [
+        "docs",
+        "writing"
+      ]
+    },
+    {
+      "text": "Use this skill whenever the user wants to create, read, edit, or manipulate Word documents (.docx files) or Word templates (.dotx files). #documents",
+      "scope": "skills/skills",
+      "node": "docx",
+      "tags": [
+        "documents"
+      ]
+    },
+    {
+      "text": "creating-with-docx-js-—-gotchas: docx is preinstalled — do not run npm install first; write the script and require('docx') directly. #documents",
+      "scope": "skills/skills",
+      "node": "docx",
+      "tags": [
+        "documents"
+      ]
+    },
+    {
+      "text": "editing-existing-documents: Legacy .doc files must be converted first: python scripts/office/soffice.py --headless --convert-to docx file.doc. #documents",
+      "scope": "skills/skills",
+      "node": "docx",
+      "tags": [
+        "documents"
+      ]
+    },
+    {
+      "text": "comments: Comments require six cross-linked files. #documents",
+      "scope": "skills/skills",
+      "node": "docx",
+      "tags": [
+        "documents"
+      ]
+    },
+    {
+      "text": "Use this skill whenever the user wants to do anything with PDF files. #documents",
+      "scope": "skills/skills",
+      "node": "pdf",
+      "tags": [
+        "documents"
+      ]
+    },
+    {
+      "text": "Use this skill any time a .pptx or .potx file is involved in any way — as input, output, or both. #documents",
+      "scope": "skills/skills",
+      "node": "pptx",
+      "tags": [
+        "documents"
+      ]
+    },
+    {
+      "text": "scripts: Paths are relative to this skill's directory. #documents",
+      "scope": "skills/skills",
+      "node": "pptx",
+      "tags": [
+        "documents"
+      ]
+    },
+    {
+      "text": "creating-with-pptxgenjs-—-gotchas: pptxgenjs is preinstalled — do not run npm install first; write the script and require('pptxgenjs') directly. #documents",
+      "scope": "skills/skills",
+      "node": "pptx",
+      "tags": [
+        "documents"
+      ]
+    },
+    {
+      "text": "editing-existing-decks-and-templates: Pick layouts first: python scripts/thumbnail.py template.pptx template-thumbs writes a labeled grid of every slide and prints the file(s) #documents",
+      "scope": "skills/skills",
+      "node": "pptx",
+      "tags": [
+        "documents"
+      ]
+    },
+    {
+      "text": "design-ideas: Don't create boring slides. #documents",
+      "scope": "skills/skills",
+      "node": "pptx",
+      "tags": [
+        "documents"
+      ]
+    },
+    {
+      "text": "qa-(required): Your first render usually has a few real issues — overlaps, overflow, misalignment. #documents",
+      "scope": "skills/skills",
+      "node": "pptx",
+      "tags": [
+        "documents"
+      ]
+    },
+    {
+      "text": "Use this skill any time a spreadsheet file is the primary input or output. #documents",
+      "scope": "skills/skills",
+      "node": "xlsx",
+      "tags": [
+        "documents"
+      ]
+    },
+    {
+      "text": "requirements-for-every-output: Professional font (Arial, Times New Roman) throughout, unless the user says otherwise.; Zero formula errors. #documents",
+      "scope": "skills/skills",
+      "node": "xlsx",
+      "tags": [
+        "documents"
+      ]
+    },
+    {
+      "text": "recalculate-(mandatory-whenever-the-file-contains-formulas): openpyxl writes formulas as strings with no cached values. #documents",
+      "scope": "skills/skills",
+      "node": "xlsx",
+      "tags": [
+        "documents"
+      ]
+    },
+    {
+      "text": "choosing-formulas-that-survive-verification: LibreOffice implements fewer functions than Excel, and one it cannot evaluate becomes a literal #NAME? baked into the file you deliver. #documents",
+      "scope": "skills/skills",
+      "node": "xlsx",
+      "tags": [
+        "documents",
+        "name"
+      ]
+    },
+    {
+      "text": "openpyxl-gotchas: Reading a model takes two loads. #documents",
+      "scope": "skills/skills",
+      "node": "xlsx",
+      "tags": [
+        "documents"
+      ]
+    },
+    {
+      "text": "financial-models: Unless the user says otherwise, or the existing file already does something else. #documents",
+      "scope": "skills/skills",
+      "node": "xlsx",
+      "tags": [
+        "documents"
+      ]
+    },
+    {
+      "text": "Discover and choose Cloudflare products for apps, APIs, AI agents, storage, networking, and security. #cloudflare",
+      "scope": "skills/cloudflare-skills",
+      "node": "cloudflare",
+      "tags": [
+        "cloudflare"
+      ]
+    },
+    {
+      "text": "check-for-the-cloudflare-cli-(`cf`)-first: If the project has a cloudflare.config.ts file, or the user has asked you to use the cf CLI #cloudflare",
+      "scope": "skills/cloudflare-skills",
+      "node": "cloudflare",
+      "tags": [
+        "cloudflare"
+      ]
+    },
+    {
+      "text": "help-the-user-find-the-right-product: Actively surface Cloudflare products that solve the stated problem, even when the user has not named them. #cloudflare",
+      "scope": "skills/cloudflare-skills",
+      "node": "cloudflare",
+      "tags": [
+        "cloudflare"
+      ]
+    },
+    {
+      "text": "what-are-you-trying-to-build?: Recommend Workers and [Workers Static Assets](https://developers.cloudflare.com/workers/static-assets/index.md) for new websites and #cloudflare",
+      "scope": "skills/cloudflare-skills",
+      "node": "cloudflare",
+      "tags": [
+        "cloudflare"
+      ]
+    },
+    {
+      "text": "find-guidance-for-a-task-not-listed-here: Use the [Cloudflare product directory](https://developers.cloudflare.com/directory/index.md) for additional products and their current docs. #cloudflare",
+      "scope": "skills/cloudflare-skills",
+      "node": "cloudflare",
+      "tags": [
+        "cloudflare"
+      ]
+    },
+    {
+      "text": "caching: Prefer [Workers Cache](https://developers.cloudflare.com/workers/cache/index.md) for caching #cloudflare",
+      "scope": "skills/cloudflare-skills",
+      "node": "cloudflare",
+      "tags": [
+        "cloudflare"
+      ]
+    },
+    {
+      "text": "working-principles: Inspect the existing project and its pinned package versions before choosing an API or configuration shape #cloudflare",
+      "scope": "skills/cloudflare-skills",
+      "node": "cloudflare",
+      "tags": [
+        "cloudflare"
+      ]
+    },
+    {
+      "text": "Cloudflare Workers best practices for production applications. #cloudflare #workers",
+      "scope": "skills/cloudflare-skills",
+      "node": "workers-best-practices",
+      "tags": [
+        "cloudflare",
+        "workers"
+      ]
+    },
+    {
+      "text": "keep-compatibility-dates-current: Use today's date for new Workers. #cloudflare #workers",
+      "scope": "skills/cloudflare-skills",
+      "node": "workers-best-practices",
+      "tags": [
+        "cloudflare",
+        "workers"
+      ]
+    },
+    {
+      "text": "enable-observability: Enable [Workers Logs](https://developers.cloudflare.com/workers/observability/logs/workers-logs/index.md) and #cloudflare #workers",
+      "scope": "skills/cloudflare-skills",
+      "node": "workers-best-practices",
+      "tags": [
+        "cloudflare",
+        "workers"
+      ]
+    },
+    {
+      "text": "validation: Use the project's existing checks for affected Workers behavior: type-check binding or handler contract changes #cloudflare #workers",
+      "scope": "skills/cloudflare-skills",
+      "node": "workers-best-practices",
+      "tags": [
+        "cloudflare",
+        "workers"
+      ]
+    },
+    {
+      "text": "scope: This skill covers Workers-specific best practices and code review. #cloudflare #workers",
+      "scope": "skills/cloudflare-skills",
+      "node": "workers-best-practices",
+      "tags": [
+        "cloudflare",
+        "workers"
+      ]
+    },
+    {
+      "text": "Build, debug, or review Cloudflare Durable Objects code for persistent state and coordination. #cloudflare #workers #durable-objects",
+      "scope": "skills/cloudflare-skills",
+      "node": "durable-objects",
+      "tags": [
+        "cloudflare",
+        "durable-objects",
+        "workers"
+      ]
+    },
+    {
+      "text": "retrieval-sources: Your knowledge of Durable Objects APIs and configuration may be outdated. #cloudflare #workers #durable-objects",
+      "scope": "skills/cloudflare-skills",
+      "node": "durable-objects",
+      "tags": [
+        "cloudflare",
+        "durable-objects",
+        "workers"
+      ]
+    },
+    {
+      "text": "when-to-use: Creating new Durable Object classes for stateful coordination; Implementing RPC methods, alarms, or WebSocket handlers #cloudflare #workers #durable-objects",
+      "scope": "skills/cloudflare-skills",
+      "node": "durable-objects",
+      "tags": [
+        "cloudflare",
+        "durable-objects",
+        "workers"
+      ]
+    },
+    {
+      "text": "reference-documentation: ./references/rules.md; Core rules, storage, concurrency, RPC, alarms; [Testing reference](./references/testing.md) #cloudflare #workers #durable-objects",
+      "scope": "skills/cloudflare-skills",
+      "node": "durable-objects",
+      "tags": [
+        "cloudflare",
+        "durable-objects",
+        "workers"
+      ]
+    },
+    {
+      "text": "Run or troubleshoot Wrangler CLI commands and configure Worker projects for local development, Previews, deployment, and Cloudflare resource management. #cloudflare #workers #wrangler",
+      "scope": "skills/cloudflare-skills",
+      "node": "wrangler",
+      "tags": [
+        "cloudflare",
+        "workers",
+        "wrangler"
+      ]
+    },
+    {
+      "text": "inspect-the-project: Find the package manager, installed Wrangler version, package scripts, framework, and Wrangler config. #cloudflare #workers #wrangler",
+      "scope": "skills/cloudflare-skills",
+      "node": "wrangler",
+      "tags": [
+        "cloudflare",
+        "workers",
+        "wrangler"
+      ]
+    },
+    {
+      "text": "retrieve-what-the-task-needs: Use the Cloudflare MCP docs tool if available, or fetch the relevant linked page directly. #cloudflare #workers #wrangler",
+      "scope": "skills/cloudflare-skills",
+      "node": "wrangler",
+      "tags": [
+        "cloudflare",
+        "workers",
+        "wrangler"
+      ]
+    },
+    {
+      "text": "apply-the-change: Prefer wrangler.jsonc for new config. #cloudflare #workers #wrangler",
+      "scope": "skills/cloudflare-skills",
+      "node": "wrangler",
+      "tags": [
+        "cloudflare",
+        "workers",
+        "wrangler"
+      ]
+    },
+    {
+      "text": "work-with-workers-previews: Workers Previews requires project-local Wrangler 4.135.0 or later; project commands do not use a newer global installation. #cloudflare #workers #wrangler",
+      "scope": "skills/cloudflare-skills",
+      "node": "wrangler",
+      "tags": [
+        "cloudflare",
+        "workers",
+        "wrangler"
+      ]
+    },
+    {
+      "text": "validate: After changing config or bindings in a TypeScript project, regenerate types with the project's wrangler types command rather than #cloudflare #workers #wrangler",
+      "scope": "skills/cloudflare-skills",
+      "node": "wrangler",
+      "tags": [
+        "cloudflare",
+        "workers",
+        "wrangler"
+      ]
+    },
+    {
+      "text": "Build, debug, or review Cloudflare Agents SDK applications using the agents package. #cloudflare #agents #workers",
+      "scope": "skills/cloudflare-skills",
+      "node": "agents-sdk",
+      "tags": [
+        "agents",
+        "cloudflare",
+        "workers"
+      ]
+    },
+    {
+      "text": "retrieval-sources: Cloudflare docs: https://developers.cloudflare.com/agents/index.md #cloudflare #agents #workers",
+      "scope": "skills/cloudflare-skills",
+      "node": "agents-sdk",
+      "tags": [
+        "agents",
+        "cloudflare",
+        "workers"
+      ]
+    },
+    {
+      "text": "Profile or debug CPU usage and memory allocation in deployed Cloudflare Workers and Durable Objects. #cloudflare #workers #debugging",
+      "scope": "skills/cloudflare-skills",
+      "node": "workers-profiling",
+      "tags": [
+        "cloudflare",
+        "debugging",
+        "workers"
+      ]
+    },
+    {
+      "text": "retrieve-the-docs: Start with the [production profiling guide](https://developers.cloudflare.com/workers/observability/profiling-in-production/index.md) to #cloudflare #workers #debugging",
+      "scope": "skills/cloudflare-skills",
+      "node": "workers-profiling",
+      "tags": [
+        "cloudflare",
+        "debugging",
+        "workers"
+      ]
+    },
+    {
+      "text": "inspect-the-evidence: Read the pprof file and analyse it for hotspots; Map hotspots to functions and source locations when evidence supports it #cloudflare #workers #debugging",
+      "scope": "skills/cloudflare-skills",
+      "node": "workers-profiling",
+      "tags": [
+        "cloudflare",
+        "debugging",
+        "workers"
+      ]
+    },
+    {
+      "text": "optimise: Propose the smallest code change supported by the capture which resolves the issues identified. #cloudflare #workers #debugging",
+      "scope": "skills/cloudflare-skills",
+      "node": "workers-profiling",
+      "tags": [
+        "cloudflare",
+        "debugging",
+        "workers"
+      ]
+    },
+    {
+      "text": "Build or maintain Cloudflare Sandbox apps on the stable @cloudflare/sandbox package. #cloudflare #sandbox #workers",
+      "scope": "skills/cloudflare-skills",
+      "node": "sandbox-stable",
+      "tags": [
+        "cloudflare",
+        "sandbox",
+        "workers"
+      ]
+    },
+    {
+      "text": "2.-contract-—-non-negotiables: await sandbox.exec(command) takes a command string and resolves when the command finishes #cloudflare #sandbox #workers",
+      "scope": "skills/cloudflare-skills",
+      "node": "sandbox-stable",
+      "tags": [
+        "cloudflare",
+        "sandbox",
+        "workers"
+      ]
+    },
+    {
+      "text": "Build or maintain Cloudflare Sandbox apps on @cloudflare/sandbox@next (SDK 1.0 preview). #cloudflare #sandbox #workers",
+      "scope": "skills/cloudflare-skills",
+      "node": "sandbox-next",
+      "tags": [
+        "cloudflare",
+        "sandbox",
+        "workers"
+      ]
+    },
+    {
+      "text": "2.-contract-—-non-negotiables: sandbox.exec(argv) takes an argv list and resolves when the process starts. #cloudflare #sandbox #workers",
+      "scope": "skills/cloudflare-skills",
+      "node": "sandbox-next",
+      "tags": [
+        "cloudflare",
+        "sandbox",
+        "workers"
+      ]
+    },
+    {
+      "text": "3.-retrieve-—-open-the-doc-for-the-task: Fetch the page before implementing. #cloudflare #sandbox #workers",
+      "scope": "skills/cloudflare-skills",
+      "node": "sandbox-next",
+      "tags": [
+        "cloudflare",
+        "sandbox",
+        "workers"
+      ]
+    },
+    {
+      "text": "Build and troubleshoot Cloudflare Basin analytics workflows with Basin Pipelines, Basin Catalog, and Basin SQL. #cloudflare #r2 #data",
+      "scope": "skills/cloudflare-skills",
+      "node": "basin",
+      "tags": [
+        "cloudflare",
+        "data",
+        "r2"
+      ]
+    },
+    {
+      "text": "rebrand: Cloudflare Data Platform is now Basin. #cloudflare #r2 #data",
+      "scope": "skills/cloudflare-skills",
+      "node": "basin",
+      "tags": [
+        "cloudflare",
+        "data",
+        "r2"
+      ]
+    },
+    {
+      "text": "Build and troubleshoot Cloudflare K2 or K2 Streams durable logs. #cloudflare #workers #data",
+      "scope": "skills/cloudflare-skills",
+      "node": "k2",
+      "tags": [
+        "cloudflare",
+        "data",
+        "workers"
+      ]
+    },
+    {
+      "text": "Audit, diagnose, or optimize website loading and interaction performance, Core Web Vitals, and Lighthouse performance scores. #performance #web",
+      "scope": "skills/cloudflare-skills",
+      "node": "web-perf",
+      "tags": [
+        "performance",
+        "web"
+      ]
+    },
+    {
+      "text": "first-verify-mcp-tools-available: Discover available browser and performance tools before starting. #performance #web",
+      "scope": "skills/cloudflare-skills",
+      "node": "web-perf",
+      "tags": [
+        "performance",
+        "web"
+      ]
+    },
+    {
+      "text": "key-guidelines: Be assertive: Verify claims by checking network requests, DOM, or codebase—then state findings definitively #performance #web",
+      "scope": "skills/cloudflare-skills",
+      "node": "web-perf",
+      "tags": [
+        "performance",
+        "web"
+      ]
+    },
+    {
+      "text": "phase-5-codebase-analysis: Skip if auditing a third-party site without codebase access. #performance #web",
+      "scope": "skills/cloudflare-skills",
+      "node": "web-perf",
+      "tags": [
+        "performance",
+        "web"
+      ]
+    },
+    {
+      "text": "After a work item is done, push its feature branch to remote (jj git push) before starting the next one - finished work is never left local-only.",
+      "scope": "fluid-notion-labs/contextual",
+      "node": "notes",
+      "tags": []
+    },
+    {
+      "text": "Begin each task in a jj workspace at `.jj/workspaces/<feature>` — never work in the default checkout.",
+      "scope": "fluid-notion-labs/contextual",
+      "node": "notes",
+      "tags": []
+    },
+    {
+      "text": "Commit logical units of work, each with a conventional-commits description.",
+      "scope": "fluid-notion-labs/contextual",
+      "node": "notes",
+      "tags": []
+    },
+    {
+      "text": "Rust project; `#rust` carries build/workflow conventions — pull via resolve(tags).",
+      "scope": "fluid-notion-labs/contextual",
+      "node": "notes",
+      "tags": []
+    },
+    {
+      "text": "Use jj, git colocated; if no jj setup, `jj git init --colocate` (#skill:jj-workflow).",
+      "scope": "workstyle/dev",
+      "node": "jjc",
+      "tags": []
+    },
+    {
+      "text": "VCS is jj colocated with git: check for `.jj` at the repo root; if missing, run `jj git init --colocate`.",
+      "scope": "fluid-notion-labs/contextual",
+      "node": "notes",
+      "tags": []
+    },
+    {
+      "text": "When work is done, `jj workspace list` decides: only the default workspace means this is the only session — merge the feature commit to main; any other workspace means other sessions may be live, so prompt the user before merging.",
+      "scope": "fluid-notion-labs/contextual",
+      "node": "notes",
+      "tags": []
+    },
+    {
+      "text": "Workstyle: a named set of directives — how we get things done. Chat code `##workstyle.key(extra)` expands to the directive; the parenthetical is extra info for this repo. Stored at scope workstyle/<name>, node = key. Pick via ctrl-space.",
+      "scope": "explorations",
+      "node": "workstyle",
+      "tags": []
+    },
+    {
+      "text": "context refresh test atom: if this appears in the injected <context> block, bag changes are picked up live",
+      "scope": "fluid-notion-labs/contextual",
+      "node": "notes",
+      "tags": []
+    },
+    {
+      "text": "jj workspaces are the feature workflow: one workspace per feature at `.jj/workspaces/<feat>` (jj skips .jj dirs in snapshots, so no ignore needed); contextual resolves a local context tier for the active workspace — detection via `jj workspace list` longest-prefix match on cwd, scope id `<repo-id>/ws/<feat>`.",
+      "scope": "fluid-notion-labs/explorations",
+      "node": "workspaces",
+      "tags": []
+    },
+    {
+      "text": "npm project (Cloudflare Worker + DO); `#npm` carries package/workflow conventions — pull via resolve(tags).",
+      "scope": "fluid-notion-labs/contexture-hub",
+      "node": "notes",
+      "tags": []
+    },
+    {
+      "text": "prerequisites: Rube MCP must be connected (RUBE_SEARCH_TOOLS available); active Ably connection via RUBE_MANAGE_CONNECTIONS with toolkit ably",
+      "scope": "fluid-notion-labs/explorations",
+      "node": "notes",
+      "tags": [
+        "ably-automation",
+        "awesome-claude-skills"
+      ]
+    },
+    {
+      "text": "When the architecture or plans change, update the context atoms and docs in the same work item - the bag must never describe a system that no longer exists.",
+      "scope": "fluid-notion-labs/contextual",
+      "node": "notes",
+      "tags": []
+    },
+    {
+      "text": "`markserv` resolves to the uv-installed",
+      "scope": "global",
+      "node": "notes",
+      "tags": []
+    },
+    {
+      "text": "Long-form workflow content lives in the workflow system, not in files: ws_* sections (the research docs are imported there), item_* tasks, plan_next for what's next, item_pin to put a task into injected context. Markdown in research/ is a source to import from; the bag is the store.",
+      "scope": "notes",
+      "node": "workflow-system",
+      "tags": []
+    },
+    {
+      "text": "contextual is a context bag: a persistent store of terse, tagged instruction atoms that replaces AGENTS.md-style files, injected into every session and synced across machines via hub sync.",
+      "scope": "global",
+      "node": "usage",
+      "tags": []
+    },
+    {
+      "text": "Long-lived documents and tasks live in the workflow system, not in repo files: ws_* tools store named sections (vision, plans, decisions); item_* tools store work items; plan_next lists what's next; item_pin puts a task into injected context.",
+      "scope": "global",
+      "node": "usage",
+      "tags": []
+    },
+    {
+      "text": "Skill activation is semi-automatic: when the user wants to do something new, assess whether a skill from the skillsets applies and ask before activating it; never auto-activate.",
+      "scope": "global",
+      "node": "usage",
+      "tags": []
+    },
+    {
+      "text": "When the user says \"context\" they mean this system, used only via the cx-mcp MCP tools (resolve, search, add, remove, tags) — never a command-line program.",
+      "scope": "global",
+      "node": "usage",
+      "tags": []
+    },
+    {
+      "text": "Untagged atoms (global tier plus this repo's) are injected every session; hashtagged atoms load only when pulled via resolve(tags).",
+      "scope": "global",
+      "node": "usage",
+      "tags": []
+    },
+    {
+      "text": "add stores durable facts for future sessions; remove retires them; batch a remove+add swap in one operations call.",
+      "scope": "global",
+      "node": "usage",
+      "tags": []
+    }
+  ],
+  "tombstones": [
+    {
+      "text": "Answer concisely.",
+      "scope": "acme/rocket",
+      "node": "style",
+      "tags": []
+    },
+    {
+      "text": "Body only when the why is non-obvious.",
+      "scope": "global",
+      "node": "git",
+      "tags": []
+    },
+    {
+      "text": "Commit on task completion, never mid-task.",
+      "scope": "global",
+      "node": "git",
+      "tags": []
+    },
+    {
+      "text": "Concept + spec: `research/context/findings.md` and `plan.md` in `~/projects/explorations`.",
+      "scope": "global",
+      "node": "refs",
+      "tags": []
+    },
+    {
+      "text": "Context bag: persisted multiset managed by `cx` (source: `~/projects/explorations/nursery/contextual`; spec: `research/context/findings.md` and `plan.md`).",
+      "scope": "global",
+      "node": "contexts",
+      "tags": []
+    },
+    {
+      "text": "Default context = untagged atoms, always active. Pull tagged atoms by naming their tags: over MCP, resolve with a tags argument; from the shell, `cx` with the tag quoted (the hash sigil needs shell quoting).",
+      "scope": "global",
+      "node": "contexts",
+      "tags": []
+    },
+    {
+      "text": "Default context = untagged atoms, always active. `cx #tag` pulls tagged atoms.",
+      "scope": "global",
+      "node": "contexts",
+      "tags": [
+        "tag`"
+      ]
+    },
+    {
+      "text": "Directive `jjc`: use jj, git colocated; if no jj setup, `jj git init --colocate` (#skill:jj-workflow).",
+      "scope": "explorations",
+      "node": "workstyle",
+      "tags": []
+    },
+    {
+      "text": "Directives: named ways we interact with the repo — how we 'do stuff' (e.g. flutter, hexagonal architecture, testing strategy, dev workflow); each references a skillset.",
+      "scope": "explorations",
+      "node": "directives",
+      "tags": []
+    },
+    {
+      "text": "Elastic substrate: automerge-rs core (hash-linked change DAG, actor/timestamp on every change, save/load persistence) — no hand-rolled merge, no consensus; the hub DO becomes an append-only log of changes, so history and distribution are one mechanism.",
+      "scope": "fluid-notion-labs/explorations",
+      "node": "explorations/contexture",
+      "tags": []
+    },
+    {
+      "text": "Elastic's substrate is the automerge-rs core (hash-linked change DAG, actor/timestamp on every change, save/load persistence): no hand-rolled merge, no consensus; the hub DO becomes an append-only log of changes, so history and distribution are one mechanism.",
+      "scope": "fluid-notion-labs/explorations",
+      "node": "contexture",
+      "tags": []
+    },
+    {
+      "text": "Engine crate: bagflow → elastic — the typed layer over a battle-tested core (record types, lifecycle/query folds, capacity policy, SQLite derived index); not a merge engine; the DFIR prototype is reference-only.",
+      "scope": "fluid-notion-labs/explorations",
+      "node": "explorations/contexture",
+      "tags": []
+    },
+    {
+      "text": "Harvest: in a repo whose instructions are not in context, call harvest (or run `cx harvest`) — it imports agent-instruction files (AGENTS.md, CLAUDE.md, GEMINI.md, cursorrules, windsurfrules, copilot-instructions) as project context; re-run after those files change.",
+      "scope": "global",
+      "node": "contexts",
+      "tags": []
+    },
+    {
+      "text": "If terse phrasing isn't shorter or clearer, plain prose wins.",
+      "scope": "global",
+      "node": "style",
+      "tags": []
+    },
+    {
+      "text": "Larger or long-lived documents (decisions, working data, JSON) live in the kv annex beside the atom bag, addressed by dotted keys.",
+      "scope": "global",
+      "node": "usage",
+      "tags": []
+    },
+    {
+      "text": "Never drop not/never/no/only/except. Clarity beats compression.",
+      "scope": "global",
+      "node": "style",
+      "tags": []
+    },
+    {
+      "text": "One idea per sentence. Short word over phrase (\"fix\" not \"implement a solution for\").",
+      "scope": "global",
+      "node": "style",
+      "tags": []
+    },
+    {
+      "text": "Payload verbatim: code, commands, paths, errors, numbers exact, character for character.",
+      "scope": "global",
+      "node": "style",
+      "tags": []
+    },
+    {
+      "text": "Persisted artifacts (code, comments, commits, docs, context files): full clarity, no compression gimmicks.",
+      "scope": "global",
+      "node": "style",
+      "tags": []
+    },
+    {
+      "text": "Prefer `?` over `unwrap()`.",
+      "scope": "acme/rocket",
+      "node": "build",
+      "tags": []
+    },
+    {
+      "text": "Productization lives in `research/context/plan2.md` (doc set, elastic milestones L0–L5, workspace tier spec); `architecture2.md` is the contexture umbrella map; resident is a thin shim first (full front-end, FS+jj backing, cloudrust remote builds).",
+      "scope": "fluid-notion-labs/explorations",
+      "node": "explorations/contexture",
+      "tags": []
+    },
+    {
+      "text": "Productization plan: `research/context/plan2.md` (doc set, elastic milestones L0–L5, workspace-tier spec); `architecture2.md` is the contexture umbrella map; resident ships as a thin shim first (full front-end, FS+jj backing, cloudrust remote builds).",
+      "scope": "fluid-notion-labs/explorations",
+      "node": "contexture",
+      "tags": []
+    },
+    {
+      "text": "Provisional (2025-10): revisit these git atoms after a month of use; drop or keep each.",
+      "scope": "global",
+      "node": "git",
+      "tags": []
+    },
+    {
+      "text": "Push only on request.",
+      "scope": "global",
+      "node": "git",
+      "tags": []
+    },
+    {
+      "text": "Run `cargo test` before declaring done.",
+      "scope": "acme/rocket",
+      "node": "build",
+      "tags": []
+    },
+    {
+      "text": "Rust (Cargo.toml) / npm (package.json) project: pull the rust / npm tags — build/workflow conventions live there; discover others via the tags tool / `cx tags`.",
+      "scope": "global",
+      "node": "contexts",
+      "tags": []
+    },
+    {
+      "text": "Static file serving during development: `serve-directory -l -p 8000 .` (`~/.cargo/bin`), never `python3 -m http.server`.",
+      "scope": "global",
+      "node": "tooling",
+      "tags": []
+    },
+    {
+      "text": "Static file serving: `serve-directory -l -p 8000 .`, never `python3 -m http.server`.",
+      "scope": "explorations",
+      "node": "tooling",
+      "tags": []
+    },
+    {
+      "text": "Subject line: imperative, ≤50 chars, no prefix scheme.",
+      "scope": "global",
+      "node": "git",
+      "tags": []
+    },
+    {
+      "text": "Terse. Answer first, reason after, next step last. No preamble, no recap, no hedging. (method: `vendor/caveman`)",
+      "scope": "global",
+      "node": "style",
+      "tags": []
+    },
+    {
+      "text": "The engine crate is **elastic** (renamed from bagflow; lattic was an intermediate): the typed layer over a battle-tested core — record types, lifecycle/query folds, capacity policy, SQLite derived index; not a merge engine; the DFIR prototype is reference-only.",
+      "scope": "fluid-notion-labs/explorations",
+      "node": "contexture",
+      "tags": []
+    },
+    {
+      "text": "The kv annex was removed as a pre-generalization artifact - there are no kv_* tools and no kv table. Long-form workflow content (docs, decisions, working data) lives in the bag as records; until section records land (W1), markdown in research/ is the authoring home.",
+      "scope": "fluid-notion-labs/contextual",
+      "node": "notes",
+      "tags": []
+    },
+    {
+      "text": "The work-item facet is a native contexture record type on elastic; ready/claim/close, discovered-from, capacity policy and evidence-ranked scheduler are borrowed from the beads lineage; beads, beads-rs and beads_rust are vendored reference reading only.",
+      "scope": "fluid-notion-labs/explorations",
+      "node": "contexture",
+      "tags": []
+    },
+    {
+      "text": "Work-item facet: native contexture record type on elastic; ready/claim/close, discovered-from, capacity policy, evidence-ranked scheduler borrowed from beads lineage; beads, beads-rs, beads_rust are vendored reference reading only.",
+      "scope": "fluid-notion-labs/explorations",
+      "node": "explorations/contexture",
+      "tags": []
+    },
+    {
+      "text": "Workspace tier = local context per jj workspace, convention `.jj/workspaces/<feat>` (jj skips .jj in snapshots, so no ignore needed); detection is `jj workspace list` longest-prefix match on cwd; scope id `<repo-id>/ws/<feat>`.",
+      "scope": "fluid-notion-labs/explorations",
+      "node": "contexture",
+      "tags": []
+    },
+    {
+      "text": "Workspace tier: local context per jj workspace, convention `.jj/workspaces/<feat>` (jj skips .jj in snapshots, so no ignore needed); detection via `jj workspace list` longest-prefix match on cwd; scope id `<repo-id>/ws/<feat>`.",
+      "scope": "fluid-notion-labs/explorations",
+      "node": "explorations/contexture",
+      "tags": []
+    },
+    {
+      "text": "Workstyle: a named set of directives — ways we get things done; each directive references a skillset.",
+      "scope": "explorations",
+      "node": "workstyle",
+      "tags": []
+    },
+    {
+      "text": "contexture hub carries the bag now",
+      "scope": "test",
+      "node": "mcp",
+      "tags": []
+    },
+    {
+      "text": "core-workflow-pattern: ### Step 1: Discover Available Tools #ably-automation #awesome-claude-skills",
+      "scope": "skills/awesome-claude-skills",
+      "node": "ably-automation",
+      "tags": [
+        "ably-automation",
+        "awesome-claude-skills"
+      ]
+    },
+    {
+      "text": "prerequisites: Rube MCP must be connected (RUBE_SEARCH_TOOLS available) - Active Ably connection via RUBE_MANAGE_CONNECTIONS with toolkit ably - Always ca… #ably-automation #awesome-claude-skills",
+      "scope": "skills/awesome-claude-skills",
+      "node": "ably-automation",
+      "tags": [
+        "ably-automation",
+        "awesome-claude-skills"
+      ]
+    },
+    {
+      "text": "tiered resolve is live",
+      "scope": "fluid-notion-labs/explorations",
+      "node": "check",
+      "tags": []
+    }
+  ]
+}
