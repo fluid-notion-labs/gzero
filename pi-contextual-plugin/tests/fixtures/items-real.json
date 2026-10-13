@@ -1,0 +1,278 @@
+[
+  {
+    "assignee": "",
+    "blocked_by": [],
+    "blocks": [],
+    "child_of": [],
+    "created": 1791863665502,
+    "discovered_from": [],
+    "id": "1787",
+    "labels": [
+      "plan-todo"
+    ],
+    "notes": {},
+    "priority": 5,
+    "scope": "fluid-notion-labs/contextual",
+    "status": "open",
+    "title": "later: ai-harness session tree"
+  },
+  {
+    "assignee": "",
+    "blocked_by": [],
+    "blocks": [],
+    "child_of": [],
+    "created": 1791863665464,
+    "discovered_from": [],
+    "id": "34a2",
+    "labels": [
+      "plan-todo"
+    ],
+    "notes": {},
+    "priority": 5,
+    "scope": "fluid-notion-labs/contextual",
+    "status": "open",
+    "title": "later: resident track (shim → daemon)"
+  },
+  {
+    "assignee": "",
+    "blocked_by": [],
+    "blocks": [],
+    "child_of": [],
+    "created": 1791863665309,
+    "discovered_from": [],
+    "id": "afb3",
+    "labels": [
+      "plan-todo"
+    ],
+    "notes": {},
+    "priority": 4,
+    "scope": "fluid-notion-labs/contextual",
+    "status": "open",
+    "title": "write stories.md"
+  },
+  {
+    "assignee": "",
+    "blocked_by": [],
+    "blocks": [],
+    "child_of": [],
+    "created": 1791863665406,
+    "discovered_from": [],
+    "id": "0a0a",
+    "labels": [
+      "plan-todo"
+    ],
+    "notes": {},
+    "priority": 3,
+    "scope": "fluid-notion-labs/contextual",
+    "status": "open",
+    "title": "D2: multi-machine sync tests with tombstone TTL"
+  },
+  {
+    "assignee": "",
+    "blocked_by": [],
+    "blocks": [],
+    "child_of": [],
+    "created": 1791863665273,
+    "discovered_from": [],
+    "id": "57c8",
+    "labels": [
+      "plan-todo"
+    ],
+    "notes": {},
+    "priority": 3,
+    "scope": "fluid-notion-labs/contextual",
+    "status": "open",
+    "title": "write product.md"
+  },
+  {
+    "assignee": "",
+    "blocked_by": [],
+    "blocks": [],
+    "child_of": [],
+    "created": 1791863665162,
+    "discovered_from": [],
+    "id": "92f3",
+    "labels": [
+      "plan-todo"
+    ],
+    "notes": {},
+    "priority": 3,
+    "scope": "fluid-notion-labs/contextual",
+    "status": "open",
+    "title": "W5: plugin Ctrl+W viewer renders nesting"
+  },
+  {
+    "assignee": "",
+    "blocked_by": [],
+    "blocks": [],
+    "child_of": [],
+    "created": 1791863665438,
+    "discovered_from": [],
+    "id": "dacb",
+    "labels": [
+      "plan-todo"
+    ],
+    "notes": {},
+    "priority": 3,
+    "scope": "fluid-notion-labs/contextual",
+    "status": "open",
+    "title": "D3: items + sections sync via hub; multi-repo; templates"
+  },
+  {
+    "assignee": "",
+    "blocked_by": [],
+    "blocks": [],
+    "child_of": [],
+    "created": 1791863665237,
+    "discovered_from": [],
+    "id": "3277",
+    "labels": [
+      "plan-todo"
+    ],
+    "notes": {},
+    "priority": 2,
+    "scope": "fluid-notion-labs/contextual",
+    "status": "open",
+    "title": "W5: fix stale references (architecture.md → research/old/, plan2.md)"
+  },
+  {
+    "assignee": "",
+    "blocked_by": [],
+    "blocks": [],
+    "child_of": [],
+    "created": 1791863665200,
+    "discovered_from": [],
+    "id": "de4b",
+    "labels": [
+      "plan-todo"
+    ],
+    "notes": {},
+    "priority": 2,
+    "scope": "fluid-notion-labs/contextual",
+    "status": "open",
+    "title": "W5: files become stubs (architecture.md, plan3.md, product.md, stories.md)"
+  },
+  {
+    "assignee": "",
+    "blocked_by": [],
+    "blocks": [
+      "db1c"
+    ],
+    "child_of": [],
+    "created": 1791804325990,
+    "discovered_from": [],
+    "id": "c5d2",
+    "labels": [
+      "d1"
+    ],
+    "notes": {},
+    "priority": 1,
+    "scope": "fluid-notion-labs/contextual",
+    "status": "open",
+    "title": "D1: change-based push/pull via hub"
+  },
+  {
+    "assignee": "",
+    "blocked_by": [
+      "c5d2"
+    ],
+    "blocks": [],
+    "child_of": [],
+    "created": 1791863665345,
+    "discovered_from": [],
+    "id": "db1c",
+    "labels": [
+      "plan-todo"
+    ],
+    "notes": {},
+    "priority": 1,
+    "scope": "fluid-notion-labs/contextual",
+    "status": "open",
+    "title": "locate hub Worker source"
+  },
+  {
+    "assignee": "",
+    "blocked_by": [],
+    "blocks": [],
+    "child_of": [],
+    "created": 1791804325971,
+    "discovered_from": [],
+    "id": "154a",
+    "labels": [
+      "w3"
+    ],
+    "notes": {},
+    "priority": 4,
+    "scope": "fluid-notion-labs/contextual",
+    "status": "closed",
+    "title": "W3: plan_next tool - what's next on demand"
+  },
+  {
+    "assignee": "",
+    "blocked_by": [],
+    "blocks": [],
+    "child_of": [],
+    "created": 1791849998366,
+    "discovered_from": [],
+    "id": "1e8b",
+    "labels": [
+      "w4"
+    ],
+    "notes": {},
+    "priority": 4,
+    "scope": "fluid-notion-labs/contextual",
+    "status": "closed",
+    "title": "W4: capacity, gates, explainable ranking"
+  },
+  {
+    "assignee": "",
+    "blocked_by": [],
+    "blocks": [],
+    "child_of": [],
+    "created": 1791804325978,
+    "discovered_from": [],
+    "id": "d36f",
+    "labels": [
+      "w3"
+    ],
+    "notes": {},
+    "priority": 3,
+    "scope": "fluid-notion-labs/contextual",
+    "status": "closed",
+    "title": "W3: pinned items in injected context"
+  },
+  {
+    "assignee": "",
+    "blocked_by": [],
+    "blocks": [],
+    "child_of": [],
+    "created": 1791863665376,
+    "discovered_from": [],
+    "id": "098f",
+    "labels": [
+      "plan-todo"
+    ],
+    "notes": {},
+    "priority": 2,
+    "scope": "fluid-notion-labs/contextual",
+    "status": "closed",
+    "title": "D1: change-based push/pull via automerge change log"
+  },
+  {
+    "assignee": "",
+    "blocked_by": [],
+    "blocks": [],
+    "child_of": [],
+    "created": 1791804325984,
+    "discovered_from": [],
+    "id": "bf6a",
+    "labels": [
+      "w3"
+    ],
+    "notes": {},
+    "priority": 2,
+    "scope": "fluid-notion-labs/contextual",
+    "status": "closed",
+    "title": "W3: skill-activation seed atom"
+  }
+]
