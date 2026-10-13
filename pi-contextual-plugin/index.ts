@@ -19,7 +19,6 @@ import {
   Text,
   matchesKey,
   truncateToWidth,
-  visibleWidth,
   type Component,
   type EditorTheme,
   type Focusable,
@@ -48,6 +47,7 @@ import {
   registerWorkstyles,
 } from "./workstyles.ts";
 import { execFile, spawn } from "node:child_process";
+import { existsSync, statSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -364,105 +364,21 @@ class TierViewer implements Component, Focusable {
 }
 
 // ---- work items viewer: Ctrl+W full-screen viewer ----
+// Pure tree/row logic lives in items-tree.ts (unit-tested there).
 
-interface RawItem {
-  id: string;
-  title: string;
-  priority: number;
-  status: string;
-  assignee: string;
-  labels: string[];
-  blocked_by: string[];
-  blocks: string[];
-  child_of: string[];
-  notes: Record<string, { text: string }>;
-  created: number;
-}
-
-interface ItemNode {
-  item: RawItem;
-  children: ItemNode[];
-}
-
-interface FlatRow {
-  item: RawItem;
-  depth: number;
-}
+import {
+  buildItemTree,
+  flattenTree,
+  padToVisible,
+  type FlatRow,
+  type RawItem,
+} from "./items-tree.ts";
 
 const STATUS_ICON_FULL: Record<string, { icon: string; color: "muted" | "accent" | "success" | "warning" }> = {
   open: { icon: "○", color: "muted" },
   in_progress: { icon: "●", color: "accent" },
   closed: { icon: "✓", color: "success" },
 };
-
-function rankForSort(item: RawItem): number {
-  if (item.status === "closed") return 2;
-  if (item.blocked_by.length > 0) return 1;
-  return item.status === "in_progress" ? 0 : 1;
-}
-
-function padToVisible(styled: string, width: number): string {
-  const fitted = truncateToWidth(styled, width);
-  const vw = visibleWidth(fitted);
-  if (vw >= width) return fitted;
-  return fitted + " ".repeat(width - vw);
-}
-
-function buildItemTree(items: RawItem[]): ItemNode[] {
-  const byId = new Map<string, RawItem>();
-  for (const it of items) byId.set(it.id, it);
-
-  const childrenOf = new Map<string, RawItem[]>();
-  for (const it of items) {
-    for (const parent of it.child_of) {
-      if (!childrenOf.has(parent)) childrenOf.set(parent, []);
-      childrenOf.get(parent)!.push(it);
-    }
-  }
-
-  const roots = items.filter(
-    (it) => it.child_of.length === 0 || it.child_of.every((p) => !byId.has(p)),
-  );
-
-  function addChildren(node: ItemNode): void {
-    const kids = childrenOf.get(node.item.id) ?? [];
-    for (const kid of kids) {
-      const childNode: ItemNode = { item: kid, children: [] };
-      addChildren(childNode);
-      node.children.push(childNode);
-    }
-  }
-
-  const rootNodes: ItemNode[] = [];
-  for (const root of roots) {
-    const node: ItemNode = { item: root, children: [] };
-    addChildren(node);
-    rootNodes.push(node);
-  }
-  rootNodes.sort((a, b) =>
-    rankForSort(a.item) - rankForSort(b.item) ||
-    b.item.priority - a.item.priority ||
-    a.item.id.localeCompare(b.item.id)
-  );
-  for (const n of rootNodes) {
-    n.children.sort((a, b) =>
-      rankForSort(a.item) - rankForSort(b.item) ||
-      b.item.priority - a.item.priority ||
-      a.item.id.localeCompare(b.item.id)
-    );
-  }
-  return rootNodes;
-}
-
-function flattenTree(nodes: ItemNode[]): FlatRow[] {
-  const rows: FlatRow[] = [];
-  function walk(n: ItemNode, depth: number): void {
-    rows.push({ item: n.item, depth });
-    for (const c of n.children) walk(c, depth + 1);
-  }
-  for (const n of nodes) walk(n, 0);
-  return rows;
-}
 
 class WorkItemsViewer implements Component, Focusable {
   focused = false;
@@ -722,6 +638,16 @@ export default function (pi: ExtensionAPI) {
   };
 
   const findCxMcp = async (): Promise<string | null> => {
+    // Repo-level dev override: a project can ship .pi/dev-cx-mcp (see
+    // .pi/mcp.json in the contextual repo) and dev sessions then use the
+    // locally built server for the plugin's own calls too, matching the
+    // mcp.json override pi applies for the model's tools.
+    const dev = path.join(process.cwd(), ".pi", "dev-cx-mcp");
+    try {
+      if (existsSync(dev) && statSync(dev).mode & 0o111) return dev;
+    } catch {
+      // unreadable/odd entry — fall through to PATH
+    }
     if (cxMcpPath === undefined) cxMcpPath = await which("cx-mcp");
     return cxMcpPath;
   };

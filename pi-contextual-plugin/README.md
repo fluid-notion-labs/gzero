@@ -65,15 +65,41 @@ and related performance work is tracked in the implementation plan
 
 ## Install
 
+Dev (live-linked to a checkout, picks up every change on pi restart):
+
 ```sh
 mkdir -p ~/.pi/agent/extensions
 ln -s "$(pwd)/pi-contextual-plugin" ~/.pi/agent/extensions/contextual
 ```
 
-A symlink keeps the installed extension live-linked to the repo —
-plugin changes apply on the next pi restart, no re-copying. (A `cp -r`
-works too, but drifts: the copies go stale as the repo moves.)
+Blessed (export a snapshot of whichever checkout you run it from —
+use this once work is stable, so the live pi is decoupled from
+fast-moving dev workspaces):
+
+```sh
+./tools/bless-plugin.sh   # run from the checkout to bless
+```
+
+The blessed copy is standalone: pi resolves `@earendil-works/*`
+imports itself, so no node_modules is shipped.
 
 Requires `cx` and `cx-mcp` (the plugin offers to run
 `cargo install --git https://github.com/fluid-notion-labs/contextual`).
 Hub sync uses `CX_HUB_URL` and `CX_TOKEN`; unset means offline.
+
+### Dev cx-mcp override
+
+A repo can ship its own locally built server: drop an executable at
+`.pi/dev-cx-mcp` and add a `context` entry to `.pi/mcp.json` (see the
+contextual repo). The plugin's own calls (`/context`, autocomplete)
+prefer `<cwd>/.pi/dev-cx-mcp` when present, matching the mcp.json
+override pi applies to the model's tools.
+
+## Tests
+
+`npm test` runs node:test over `tests/*.test.ts` — no test framework,
+no node_modules: `tests/deps.mjs` (an in-thread module-resolution hook)
+maps `@earendil-works/*` to the vendored pi checkout's dist builds,
+found by walking up from the plugin. Typecheck with `tools/typecheck.sh`
+(generates a throwaway tsconfig pointing at the vendored dist `.d.ts`
+files and `@types/node`, runs tsc, cleans up).

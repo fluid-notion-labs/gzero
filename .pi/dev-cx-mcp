@@ -1,0 +1,22 @@
+#!/bin/sh
+# Dev cx-mcp: execs this repo's locally built cx-mcp instead of the
+# installed ~/.cargo/bin one, so dev sessions ("moving fast and breaking
+# stuff") always talk to the current source.
+#
+# Wired up two ways:
+#   - .pi/mcp.json points pi's MCP client at it (model tools)
+#   - the contextual plugin prefers <cwd>/.pi/dev-cx-mcp for its own
+#     internal calls (/context commands, autocomplete)
+# Works when pi runs from the repo root (relative command resolves
+# against the session cwd). target/ is not per-workspace, so walk up
+# from this checkout to find a built binary.
+set -e
+d="$(cd "$(dirname "$0")/.." && pwd)"
+while [ "$d" != "/" ]; do
+  if [ -x "$d/target/debug/cx-mcp" ]; then
+    exec "$d/target/debug/cx-mcp" "$@"
+  fi
+  d="$(dirname "$d")"
+done
+echo "no target/debug/cx-mcp found above $(cd "$(dirname "$0")/.." && pwd); run cargo build first" >&2
+exit 1
