@@ -5,6 +5,7 @@
 // setLines — the window counts display lines.
 
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { padToVisible } from "./items-tree.ts";
 
 /**
  * Frame `innerLines` in a full box: cornered top/bottom rules and vertical
@@ -75,9 +76,18 @@ export class LineWindow {
     this.top = Math.max(0, this.lines.length - this.viewport);
   }
 
-  /** The visible slice, plus a right-edge scrollbar column when scrollable. */
-  render(): string[] {
+  /**
+   * The visible slice, plus a right-edge scrollbar column when scrollable.
+   * With `avail`, lines are truncated/padded to `avail - 2` first so the
+   * scrollbar column lands at the right edge instead of floating mid-line
+   * behind unpadded content; without it, lines pass through unpadded.
+   */
+  render(avail?: number): string[] {
     const slice = this.lines.slice(this.top, this.top + this.viewport);
+    if (avail !== undefined) {
+      const content = this.scrollable ? avail - 2 : avail;
+      for (let i = 0; i < slice.length; i++) slice[i] = padToVisible(slice[i], content);
+    }
     if (!this.scrollable) return slice;
     const thumbHeight = Math.max(1, Math.floor((this.viewport * this.viewport) / this.lines.length));
     const thumbStart = Math.round(this.position * (this.viewport - thumbHeight));

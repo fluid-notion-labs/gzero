@@ -12,7 +12,7 @@
 import { Text, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import type { Component, Focusable } from "@earendil-works/pi-tui";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { padToVisible, type FlatRow } from "./items-tree.ts";
+import { type FlatRow } from "./items-tree.ts";
 import { boxFrame, LineWindow, modalViewport, wrapPlain } from "./window.ts";
 
 const STATUS_ICON_FULL: Record<string, { icon: string; color: "muted" | "accent" | "success" | "warning" }> = {
@@ -27,6 +27,59 @@ export interface WorkflowPage {
   build: (inner: number, t: Theme) => string[];
   /** Appended to the hints footer, e.g. "11 open". */
   note?: string;
+}
+
+/**
+ * Re-flow hard-wrapped prose to the pane width. Markdown authors often
+ * wrap source lines at ~70 columns; rendered as-is, that leaves ragged
+ * short lines and dead space on wide panes. Consecutive plain text lines
+ * are joined into one paragraph (markdown treats single newlines inside
+ * a paragraph as soft breaks). Everything structural stays put: blank
+ * lines, headings, list items and their indented continuations,
+ * blockquotes, fenced code blocks, and table rows.
+ */
+export function reflowMarkdown(md: string): string {
+  const startsBlock = (l: string) =>
+    l === "" ||
+    /^#{1,6}\s/.test(l) ||
+    /^\s*[-*+]\s/.test(l) ||
+    /^\s*\d+[.)]\s/.test(l) ||
+    /^\s*>/.test(l) ||
+    /^\s*(```|~~~)/.test(l) ||
+    /^\s*\|/.test(l) ||
+    /^(-{3,}|\*{3,}|_{3,})\s*$/.test(l) ||
+    /^[ \t]/.test(l); // indented = list continuation or code, keep as-is
+  const out: string[] = [];
+  let para: string[] = [];
+  let fence = false;
+  const flush = () => {
+    if (para.length > 0) {
+      out.push(para.join(" "));
+      para = [];
+    }
+  };
+  for (const line of md.split("\n")) {
+    if (fence) {
+      flush();
+      out.push(line);
+      if (/^\s*(```|~~~)/.test(line)) fence = false;
+      continue;
+    }
+    if (/^\s*(```|~~~)/.test(line)) {
+      flush();
+      fence = true;
+      out.push(line);
+      continue;
+    }
+    if (startsBlock(line)) {
+      flush();
+      out.push(line);
+    } else {
+      para.push(line.trim());
+    }
+  }
+  flush();
+  return out.join("\n");
 }
 
 /**
@@ -98,7 +151,7 @@ export function buildItemBody(rows: FlatRow[], inner: number, t: Theme): string[
       (row.item.status === "closed" ? t.fg("dim", title) : t.fg("text", title)) +
       " " +
       t.fg("dim", meta);
-    lines.push(padToVisible(line, inner));
+    lines.push(line); // LineWindow pads to width and owns the scrollbar column
   }
   if (lines.length === 0) lines.push(` ${t.fg("dim", "(no items)")}`);
   return lines;
@@ -124,7 +177,7 @@ export function buildSectionBody(
   for (const section of sections) {
     for (const node of section.nodes) {
       lines.push(` ${divider(node.label)}`);
-      for (const wrapped of wrapPlain(renderTables(node.text || "(empty)"), inner - 1)) {
+      for (const wrapped of wrapPlain(renderTables(reflowMarkdown(node.text || "(empty)")), inner - 1)) {
         lines.push(` ${wrapped}`);
       }
       lines.push("");
@@ -205,7 +258,7 @@ export class WorkflowViewer implements Component, Focusable {
     return boxFrame(width, [
       ...new Text(tabs, 1).render(inner),
       t.fg("borderMuted", "─".repeat(inner)),
-      ...this.window.render().map((line) => ` ${line}`),
+      ...this.window.render(inner - 1).map((line) => ` ${line}`),
       t.fg("borderMuted", "─".repeat(inner)),
       ...new Text(t.fg("dim", footer), 1).render(inner),
     ], (s: string) => t.fg("borderMuted", s));
