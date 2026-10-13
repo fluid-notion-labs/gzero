@@ -392,12 +392,14 @@ class WorkItemsViewer implements Component, Focusable {
   constructor(
     private rows: FlatRow[],
     private done: (result?: unknown) => void,
+    theme: Theme,
   ) {
-    this.openCount = rows.filter((r) => r.item.status !== "closed").length;
-  }
-
-  attach(_tui: TUI, theme: Theme): void {
+    // pi-tui has no attach() lifecycle — components get their theme via
+    // the factory/constructor (see TierViewer). Relying on attach() left
+    // theme null and render() empty: an invisible full-screen overlay,
+    // which could even capture input (the "ctrl+w freezes pi" report).
     this.theme = theme;
+    this.openCount = rows.filter((r) => r.item.status !== "closed").length;
   }
 
   invalidate(): void {
@@ -548,7 +550,7 @@ async function openWorkItems(
   pane.close();
   try {
     await ctx.ui.custom(
-      (_tui, theme, _keybindings, done) => new WorkItemsViewer(rows, done),
+      (_tui, theme, _keybindings, done) => new WorkItemsViewer(rows, done, theme),
       {
         overlay: true,
         overlayOptions: { width: "100%", maxHeight: "100%", anchor: "center" },
