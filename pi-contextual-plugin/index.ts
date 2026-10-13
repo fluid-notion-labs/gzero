@@ -388,7 +388,7 @@ async function loadWorkflowSections(): Promise<TierSection[]> {
         title?: string;
         body?: string;
       };
-      if (detail.body) body = detail.body;
+      if (detail.body) body = renderChecklist(detail.body, s.kind);
       if (detail.title) title = detail.title;
     } catch {
       // body fetch failed; the list entry still shows
@@ -399,6 +399,15 @@ async function loadWorkflowSections(): Promise<TierSection[]> {
     });
   }
   return sections;
+}
+
+/** Checklist sections: `- [ ]`/`- [x]` → ☐/☑, indentation kept. */
+function renderChecklist(md: string, kind: string | undefined): string {
+  if (kind !== "checklist") return md;
+  return md.replace(/^([ \t]*)- \[( |x|X)\] /gm, (_m, indent, mark) => {
+    const glyph = mark.toLowerCase() === "x" ? "☑" : "☐";
+    return indent + glyph + " ";
+  });
 }
 
 async function openWorkflowSections(

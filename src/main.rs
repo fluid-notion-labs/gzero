@@ -574,14 +574,15 @@ fn ws_command(args: &[String]) {
             println!();
             if s.kind == SectionKind::Checklist {
                 for line in s.body.lines() {
-                    let t = line.trim_start();
+                    let indent_len = line.len() - line.trim_start().len();
+                    let (indent, t) = line.split_at(indent_len);
                     if let Some(rest) = t.strip_prefix("- [ ] ") {
-                        println!("\u{2610} {rest}");
+                        println!("{indent}\u{2610} {rest}");
                     } else if let Some(rest) = t
                         .strip_prefix("- [x] ")
                         .or_else(|| t.strip_prefix("- [X] "))
                     {
-                        println!("\u{2611} {rest}");
+                        println!("{indent}\u{2611} {rest}");
                     } else {
                         println!("{line}");
                     }

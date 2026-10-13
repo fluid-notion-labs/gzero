@@ -84,22 +84,40 @@ pub fn valid_name(name: &str) -> bool {
         && !name.chars().any(char::is_whitespace)
 }
 
-/// A checklist body's progress: (done, total) over `- [x]` / `- [ ]` lines.
+/// A checklist body's progress: (done, total) over `- [x]` / `- [ ]`
+/// lines. Nesting-aware (two spaces per level): a checkbox with a
+/// deeper checkbox beneath it is a parent — its progress is its
+/// children's, so only leaves are counted.
 pub fn checklist_progress(body: &str) -> (usize, usize) {
-    let (mut done, mut total) = (0, 0);
+    let mut checks: Vec<(usize, bool)> = Vec::new(); // (level, done)
     for line in body.lines() {
+        let level = (line.len() - line.trim_start().len()) / 2;
         let t = line.trim_start();
-        if let Some(rest) = t.strip_prefix("- [ ] ") {
-            if !rest.trim().is_empty() {
-                total += 1;
-            }
+        let (rest, done) = if let Some(rest) = t.strip_prefix("- [ ] ") {
+            (rest, false)
         } else if let Some(rest) = t
             .strip_prefix("- [x] ")
             .or_else(|| t.strip_prefix("- [X] "))
         {
-            if !rest.trim().is_empty() {
+            (rest, true)
+        } else {
+            continue;
+        };
+        if !rest.trim().is_empty() {
+            checks.push((level, done));
+        }
+    }
+    let (mut done, mut total) = (0, 0);
+    for (i, (level, d)) in checks.iter().enumerate() {
+        let is_leaf = checks[i + 1..]
+            .iter()
+            .take_while(|(deeper, _)| *deeper > *level)
+            .count()
+            == 0;
+        if is_leaf {
+            total += 1;
+            if *d {
                 done += 1;
-                total += 1;
             }
         }
     }
@@ -329,6 +347,16 @@ mod tests {
     fn checklist_progress_counts() {
         let body = "- [ ] todo\n- [x] done\n- [X] also done\nnot a task\n- [ ] \n";
         assert_eq!(checklist_progress(body), (2, 3));
+    }
+
+    #[test]
+    fn checklist_progress_counts_leaves_only() {
+        let body = "\
+- [ ] big task\n  - [x] done sub\n  - [ ] open sub\n\
+- [x] finished parent\n  - [x] sub one\n  - [x] sub two\n\
+- [x] leaf task\n";
+        // leaves: done sub, open sub, sub one, sub two, leaf task
+        assert_eq!(checklist_progress(body), (4, 5));
     }
 
     #[test]
