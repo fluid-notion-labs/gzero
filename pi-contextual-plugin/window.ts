@@ -28,7 +28,11 @@ export class LineWindow {
   private lines: string[] = [];
   private top = 0;
 
-  constructor(public viewport: number) {}
+  viewport: number;
+
+  constructor(viewport: number) {
+    this.viewport = viewport;
+  }
 
   setLines(lines: string[]): void {
     this.lines = lines;
@@ -81,25 +85,31 @@ export class LineWindow {
   }
 }
 
-/** Wrap plain (ANSI-free) text to a width, preserving blank lines. */
+/**
+ * Wrap plain (ANSI-free) text to a width, preserving blank lines and each
+ * line's leading indentation. Continuation lines reuse the original indent,
+ * so task-list/nested content keeps its shape (e.g. `  - [ ] child`).
+ */
 export function wrapPlain(text: string, width: number): string[] {
   const out: string[] = [];
   for (const para of text.split("\n")) {
-    if (para.trim() === "") {
+    const indent = para.match(/^[ \t]*/)?.[0] ?? "";
+    const body = para.slice(indent.length);
+    if (body === "") {
       out.push("");
       continue;
     }
     let line = "";
-    for (const word of para.split(/\s+/)) {
+    for (const word of body.split(/\s+/)) {
       const next = line ? `${line} ${word}` : word;
-      if (next.length > width && line) {
-        out.push(line);
+      if (next.length > width - indent.length && line) {
+        out.push(indent + line);
         line = word;
       } else {
         line = next;
       }
     }
-    if (line) out.push(line);
+    if (line) out.push(indent + line);
   }
   return out;
 }
