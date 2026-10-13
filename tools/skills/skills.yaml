@@ -1,6 +1,7 @@
 # skills.yaml — which skills to pull from which vendored repos.
 #
-# Each entry: repo (cloned to ../vendor/<basename> if missing), and either
+# Each entry: repo (cloned to ../vendor/skills/<basename> if missing; set
+# `local: true` for repos vendored by hand), and either
 # an explicit skill list or nothing (= import every SKILL.md found).
 # Every generated atom gets the entry's tags as hashtags, so `resolve`
 # pulls them from the repository tier. Generated packs land in
@@ -71,20 +72,28 @@ repos:
       - { path: prompt-engineer, tags: [prompting] }
       - { path: the-fool, tags: [decision, review] }
 
-  - repo: HotThoughts/jj-skills
+  # fn-skills — local-only for now (no public GitHub repo yet); vendored
+  # by hand at vendor/skills/fn-skills. Explicit paths because skills/old/
+  # holds deprecated copies of the same skill names.
+  - repo: fn-skills
+    local: true
     skills:
-      - { path: jj-workflow, tags: [jj, vcs] }
-      - { path: jj-workspaces, tags: [jj, vcs] }
-      - { path: jj-cleanup, tags: [jj, vcs] }
-      - { path: jj-create-pr, tags: [jj, vcs, github] }
-      - { path: jj-update-pr, tags: [jj, vcs, github] }
-      - { path: jj-gh-stack, tags: [jj, vcs, github] }
+      - { path: skills/jj-workflow, tags: [jj, vcs] }
+      - { path: skills/jj-cleanup, tags: [jj, vcs] }
+      - { path: skills/jj-create-pr, tags: [jj, vcs, github] }
+      - { path: skills/jj-update-pr, tags: [jj, vcs, github] }
+      - { path: skills/jj-gh-stack, tags: [jj, vcs, github] }
 
   - repo: fluid-notion-labs/scene-mcp-skill
     skills:
       - { path: scene-mcp, tags: [scene, mcp, 3d] }
 
+  # anthropics/skills — the clone IS vendor/skills (its own skills/ live in
+  # vendor/skills/skills/); dest '.' + explicit pack keeps the pack file
+  # name stable.
   - repo: anthropics/skills
+    dest: .
+    pack: skills
     skills:
       - { path: mcp-builder, tags: [mcp] }
       - { path: webapp-testing, tags: [testing, web] }

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Pull agent skills from vendored repos into the context bag.
 
-Reads skills.yaml. For each repo: shallow-clone to ../vendor/<name> if
-missing, locate listed skills, distill each SKILL.md into terse atoms
+Reads skills.yaml. For each repo: shallow-clone to
+../vendor/skills/<name> if missing (or use it as-is when `local: true` —
+fn-skills has no public GitHub home yet), locate listed skills, distill each SKILL.md into terse atoms
 (summary + section highlights), write a markdown pack, and import it via
 `cx add` (per-source sync: idempotent, and posts hub events if
 configured). The bag stays in SQLite via the normal path.
@@ -19,7 +20,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parent
 CTX = ROOT.parent.parent  # nursery/contextual
-VENDOR = CTX / "vendor"
+VENDOR = CTX / "vendor" / "skills"
 PACKS = CTX / "packs"
 
 SUMMARY_CAP = 160
@@ -27,15 +28,26 @@ SECTION_CAP = 140
 MAX_SECTIONS = 6
 
 
-def ensure_repo(repo: str, dest_name: str | None = None) -> Path:
+def ensure_repo(
+    repo: str, dest_name: str | None = None, local: bool = False
+) -> Path:
     """Vendored clone or shallow clone; returns the local path.
 
     `dest_name` overrides the directory name — needed when two repos
     share a basename (e.g. anthropics/skills and cloudflare/skills both
     end in 'skills', which would collide on vendor dir and pack file).
+
+    With `local=True` the entry is vendored by hand (no GitHub clone);
+    the directory must already exist.
     """
     name = dest_name or repo.split("/")[-1]
     dest = VENDOR / name
+    if local:
+        if not (dest / ".git").exists():
+            raise FileNotFoundError(
+                f"local vendored repo missing: {dest} (clone or copy it there)"
+            )
+        return dest
     if not (dest / ".git").exists():
         VENDOR.mkdir(parents=True, exist_ok=True)
         print(f"cloning {repo} -> {dest}")
@@ -164,7 +176,7 @@ def main() -> int:
 
     for entry in schema.get("repos", []):
         repo = entry["repo"]
-        vendor = ensure_repo(repo, entry.get("dest"))
+        vendor = ensure_repo(repo, entry.get("dest"), entry.get("local", False))
         skills = entry.get("skills")
         if not skills:
             skills = [
@@ -182,7 +194,9 @@ def main() -> int:
             body = "\n".join(f"- {line}" for line in lines)
             sections.append(f"\n## {name}\n\n{body}")
 
-        vendor_name = entry.get("dest") or repo.split("/")[-1]
+        # Pack name: explicit `pack` overrides (needed when `dest` is '.'
+        # because the clone is the vendor root itself).
+        vendor_name = entry.get("pack") or entry.get("dest") or repo.split("/")[-1]
         pack = PACKS / f"skills-{vendor_name}.md"
         pack.write_text(f"# {prefix}/{vendor_name}\n" + "\n".join(sections) + "\n")
         result = subprocess.run(["cx", "add", str(pack)])
