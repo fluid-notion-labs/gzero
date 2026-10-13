@@ -147,6 +147,14 @@ Everything lives in this repo (`nursery/contextual`), crate
   time.
 - *Acceptance:* stable ranking; every ranked item carries a
   human-readable why in `--json`.
+- *Done 2026-10:* `item_rank` — score = priority·1000 + unblocks·100
+  + in_progress·50 + min(age_days, 30); `Ranked { item, score, why }`
+  with one evidence phrase per factor; `cx item ready` and `plan_next`
+  rank with score + why (both text and `--json`); WIP limit (3 in
+  progress per scope, evaluated at claim time — a rule, never merged
+  state); `gate`/`gate_met` LWW fields — closing is refused while a
+  gate is set and unmet (`cx item gate <id> --met`); `item_gate` MCP
+  tool; later the resident's annotations set `gate_met` automatically.
 
 ### W5 — doc-set migration (workflow-content rule complete)
 

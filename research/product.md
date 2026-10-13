@@ -66,9 +66,9 @@ Features:
 ## Status (2026-10)
 
 - Shipped: bag + per-session injection + pi plugin + hub (atoms);
-  WS local: sections (W1), work items (W2); workflow pane + Ctrl+W
-  section viewer in the plugin.
-- In progress: W3 — plan-task injection (plan_next, pinned items,
-  skill-activation seed atom).
-- Then: W4 (policy/ranking), W5 (docs migrate into WS), Track D
+  WS local: sections (W1), work items (W2), plan-task injection
+  (W3 — plan_next, pinned items in resolve, skill-activation seed);
+  policy & ranking (W4 — scheduler with score + evidence, WIP limit,
+  gates on close).
+- Next: W5 (docs migrate into WS, files become stubs), then Track D
   (distribution). Resident track is far later — see architecture.md.

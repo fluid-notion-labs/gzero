@@ -64,6 +64,7 @@ const EXPECTED_TOOLS = [
   "item_add",
   "item_ready",
   "item_pin",
+  "item_gate",
   "plan_next",
 ];
 

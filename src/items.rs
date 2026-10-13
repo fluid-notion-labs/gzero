@@ -126,6 +126,10 @@ pub struct WorkItem {
     pub blocks: BTreeSet<String>,
     pub discovered_from: BTreeSet<String>,
     pub child_of: BTreeSet<String>,
+    /// W4 gate: what must pass before this item can close. Empty = no
+    /// gate. Later the resident's annotations set `gate_met` for us.
+    pub gate: String,
+    pub gate_met: bool,
 }
 
 impl WorkItem {
@@ -133,6 +137,19 @@ impl WorkItem {
         self.status != Status::Closed
     }
 }
+
+/// W4 scheduler ranking over one item: score plus human-readable
+/// evidence. Stable: the same doc state always yields the same order.
+#[derive(Debug, Clone)]
+pub struct Ranked {
+    pub item: WorkItem,
+    pub score: f64,
+    pub why: Vec<String>,
+}
+
+/// W4 admission policy: max items in progress per scope. Evaluated
+/// locally at write time — capacity is a rule, not merged state.
+pub const WIP_LIMIT: usize = 3;
 
 /// Fields for `item_add` (defaults via `Default`).
 #[derive(Debug, Clone, Default)]
@@ -146,6 +163,7 @@ pub struct NewItem {
     pub child_of: Vec<String>,
     pub acceptance: String,
     pub design: String,
+    pub gate: String,
 }
 
 /// LWW field edits for `item_edit`.
@@ -157,6 +175,8 @@ pub struct ItemEdit {
     pub acceptance: Option<String>,
     pub design: Option<String>,
     pub status: Option<Status>,
+    pub gate: Option<String>,
+    pub gate_met: Option<bool>,
 }
 
 impl AutomergeStore {
@@ -186,6 +206,7 @@ impl AutomergeStore {
         self.doc.put(&rec, "assignee", new.assignee.as_str())?;
         self.doc.put(&rec, "acceptance", new.acceptance.as_str())?;
         self.doc.put(&rec, "design", new.design.as_str())?;
+        self.doc.put(&rec, "gate", new.gate.as_str())?;
         self.doc.put(&rec, "created", created_millis())?;
         for sub in ["labels", "notes", "blocks", "discovered_from", "child_of"] {
             self.doc.put_object(&rec, sub, ObjType::Map)?;
@@ -320,6 +341,12 @@ impl AutomergeStore {
         if let Some(a) = &edit.acceptance {
             self.doc.put(&rec, "acceptance", a.as_str())?;
         }
+        if let Some(g) = &edit.gate {
+            self.doc.put(&rec, "gate", g.as_str())?;
+        }
+        if let Some(m) = edit.gate_met {
+            self.doc.put(&rec, "gate_met", if m { 1i64 } else { 0i64 })?;
+        }
         if let Some(d) = &edit.design {
             self.doc.put(&rec, "design", d.as_str())?;
         }
@@ -331,11 +358,24 @@ impl AutomergeStore {
         Ok(self.item_get(scope, id)?.expect("item exists"))
     }
 
-    /// `open -> in_progress`.
+    /// `open -> in_progress`, subject to the WIP limit (W4). The item
+    /// being claimed doesn't count against its own claim.
     pub fn item_claim(&mut self, scope: &str, id: &str) -> Result<WorkItem> {
+        let full = self.item_resolve(scope, id)?;
+        let in_prog = self
+            .item_list(scope)?
+            .iter()
+            .filter(|it| it.status == Status::InProgress && it.id != full)
+            .count();
+        if in_prog >= WIP_LIMIT {
+            return Err(format!(
+                "capacity: {} item(s) already in progress (wip limit {}) — close or park one first",
+                in_prog, WIP_LIMIT
+            ).into());
+        }
         self.item_edit(
             scope,
-            id,
+            &full,
             ItemEdit {
                 status: Some(Status::InProgress),
                 ..Default::default()
@@ -343,16 +383,60 @@ impl AutomergeStore {
         )
     }
 
-    /// Any non-closed -> `closed`.
+    /// Any non-closed -> `closed`. Refused while a gate is set and not
+    /// met (W4): the gate text says what must pass. Later, resident
+    /// annotations mark gates met automatically.
     pub fn item_close(&mut self, scope: &str, id: &str) -> Result<WorkItem> {
+        let full = self.item_resolve(scope, id)?;
+        let item = self
+            .item_get(scope, &full)?
+            .ok_or_else(|| format!("item: {full} not found"))?;
+        if !item.gate.trim().is_empty() && !item.gate_met {
+            return Err(format!(
+                "gate not met on {}: {} — mark it met first (`cx item gate {} --met`)",
+                full, item.gate, full
+            ).into());
+        }
         self.item_edit(
             scope,
-            id,
+            &full,
             ItemEdit {
                 status: Some(Status::Closed),
                 ..Default::default()
             },
         )
+    }
+
+    /// W4 gate: set the gate description and/or mark it met/unmet.
+    /// Closing is refused while a gate is set and unmet.
+    pub fn item_gate(
+        &mut self,
+        scope: &str,
+        id: &str,
+        gate: Option<&str>,
+        met: Option<bool>,
+    ) -> Result<WorkItem> {
+        if let Some(g) = gate {
+            self.item_edit(
+                scope,
+                id,
+                ItemEdit {
+                    gate: Some(g.trim().to_string()),
+                    ..Default::default()
+                },
+            )?;
+        }
+        if let Some(m) = met {
+            self.item_edit(
+                scope,
+                id,
+                ItemEdit {
+                    gate_met: Some(m),
+                    ..Default::default()
+                },
+            )?;
+        }
+        self.item_get(scope, id)?.ok_or_else(|| "item: vanished".into())
     }
 
     /// `closed -> open`.
@@ -517,44 +601,70 @@ impl AutomergeStore {
         Ok(out)
     }
 
-    /// plan_next fold: top ready items ranked, each with human-readable
-    /// evidence of why it is ready (unblocked, priority, labels,
-    /// notes, subtasks).
-    pub fn item_plan_next(&self, scope: &str, limit: usize) -> Result<Vec<(WorkItem, String)>> {
+    /// W4 scheduler: score every ready (open, unblocked) item.
+    ///
+    /// Weights: priority dominates (×1000), then how many open items
+    /// it unblocks (×100), then already-in-progress (+50), then a
+    /// gentle age tie-breaker capped at 30 days. Same doc state → same
+    /// order (age is the only time-varying term and is capped).
+    pub fn item_rank(&self, scope: &str) -> Result<Vec<Ranked>> {
         let all = self.item_list(scope)?;
-        Ok(self
-            .item_ready(scope)?
-            .into_iter()
-            .take(limit)
-            .map(|it| {
-                let mut parts = vec!["unblocked".to_string()];
-                if it.status == Status::InProgress {
-                    parts.push("in progress".to_string());
-                }
-                parts.push(format!("p{}", it.priority));
-                if !it.labels.is_empty() {
-                    parts.push(
-                        it.labels
-                            .iter()
-                            .cloned()
-                            .collect::<Vec<_>>()
-                            .join(","),
-                    );
-                }
-                let notes = it.notes.len();
-                if notes > 0 {
-                    parts.push(format!("{notes} notes"));
-                }
-                let kids = all
-                    .iter()
-                    .filter(|other| other.child_of.contains(&it.id))
-                    .count();
-                if kids > 0 {
-                    parts.push(format!("{kids} subtasks"));
-                }
-                (it, parts.join(" · "))
+        let now_ms = created_millis().max(0) as u64;
+        let mut out: Vec<Ranked> = all
+            .iter()
+            .filter(|it| it.is_open())
+            .filter(|it| {
+                !all.iter()
+                    .any(|other| other.blocks.contains(&it.id) && other.status != Status::Closed)
             })
-            .collect())
+            .map(|it| {
+                let unblocks = all
+                    .iter()
+                    .filter(|other| it.blocks.contains(&other.id) && other.status != Status::Closed)
+                    .count();
+                let age_days = if it.created > 0 && now_ms > it.created {
+                    (now_ms - it.created) as f64 / 86_400_000.0
+                } else {
+                    0.0
+                };
+                let started = it.status == Status::InProgress;
+                let score = it.priority as f64 * 1000.0
+                    + unblocks as f64 * 100.0
+                    + if started { 50.0 } else { 0.0 }
+                    + age_days.min(30.0);
+                let mut why = vec!["unblocked".to_string()];
+                why.push(format!("priority {}", it.priority));
+                if unblocks > 0 {
+                    why.push(format!("unblocks {unblocks}"));
+                }
+                if started {
+                    why.push("in progress".to_string());
+                }
+                if age_days >= 1.0 {
+                    why.push(format!("open {:.0}d", age_days));
+                }
+                if !it.gate.trim().is_empty() && !it.gate_met {
+                    why.push("gate pending".to_string());
+                }
+                Ranked {
+                    item: it.clone(),
+                    score,
+                    why,
+                }
+            })
+            .collect();
+        out.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then(a.item.id.cmp(&b.item.id))
+        });
+        Ok(out)
+    }
+
+    /// plan_next fold: top ranked items with their evidence.
+    pub fn item_plan_next(&self, scope: &str, limit: usize) -> Result<Vec<Ranked>> {
+        Ok(self.item_rank(scope)?.into_iter().take(limit).collect())
     }
 
     /// Items that are children of `id` (reverse `child_of` lookup).
@@ -635,6 +745,8 @@ impl AutomergeStore {
             blocks: set_of("blocks"),
             discovered_from: set_of("discovered_from"),
             child_of: set_of("child_of"),
+            gate: self.sval(rec, "gate"),
+            gate_met: self.ival(rec, "gate_met") != 0,
         }
     }
 }
@@ -804,14 +916,69 @@ mod tests {
         let mut r = new("root");
         r.blocks = vec![blocked.id.clone()];
         let root = s.item_add("sc", r).unwrap();
-        let pairs = s.item_plan_next("sc", 5).unwrap();
+        let ranked = s.item_plan_next("sc", 5).unwrap();
         // alpha and the (unblocked) blocker are ready; blocked is not
-        assert_eq!(pairs.len(), 2, "blocked item is not ready");
-        assert_eq!(pairs[0].0.id, a.id, "higher priority ranks first");
-        assert!(pairs[0].1.contains("unblocked"));
-        assert!(pairs[0].1.contains("p4"));
-        assert!(pairs[0].1.contains("1 notes"));
-        assert_eq!(pairs[1].0.id, root.id);
+        assert_eq!(ranked.len(), 2, "blocked item is not ready");
+        assert_eq!(ranked[0].item.id, a.id, "higher priority ranks first");
+        assert!(ranked[0].why.iter().any(|w| w == "unblocked"));
+        assert!(ranked[0].why.iter().any(|w| w == "priority 4"));
+        assert_eq!(ranked[1].item.id, root.id);
+        // unblocks is counted: root blocks one open item
+        assert!(ranked[1]
+            .why
+            .iter()
+            .any(|w| w == "unblocks 1"), "root's evidence names the unblocked count");
+    }
+
+    #[test]
+    fn ranking_is_stable() {
+        // equal priority: ranking is deterministic, older item first
+        // (gentle aging tie-breaker); repeated calls give the same order
+        let mut s = AutomergeStore::in_memory().unwrap();
+        let x = s.item_add("sc", new("x")).unwrap();
+        let y = s.item_add("sc", new("y")).unwrap();
+        let first: Vec<String> = s
+            .item_plan_next("sc", 10)
+            .unwrap()
+            .into_iter()
+            .map(|r| r.item.id)
+            .collect();
+        let second: Vec<String> = s
+            .item_plan_next("sc", 10)
+            .unwrap()
+            .into_iter()
+            .map(|r| r.item.id)
+            .collect();
+        assert_eq!(first, second, "same doc state, same order");
+        assert_eq!(first, vec![x.id, y.id], "older item ranks first on ties");
+    }
+
+    #[test]
+    fn wip_limit_blocks_excess_claims() {
+        let mut s = AutomergeStore::in_memory().unwrap();
+        let mut ids = Vec::new();
+        for n in 0..4 {
+            ids.push(s.item_add("sc", new(&format!("item{n}"))).unwrap().id);
+        }
+        for id in &ids[..3] {
+            s.item_claim("sc", id).unwrap();
+        }
+        assert!(s.item_claim("sc", &ids[3]).is_err(), "fourth claim hits the wip limit");
+        // reclaiming an in-progress item is fine (doesn't count itself)
+        s.item_claim("sc", &ids[0]).unwrap();
+        s.item_close("sc", &ids[1]).unwrap();
+        s.item_claim("sc", &ids[3]).unwrap();
+    }
+
+    #[test]
+    fn gate_blocks_close_until_met() {
+        let mut s = AutomergeStore::in_memory().unwrap();
+        let mut n = new("gated");
+        n.gate = "tests green".into();
+        let it = s.item_add("sc", n).unwrap();
+        assert!(s.item_close("sc", &it.id).is_err());
+        s.item_gate("sc", &it.id, None, Some(true)).unwrap();
+        s.item_close("sc", &it.id).unwrap();
     }
 
     #[test]

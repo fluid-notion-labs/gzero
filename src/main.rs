@@ -81,6 +81,7 @@ cx item edit <id> [--title T] [--priority N] [--assignee A]
                  [--design TEXT | --design-file F] [--status open|in_progress|closed]
 cx item claim <id> / close <id> / reopen <id>
 cx item note <id> \"<text>\" append a note (append-only)
+cx item gate <id> [--met|--unmet] [\"text\"]  set/satisfy the close gate
 cx item label <id> add|rm <label>
 cx item edge <id> add|rm blocks|child-of|discovered-from <target>
 cx item rm <id>   delete an item
@@ -454,14 +455,23 @@ fn bag_path() -> PathBuf {
 /// `~/.pi/agent/context.ws`). Scope defaults to this repo's identity.
 /// Split `--flag value` / `--json` flags from positional arguments.
 fn split_args(args: &[String], cmd: &str) -> (BTreeMap<String, String>, Vec<String>) {
+    split_args_bools(args, cmd, &["json"])
+}
+
+/// `bools` are valueless flags: `--met`, not `--met <value>`.
+fn split_args_bools(
+    args: &[String],
+    cmd: &str,
+    bools: &[&str],
+) -> (BTreeMap<String, String>, Vec<String>) {
     let mut flags: BTreeMap<String, String> = BTreeMap::new();
     let mut pos: Vec<String> = Vec::new();
     let mut i = 0;
     while i < args.len() {
         let a = args[i].clone();
         if let Some(f) = a.strip_prefix("--") {
-            if f == "json" {
-                flags.insert("json".into(), String::new());
+            if bools.contains(&f) {
+                flags.insert(f.to_string(), String::new());
             } else {
                 match args.get(i + 1) {
                     Some(v) => {
@@ -700,7 +710,7 @@ fn open_ws() -> AutomergeStore {
 /// Work items (plan3 W2): named records with a lifecycle, stored in
 /// the same workflow doc as sections. Id prefixes resolve when unique.
 fn item_command(args: &[String]) {
-    let (flags, pos) = split_args(args, "item");
+    let (flags, pos) = split_args_bools(args, "item", &["json", "met", "unmet"]);
     let json = flags.contains_key("json");
     let sub = pos.first().map(String::as_str).unwrap_or("help");
     let scope = flags
@@ -744,6 +754,7 @@ fn item_command(args: &[String]) {
                 child_of: flag_list(&flags, "child-of"),
                 acceptance: flags.get("acceptance").cloned().unwrap_or_default(),
                 design: flag_text(&flags, "design", "design-file"),
+                gate: flags.get("gate").cloned().unwrap_or_default(),
             };
             let it = store
                 .item_add(&scope, n)
@@ -755,10 +766,18 @@ fn item_command(args: &[String]) {
             }
         }
         "list" | "ready" => {
+            let ranked = if sub == "ready" {
+                Some(store.item_rank(&scope).unwrap_or_else(|e| die("cx item", e)))
+            } else {
+                None
+            };
             let items = if sub == "ready" {
-                store
-                    .item_ready(&scope)
-                    .unwrap_or_else(|e| die("cx item", e))
+                ranked
+                    .as_ref()
+                    .unwrap()
+                    .iter()
+                    .map(|r| r.item.clone())
+                    .collect::<Vec<_>>()
             } else {
                 let mut items = store
                     .item_list(&scope)
@@ -823,8 +842,17 @@ fn item_command(args: &[String]) {
                     );
                 }
             } else {
+                let ranked = ranked.unwrap();
                 if json {
-                    let arr: Vec<_> = items.iter().map(item_json).collect();
+                    let arr: Vec<_> = ranked
+                        .iter()
+                        .map(|r| {
+                            let mut o = item_json(&r.item);
+                            o["score"] = serde_json::json!(r.score);
+                            o["why"] = serde_json::json!(r.why);
+                            o
+                        })
+                        .collect();
                     println!("{}", serde_json::to_string_pretty(&arr).unwrap());
                     return;
                 }
@@ -832,8 +860,15 @@ fn item_command(args: &[String]) {
                     println!("(nothing ready in {scope})");
                     return;
                 }
-                for it in &items {
-                    println!("{:<8} p{:<3} {}", it.id, it.priority, it.title);
+                for r in &ranked {
+                    println!(
+                        "{:<8} {:>7.0} p{:<3} {} — {}",
+                        r.item.id,
+                        r.score,
+                        r.item.priority,
+                        r.item.title,
+                        r.why.join(" · ")
+                    );
                 }
             }
         }
@@ -912,6 +947,8 @@ fn item_command(args: &[String]) {
                 },
                 acceptance: flags.get("acceptance").cloned(),
                 status,
+                gate: flags.get("gate").cloned(),
+                gate_met: None,
             };
             let it = store
                 .item_edit(&scope, &id, edit)
@@ -927,6 +964,30 @@ fn item_command(args: &[String]) {
             }
             .unwrap_or_else(|e| die("cx item", e));
             println!("{} {} -> {}", scope, it.id, it.status.as_str());
+        }
+        "gate" => {
+            let id = id_of(&pos, 1, "cx item gate <id> [--met|--unmet] [\"text\"]");
+            let met = if flags.contains_key("met") {
+                Some(true)
+            } else if flags.contains_key("unmet") {
+                Some(false)
+            } else {
+                None
+            };
+            let text = pos.get(2).map(String::as_str);
+            if met.is_none() && text.is_none() {
+                eprintln!("cx item: usage: cx item gate <id> [--met|--unmet] [\"text\"]");
+                exit(2);
+            }
+            let it = store
+                .item_gate(&scope, &id, text, met)
+                .unwrap_or_else(|e| die("cx item", e));
+            println!(
+                "{}: gate={} met={}",
+                it.id,
+                if it.gate.is_empty() { "(none)" } else { &it.gate },
+                it.gate_met
+            );
         }
         "pin" | "unpin" => {
             let id = id_of(&pos, 1, "cx item pin|unpin <id>");

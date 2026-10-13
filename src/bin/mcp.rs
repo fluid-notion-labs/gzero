@@ -228,7 +228,7 @@ fn call_tool(
             }
         }
         "item_add" | "item_list" | "item_ready" | "item_get" | "item_edit" | "item_note"
-        | "item_delete" | "item_pin" => {
+        | "item_delete" | "item_pin" | "item_gate" => {
             let mut ws = ws_store()?;
             match name {
                 "item_add" => tool_item_add(&args, &mut ws)?,
@@ -238,6 +238,7 @@ fn call_tool(
                 "item_edit" => tool_item_edit(&args, &mut ws)?,
                 "item_note" => tool_item_note(&args, &mut ws)?,
                 "item_pin" => tool_item_pin(&args, &mut ws)?,
+                "item_gate" => tool_item_gate(&args, &mut ws)?,
                 _ => tool_item_delete(&args, &mut ws)?,
             }
         }
@@ -670,6 +671,7 @@ fn item_json(it: &WorkItem) -> serde_json::Value {
         "blocks": it.blocks.iter().collect::<Vec<_>>(),
         "child_of": it.child_of.iter().collect::<Vec<_>>(),
         "discovered_from": it.discovered_from.iter().collect::<Vec<_>>(),
+        "gate": it.gate, "gate_met": it.gate_met,
     })
 }
 
@@ -701,6 +703,11 @@ fn tool_item_add(args: &serde_json::Value, store: &mut AutomergeStore) -> Result
             .to_string(),
         design: args
             .get("design")
+            .and_then(|a| a.as_str())
+            .unwrap_or("")
+            .to_string(),
+        gate: args
+            .get("gate")
             .and_then(|a| a.as_str())
             .unwrap_or("")
             .to_string(),
@@ -784,26 +791,61 @@ fn tool_plan_next(args: &serde_json::Value, store: &AutomergeStore) -> Result<St
         .and_then(|v| v.as_u64())
         .unwrap_or(5)
         .clamp(1, 20) as usize;
-    let pairs = store
+    let json = args.get("json").and_then(|v| v.as_bool()).unwrap_or(false);
+    let ranked = store
         .item_plan_next(&scope, limit)
         .map_err(|e| e.to_string())?;
-    if pairs.is_empty() {
+    if ranked.is_empty() {
         return Ok(format!(
             "nothing ready: no open unblocked items in {scope}"
         ));
     }
+    if json {
+        let arr: Vec<_> = ranked
+            .iter()
+            .map(|r| {
+                let mut o = item_json(&r.item);
+                o["score"] = serde_json::json!(r.score);
+                o["why"] = serde_json::json!(r.why);
+                o
+            })
+            .collect();
+        return Ok(serde_json::to_string_pretty(&arr).unwrap());
+    }
     let mut out = format!("next up in {scope} — top ready items, ranked:\n");
-    for (it, why) in &pairs {
+    for r in &ranked {
         out.push_str(&format!(
             "- {} {} (p{}, {}) — {}\n",
-            it.id,
-            it.title,
-            it.priority,
-            it.status.as_str(),
-            why
+            r.item.id,
+            r.item.title,
+            r.item.priority,
+            r.item.status.as_str(),
+            r.why.join(" · ")
         ));
     }
     Ok(out)
+}
+
+fn tool_item_gate(args: &serde_json::Value, store: &mut AutomergeStore) -> Result<String, String> {
+    let id = args
+        .get("id")
+        .and_then(|v| v.as_str())
+        .ok_or("item_gate: missing id")?;
+    let scope = ws_scope_arg(args);
+    let gate = args.get("gate").and_then(|v| v.as_str());
+    let met = args.get("met").and_then(|v| v.as_bool());
+    if gate.is_none() && met.is_none() {
+        return Err("item_gate: provide 'gate' (description) and/or 'met'".into());
+    }
+    let it = store
+        .item_gate(&scope, id, gate, met)
+        .map_err(|e| e.to_string())?;
+    Ok(format!(
+        "{}: gate={} met={}",
+        it.id,
+        if it.gate.is_empty() { "(none)" } else { &it.gate },
+        it.gate_met
+    ))
 }
 
 fn tool_item_get(args: &serde_json::Value, store: &AutomergeStore) -> Result<String, String> {
@@ -842,6 +884,8 @@ fn tool_item_edit(args: &serde_json::Value, store: &mut AutomergeStore) -> Resul
             .and_then(|a| a.as_str())
             .map(String::from),
         status,
+        gate: args.get("gate").and_then(|g| g.as_str()).map(String::from),
+        gate_met: args.get("gate_met").and_then(|m| m.as_bool()),
     };
     let it = store
         .item_edit(&scope, &id, edit)
@@ -1217,6 +1261,20 @@ const TOOLS: &str = r#"[
         "limit": { "type": "integer", "description": "Default 5, max 20." },
         "scope": { "type": "string", "description": "Omit for the current project." }
       }
+    }
+  },
+  {
+    "name": "item_gate",
+    "description": "Set or satisfy an item's gate (W4): 'gate' is what must pass before the item can close; 'met' true/false records that it passed. Closing is refused while a gate is set and unmet.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "gate": { "type": "string", "description": "Set the gate description." },
+        "met": { "type": "boolean", "description": "Mark the gate met/unmet." },
+        "scope": { "type": "string", "description": "Omit for the current project." }
+      },
+      "required": ["id"]
     }
   },
   {
