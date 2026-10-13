@@ -29,6 +29,57 @@ export interface WorkflowPage {
   note?: string;
 }
 
+/**
+ * Render markdown tables as aligned plain-text columns. A table is a
+ * run of consecutive lines that start and end with `|`; the `---`
+ * separator row is dropped, columns are sized to their widest cell,
+ * and a dash rule sits under the header. Non-table lines pass through
+ * unchanged, so section bodies keep their shape.
+ */
+export function renderTables(md: string): string {
+  const lines = md.split("\n");
+  const isRow = (l: string) => /^\s*\|.*\|\s*$/.test(l);
+  const out: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    if (!isRow(lines[i])) {
+      out.push(lines[i]);
+      i++;
+      continue;
+    }
+    const start = i;
+    while (i < lines.length && isRow(lines[i])) i++;
+    const rows = lines
+      .slice(start, i)
+      .map((l) =>
+        l
+          .trim()
+          .slice(1, -1)
+          .split("|")
+          .map((c) => c.trim()),
+      )
+      // drop separator rows (|---|---|)
+      .filter((cells) => !cells.every((c) => /^:?-{2,}:?$/.test(c) || c === ""));
+    if (rows.length === 0) continue;
+    const cols = Math.max(...rows.map((r) => r.length));
+    const widths: number[] = [];
+    for (const row of rows) {
+      for (let c = 0; c < cols; c++) {
+        widths[c] = Math.max(widths[c] ?? 0, (row[c] ?? "").length);
+      }
+    }
+    const line = (cells: string[]) =>
+      cells
+        .map((cell, c) => (cell ?? "").padEnd(widths[c]))
+        .join("  ")
+        .trimEnd();
+    out.push(line(rows[0]));
+    out.push(widths.map((w) => "─".repeat(w)).join("  "));
+    for (const row of rows.slice(1)) out.push(line(row));
+  }
+  return out.join("\n");
+}
+
 /** Work items tab body: the child_of tree as indented rows. */
 export function buildItemBody(rows: FlatRow[], inner: number, t: Theme): string[] {
   const lines: string[] = [];
@@ -73,7 +124,7 @@ export function buildSectionBody(
   for (const section of sections) {
     for (const node of section.nodes) {
       lines.push(` ${divider(node.label)}`);
-      for (const wrapped of wrapPlain(node.text || "(empty)", inner - 1)) {
+      for (const wrapped of wrapPlain(renderTables(node.text || "(empty)"), inner - 1)) {
         lines.push(` ${wrapped}`);
       }
       lines.push("");
