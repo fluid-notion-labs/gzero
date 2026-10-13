@@ -16,6 +16,7 @@ import type {
 } from "@earendil-works/pi-tui";
 import { truncateToWidth } from "@earendil-works/pi-tui";
 import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
+import { buildItemTree, flattenTree, type RawItem } from "./items-tree.ts";
 
 export interface ItemRow {
   id: string;
@@ -23,6 +24,8 @@ export interface ItemRow {
   priority: number;
   status: string;
   blocked_by: string[];
+  /** Tree depth from child_of edges; rendered as two spaces per level. */
+  depth: number;
 }
 
 interface JsonItem {
@@ -31,6 +34,7 @@ interface JsonItem {
   priority: number;
   status: string;
   blocked_by?: string[];
+  child_of?: string[];
 }
 
 const STATUS_ICON: Record<string, { icon: string; color: "muted" | "accent" | "success" }> = {
@@ -39,7 +43,7 @@ const STATUS_ICON: Record<string, { icon: string; color: "muted" | "accent" | "s
   closed: { icon: "✓", color: "success" },
 };
 
-const MAX_ROWS = 18;
+const MAX_ROWS = 28;
 
 export function run(
   cmd: string,
@@ -53,13 +57,6 @@ export function run(
       resolve({ stdout, stderr, code });
     });
   });
-}
-
-/** Rank for pane order: active work on top, blocked after, closed last. */
-function rank(row: ItemRow): number {
-  if (row.status === "closed") return 2;
-  if (row.blocked_by.length > 0) return 1;
-  return row.status === "in_progress" ? 0 : 1;
 }
 
 export class ItemsPane implements Component {
@@ -123,19 +120,19 @@ export class ItemsPane implements Component {
       }
       return false;
     }
-    const rows: ItemRow[] = items.map((it) => ({
-      id: String(it.id ?? ""),
-      title: String(it.title ?? ""),
-      priority: Number(it.priority ?? 0),
-      status: String(it.status ?? "open"),
-      blocked_by: Array.isArray(it.blocked_by) ? it.blocked_by.map(String) : [],
+    // Tree order via items-tree: children trail their parent, siblings
+    // sorted by rankForSort (status, priority). Depth drives indentation.
+    const flat = flattenTree(buildItemTree(items as unknown as RawItem[]));
+    const rows: ItemRow[] = flat.map((f) => ({
+      id: String(f.item.id ?? ""),
+      title: String(f.item.title ?? ""),
+      priority: Number(f.item.priority ?? 0),
+      status: String(f.item.status ?? "open"),
+      blocked_by: Array.isArray(f.item.blocked_by)
+        ? f.item.blocked_by.map(String)
+        : [],
+      depth: f.depth,
     }));
-    rows.sort(
-      (a, b) =>
-        rank(a) - rank(b) ||
-        b.priority - a.priority ||
-        a.id.localeCompare(b.id),
-    );
     const scope = (items[0] as { scope?: string } | undefined)?.scope ?? "";
     const key = JSON.stringify(rows.slice(0, MAX_ROWS)) + scope;
     this.scopeLabel = shortScope(scope);
@@ -152,7 +149,7 @@ export class ItemsPane implements Component {
     const theme = this.theme;
     if (!theme || width < 12) return [];
     if (this.lines && this.cacheWidth === width) return this.lines;
-    const w = Math.min(width, 44);
+    const w = Math.min(width, 60);
     const inner = w - 4; // │ + space + content + space + │
     const lines: string[] = [];
 
@@ -184,8 +181,9 @@ export class ItemsPane implements Component {
         const blocked = row.blocked_by.length > 0 && row.status !== "closed";
         const glyph = blocked ? "⊘" : icon.icon;
         const color = blocked ? ("warning" as const) : icon.color;
+        const indent = "  ".repeat(row.depth);
         const label = truncateToWidth(
-          `${row.id} ${row.priority !== 0 ? `p${row.priority} ` : ""}${row.title}`,
+          `${indent}${row.id} ${row.priority !== 0 ? `p${row.priority} ` : ""}${row.title}`,
           inner - 2,
         );
         const styled =
@@ -275,9 +273,9 @@ export class ItemsPaneController {
         {
           overlay: true,
           overlayOptions: () => ({
-            width: 34,
-            minWidth: 24,
-            maxHeight: "85%",
+            width: 46,
+            minWidth: 32,
+            maxHeight: "96%",
             anchor: "top-right",
             margin: { top: 2, right: 1 },
             nonCapturing: true,
