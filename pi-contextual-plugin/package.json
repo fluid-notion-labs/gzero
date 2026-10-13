@@ -1,5 +1,8 @@
 {
   "name": "pi-contextual-plugin",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "scripts": {
+    "test": "node --test --test-timeout=5000 --import ./tests/deps.mjs tests/*.test.ts"
+  }
 }
