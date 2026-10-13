@@ -177,6 +177,7 @@ export function buildSectionBody(
   for (const section of sections) {
     for (const node of section.nodes) {
       lines.push(` ${divider(node.label)}`);
+      lines.push(""); // breathing room between the divider and the body
       for (const wrapped of wrapPlain(renderTables(reflowMarkdown(node.text || "(empty)")), inner - 1)) {
         lines.push(` ${wrapped}`);
       }
