@@ -363,118 +363,24 @@ class TierViewer implements Component, Focusable {
   }
 }
 
-// ---- work items viewer: Ctrl+W full-screen viewer ----
-// Pure tree/row logic lives in items-tree.ts (unit-tested there).
+// ---- Ctrl+W viewer: tabbed work items / workflow sections ----
+// Tree logic lives in items-tree.ts, the viewer component in
+// workflow-viewer.ts (both unit-tested).
 
 import {
   buildItemTree,
   flattenTree,
-  padToVisible,
   type FlatRow,
   type RawItem,
 } from "./items-tree.ts";
+import {
+  WorkflowViewer,
+  buildItemBody,
+  buildSectionBody,
+  type WorkflowPage,
+} from "./workflow-viewer.ts";
 
-const STATUS_ICON_FULL: Record<string, { icon: string; color: "muted" | "accent" | "success" | "warning" }> = {
-  open: { icon: "○", color: "muted" },
-  in_progress: { icon: "●", color: "accent" },
-  closed: { icon: "✓", color: "success" },
-};
-
-class WorkItemsViewer implements Component, Focusable {
-  focused = false;
-  private window = new LineWindow(modalViewport());
-  private lines: string[] = [];
-  private cacheWidth = -1;
-  private cacheKey = "";
-  private theme: Theme | null = null;
-  private openCount = 0;
-
-  constructor(
-    private rows: FlatRow[],
-    private done: (result?: unknown) => void,
-    theme: Theme,
-  ) {
-    // pi-tui has no attach() lifecycle — components get their theme via
-    // the factory/constructor (see TierViewer). Relying on attach() left
-    // theme null and render() empty: an invisible full-screen overlay,
-    // which could even capture input (the "ctrl+w freezes pi" report).
-    this.theme = theme;
-    this.openCount = rows.filter((r) => r.item.status !== "closed").length;
-  }
-
-  invalidate(): void {
-    this.cacheWidth = -1;
-  }
-
-  private buildLines(width: number): string[] {
-    const t = this.theme;
-    if (!t) return [];
-    const key = JSON.stringify(this.rows.map((r) => [r.item.id, r.depth])) + width;
-    if (key === this.cacheKey && this.cacheWidth === width) return this.lines;
-
-    const inner = Math.max(width - 2, 20);
-    const lines: string[] = [];
-    for (const row of this.rows) {
-      const st = STATUS_ICON_FULL[row.item.status] ?? STATUS_ICON_FULL.open;
-      const blocked = row.item.blocked_by.length > 0 && row.item.status !== "closed";
-      const glyph = blocked ? "⊘" : st.icon;
-      const color = blocked ? "warning" : st.color;
-      const indent = "  ".repeat(row.depth);
-      const prefix = indent + glyph + " ";
-      const meta = `${row.item.id}${row.item.priority !== 0 ? ` p${row.item.priority}` : ""}`;
-      const titleWidth = Math.max(0, inner - prefix.length - meta.length - 1);
-      const title = truncateToWidth(row.item.title, titleWidth);
-      const line =
-        t.fg(color, prefix) +
-        (row.item.status === "closed" ? t.fg("dim", title) : t.fg("text", title)) +
-        " " +
-        t.fg("dim", meta);
-      lines.push(padToVisible(line, inner));
-    }
-    if (lines.length === 0) {
-      lines.push(` ${t.fg("dim", "(no items)")}`);
-    }
-    this.lines = lines;
-    this.cacheKey = key;
-    this.cacheWidth = width;
-    this.window.setLines(lines);
-    return lines;
-  }
-
-  render(width: number): string[] {
-    const t = this.theme;
-    if (!t || width < 12) return [];
-    this.buildLines(width);
-    const inner = Math.max(width - 2, 20);
-    const header = ` work items · ${this.openCount} open `;
-    const hints = `↑↓ line · pgup/pgdn page · home/end · esc/q close`;
-    return boxFrame(width, [
-      t.fg("toolTitle", header.padEnd(inner)),
-      ...this.window.render().map((line) => ` ${line}`),
-      t.fg("dim", hints.padEnd(inner)),
-    ], (s: string) => t.fg("borderMuted", s));
-  }
-
-  handleInput(data: string): void {
-    if (matchesKey(data, "escape") || matchesKey(data, "q")) {
-      this.done();
-    } else if (matchesKey(data, "up") || matchesKey(data, "k")) {
-      this.window.scrollBy(-1);
-    } else if (matchesKey(data, "down") || matchesKey(data, "j")) {
-      this.window.scrollBy(1);
-    } else if (matchesKey(data, "pageUp")) {
-      this.window.scrollBy(-this.window.viewport + 2);
-    } else if (matchesKey(data, "pageDown")) {
-      this.window.scrollBy(this.window.viewport - 2);
-    } else if (matchesKey(data, "home")) {
-      this.window.scrollToStart();
-    } else if (matchesKey(data, "end") || data === "G") {
-      this.window.scrollToEnd();
-    }
-  }
-}
-
-// ---- workflow sections: Ctrl+W full-screen viewer ----
+// ---- workflow sections for the viewer's workflow tab ----
 
 /** Fetch JSON from the cx CLI; throws with stderr's first line. */
 async function cxJson(args: string[]): Promise<unknown> {
@@ -522,35 +428,55 @@ function renderChecklist(md: string, kind: string | undefined): string {
   });
 }
 
-async function openWorkItems(
+async function openWorkflow(
   ctx: ExtensionContext,
   pane: ItemsPaneController,
 ): Promise<void> {
   if (ctx.mode !== "tui") {
-    ctx.ui.notify("Work items need TUI mode", "warning");
+    ctx.ui.notify("The workflow viewer needs TUI mode", "warning");
     return;
   }
-  let raw: RawItem[] = [];
-  try {
-    raw = (await cxJson(["item", "list", "--json"])) as RawItem[];
-  } catch (e) {
+  const paneWasActive = pane.active;
+  pane.close();
+  // Fetch both tab sources concurrently; either may be missing — the
+  // viewer shows whichever tabs have content.
+  const [itemsRes, sectionsRes] = await Promise.allSettled([
+    cxJson(["item", "list", "--json"]) as Promise<RawItem[]>,
+    loadWorkflowSections(),
+  ]);
+  const pages: WorkflowPage[] = [];
+  if (itemsRes.status === "fulfilled") {
+    const rows = flattenTree(buildItemTree(itemsRes.value));
+    if (rows.length > 0) {
+      pages.push({
+        label: "items",
+        note: `${rows.filter((r) => r.item.status !== "closed").length} open`,
+        build: (inner, t) => buildItemBody(rows, inner, t),
+      });
+    }
+  }
+  if (sectionsRes.status === "fulfilled" && sectionsRes.value.length > 0) {
+    const sections = sectionsRes.value;
+    pages.push({
+      label: "workflow",
+      build: (inner, t) => buildSectionBody(sections, inner, t),
+    });
+  }
+  if (pages.length === 0) {
+    const err = (r: PromiseSettledResult<unknown>) =>
+      r.status === "rejected" && r.reason instanceof Error ? r.reason.message : "";
+    const problems = [err(itemsRes), err(sectionsRes)].filter(Boolean).join(" · ");
     ctx.ui.notify(
-      `Work items unavailable: ${e instanceof Error ? e.message : String(e)}`,
-      "warning",
+      problems
+        ? `Workflow unavailable: ${problems}`
+        : "Nothing to show — `cx item add` / `cx ws set` create content",
+      problems ? "warning" : "info",
     );
     return;
   }
-  if (raw.length === 0) {
-    ctx.ui.notify("No work items — `cx item add <title>` creates one", "info");
-    return;
-  }
-  const tree = buildItemTree(raw);
-  const rows = flattenTree(tree);
-  const paneWasActive = pane.active;
-  pane.close();
   try {
     await ctx.ui.custom(
-      (_tui, theme, _keybindings, done) => new WorkItemsViewer(rows, done, theme),
+      (_tui, theme, _keybindings, done) => new WorkflowViewer(pages, theme, done),
       {
         overlay: true,
         overlayOptions: { width: "100%", maxHeight: "100%", anchor: "center" },
@@ -562,9 +488,9 @@ async function openWorkItems(
 }
 
 /**
- * Editor wrapper: intercepts Ctrl+W (opens the work items
- * viewer); every other key forwards unchanged. Note: Ctrl+W was
- * `deleteWordBackward` — that remains available on alt+backspace.
+ * Editor wrapper: intercepts Ctrl+W (opens the workflow viewer); every
+ * other key forwards unchanged. Note: Ctrl+W was `deleteWordBackward`
+ * — that remains available on alt+backspace.
  */
 class WorkflowEditor extends CustomEditor {
   constructor(
@@ -751,11 +677,11 @@ export default function (pi: ExtensionAPI) {
     // the pane's custom interaction stays pending by design, so nothing
     // may await it. The pane itself opens fire-and-forget.
     if (ctx.mode === "tui") {
-      // Ctrl+W → full-screen workflow sections viewer.
+      // Ctrl+W → tabbed workflow viewer (work items / workflow sections).
       ctx.ui.setEditorComponent(
         (tui, theme, keybindings) =>
           new WorkflowEditor(tui, theme, keybindings, () =>
-            void openWorkItems(ctx, itemsPane),
+            void openWorkflow(ctx, itemsPane),
           ),
       );
       void itemsPane.open(ctx);
@@ -785,9 +711,9 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerCommand("workflow", {
-    description: "Open the work items viewer (same as Ctrl+W)",
+    description: "Open the workflow viewer (same as Ctrl+W)",
     handler: async (_args: string, ctx: ExtensionCommandContext) => {
-      await openWorkItems(ctx, itemsPane);
+      await openWorkflow(ctx, itemsPane);
     },
   });
 
