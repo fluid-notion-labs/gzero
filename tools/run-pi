@@ -1,0 +1,32 @@
+#!/bin/sh
+# Run pi against THIS checkout's plugin, skipping the blessed copy.
+#
+# The blessed extension at ~/.pi/agent/extensions/contextual is a
+# snapshot: it only changes when tools/bless-plugin.sh runs, so edits
+# made here don't reach a normal `pi` session. This wrapper instead
+# loads the plugin straight from the source tree:
+#
+#   tools/run-pi            # from anywhere; resolves the checkout it lives in
+#   tools/run-pi -p ~/proj  # args pass through to pi
+#
+#   --no-extensions      drops discovered/configured extensions, including
+#                        the blessed copy, so the plugin isn't loaded twice
+#   -e builtin:mcp       brings back pi's built-in MCP support, which
+#                        --no-extensions also disables; without it the
+#                        project's .pi/mcp.json servers (dev cx-mcp) don't connect
+#   -e builtin:codemode  same for codemode: MCP tools are only reachable
+#                        through it, so without this the context server's
+#                        tools can't be called
+#   -e <plugin>          the dev plugin, loaded from disk via jiti — no
+#                        build step, so `/reload` inside pi picks up edits live
+#
+# Blessing (tools/bless-plugin.sh) remains for running the plugin in a
+# plain `pi` session; this script is for iterating on it.
+set -e
+root="$(cd "$(dirname "$0")/.." && pwd)"
+[ -f "$root/pi-contextual-plugin/index.ts" ] || {
+	echo "no plugin at $root/pi-contextual-plugin" >&2
+	exit 1
+}
+exec pi --no-extensions -e builtin:mcp -e builtin:codemode \
+	-e "$root/pi-contextual-plugin" "$@"
