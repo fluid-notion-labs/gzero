@@ -119,6 +119,19 @@ test("done fires on escape and q", () => {
   assert.equal(closed, 2);
 });
 
+test("ctrl+w closes the panel (same shortcut toggles it)", () => {
+  let closed = 0;
+  const v = new WorkflowViewer(
+    [page("a", ["x"])],
+    theme as never,
+    () => {
+      closed++;
+    },
+  );
+  v.handleInput("\x17"); // ctrl+w
+  assert.equal(closed, 1);
+});
+
 test("buildItemBody indents child rows two spaces per depth", () => {
   const rows = [
     flat(item({ id: "p1", title: "parent" }), 0),

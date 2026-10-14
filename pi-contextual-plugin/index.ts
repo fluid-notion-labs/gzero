@@ -731,9 +731,11 @@ export default function (pi: ExtensionAPI) {
   // each). First-class pi shortcut instead of an editor subclass:
   // matched before app keybindings and listed under Extensions in
   // /hotkeys. It shadows `deleteWordBackward` (still on alt+backspace);
-  // /workflow is the discoverable path for the same action.
+  // /workflow is the discoverable path for the same action. Toggles:
+  // while the panel is open the overlay owns input and closes on the
+  // same ctrl+w (WorkflowViewer.handleInput); esc keeps working too.
   pi.registerShortcut(Key.ctrl("w"), {
-    description: "Open the context panel (tasks / sections)",
+    description: "Toggle the context panel (tasks / sections)",
     handler: (ctx) => openWorkflow(ctx, itemsPane),
   });
 

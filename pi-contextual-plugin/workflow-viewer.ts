@@ -302,7 +302,7 @@ export class WorkflowViewer implements Component, Focusable {
     const hints =
       `tab/shift+tab tab · ${keyHint(this.kb, "tui.select.up", "↑")}${keyHint(this.kb, "tui.select.down", "↓")} line ` +
       `· ${keyHint(this.kb, "tui.select.pageUp", "pgup")}/${keyHint(this.kb, "tui.select.pageDown", "pgdn")} page ` +
-      `· home/end · ${keyHint(this.kb, "tui.select.cancel", "esc")}/q close`;
+      `· home/end · ${keyHint(this.kb, "tui.select.cancel", "esc")}/q close · ctrl+w toggle`;
     const foot = page?.note ? `${hints} · ${page.note}` : hints;
     // Indicator outside the dim wrapper: nested fg() resets would strip
     // the dim from the rest of the line.
@@ -317,7 +317,10 @@ export class WorkflowViewer implements Component, Focusable {
   }
 
   handleInput(data: string): void {
-    if (this.nav.cancel(data) || matchesKey(data, "q")) {
+    // esc / q close; ctrl+w toggles — the same shortcut that opens the
+    // panel from the editor closes it here, since the overlay owns input
+    // while active (the extension shortcut only fires on the editor).
+    if (this.nav.cancel(data) || matchesKey(data, "q") || matchesKey(data, "ctrl+w")) {
       this.done();
     } else if (matchesKey(data, "tab") || matchesKey(data, "right")) {
       this.switchTo(this.tab + 1);
