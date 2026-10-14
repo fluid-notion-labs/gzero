@@ -1,5 +1,5 @@
 // Tests for the tasks strip (items-pane.ts): timeline ordering, glyph
-// states, spinner frames, and the terminal-height overflow cap.
+// states, spinner frames, and the horizontal widget-row rendering.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ItemsPane, initialStripMode, stripGlyph, stripLines, stripOrder, taskRowCap, SPINNER_FRAMES, type ItemRow } from "../items-pane.ts";
@@ -63,21 +63,15 @@ test("overflow drops from the top (past) and marks it with ⋮", () => {
   assert.deepEqual(stripLines(rows, { frame: 0, cap: 10 })[0], { glyph: "○", color: "muted" });
 });
 
-test("strip renders as a 5-column bordered rail with centered glyphs", () => {
+test("strip renders as a single horizontal glyph row (in-layout widget)", () => {
   const pane = new ItemsPane();
   pane.mode = "strip";
   pane.rows = [row({ id: "a", status: "open" }), row({ id: "b", status: "in_progress" })];
   const theme = { fg: (_c: string, s: string) => s } as never;
   (pane as unknown as { theme: unknown }).theme = theme;
   const lines = pane.render(40);
-  // Top border, two task rows (timeline order: in-progress above open), bottom border.
-  assert.deepEqual(lines, [
-    "╭───╮",
-    "│ " + SPINNER_FRAMES[0] + " │", // 1-cell glyph centered in the 3-cell slot
-    "│ ○ │",
-    "╰───╯",
-  ]);
-  assert.ok(lines.every((l) => l.length === 5));
+  // One line, timeline order (in-progress before open).
+  assert.deepEqual(lines, [SPINNER_FRAMES[0] + " ○"]);
   // Panel mode renders the framed sidebar, not glyphs.
   pane.mode = "panel";
   const panel = pane.render(60);
@@ -90,16 +84,34 @@ test("CX_TASKS_STRIP=0 forces panel mode", () => {
   assert.equal(initialStripMode({ CX_TASKS_STRIP: "1" }), "strip");
 });
 
-test("empty strip stays visible: bordered rail with a quiet placeholder", () => {
+test("empty strip renders nothing: the controller removes the widget", () => {
   const pane = new ItemsPane();
   pane.mode = "strip";
   const theme = { fg: (_c: string, s: string) => s } as never;
   (pane as unknown as { theme: unknown }).theme = theme;
-  const lines = pane.render(40);
-  assert.deepEqual(lines, ["╭───╮", "│ · │", "╰───╯"]);
+  assert.deepEqual(pane.render(40), []);
+  // Errors still surface, as a single warning glyph.
+  (pane as unknown as { error: string | null }).error = "cx item failed";
+  assert.deepEqual(pane.render(40), ["⚠"]);
 });
 
-test("panel and strip cap task rows to leave 2+ lines of chat", () => {
+test("strip row caps to the terminal width; overflow drops from the top with ⋮", () => {
+  const pane = new ItemsPane();
+  pane.mode = "strip";
+  pane.rows = Array.from({ length: 30 }, (_, i) => row({ id: String(i), status: "open", created: i }));
+  const theme = { fg: (_c: string, s: string) => s } as never;
+  (pane as unknown as { theme: unknown }).theme = theme;
+  // Width 9: cap = (9+1)/2 = 5 cells → ⋮ + 4 glyphs.
+  const lines = pane.render(9);
+  assert.equal(lines.length, 1);
+  const line = lines[0].replace(/\x1b\[[0-9;]*m/g, "");
+  assert.equal(line, "⋮ ○ ○ ○ ○");
+  // Never wider than the terminal.
+  const wide = pane.render(3);
+  assert.equal(wide[0].replace(/\x1b\[[0-9;]*m/g, "").length <= 3, true);
+});
+
+test("panel caps task rows to leave 2+ lines of chat; strip is always one line", () => {
   // taskRowCap: terminal rows minus headroom, floored at 1.
   assert.equal(taskRowCap(20), 14);
   assert.equal(taskRowCap(undefined), 34);
@@ -121,10 +133,10 @@ test("panel and strip cap task rows to leave 2+ lines of chat", () => {
     assert.equal(taskLines.length, 14);
     assert.ok(lines.some((l) => l.includes("+16 more")));
 
-    // Strip on the same terminal: same row count as the panel's tasks.
+    // The strip no longer grows with rows: always a single line.
     pane.mode = "strip";
-    const strip = pane.render(40);
-    assert.equal(strip.length, 14 + 2); // cells + borders
+    const strip = pane.render(120);
+    assert.equal(strip.length, 1);
   } finally {
     Object.defineProperty(process.stdout, "rows", { value: origRows, configurable: true });
   }
