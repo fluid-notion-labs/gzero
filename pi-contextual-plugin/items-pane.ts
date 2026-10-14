@@ -15,7 +15,7 @@ import type {
   OverlayHandle,
   TUI,
 } from "@earendil-works/pi-tui";
-import { truncateToWidth } from "@earendil-works/pi-tui";
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { buildItemTree, flattenTree, type RawItem } from "./items-tree.ts";
 
@@ -319,19 +319,29 @@ export class ItemsPane implements Component {
   }
 
   /**
-   * Strip mode: one glyph per task, no frame. Capped at terminal height
-   * (minus margin); overflow drops from the top (past) with ⋮ marking
+   * Strip mode: a 4-column bordered rail — a 2-cell content slot per
+   * task with the glyph right-aligned, so glyphs that some terminals
+   * render two cells wide still fit inside the borders. One row per
+   * task; always visible (a quiet · when there are no tasks). Capped at
+   * terminal height; overflow drops from the top (past) with ⋮ marking
    * the hidden items.
    */
   private renderStrip(): string[] {
     const theme = this.theme;
     if (!theme) return [];
-    if (this.error) return [theme.fg("warning", "⚠")];
-    // The strip is always visible — with no tasks it shows a quiet
-    // placeholder so the rail still marks the corner.
-    if (this.rows.length === 0) return [theme.fg("dim", "·")];
-    const cap = Math.max(1, (process.stdout.rows ?? 40) - 4);
-    return stripLines(this.rows, { frame: this.frame, cap }).map((c) => theme.fg(c.color, c.glyph));
+    const border = (s: string) => theme.fg("borderMuted", s);
+    const cells = this.error
+      ? [{ glyph: "⚠", color: "warning" as StripColor }]
+      : this.rows.length === 0
+        ? [{ glyph: "·", color: "dim" as StripColor }]
+        : stripLines(this.rows, { frame: this.frame, cap: Math.max(1, (process.stdout.rows ?? 40) - 6) });
+    const lines = [border("╭──╮")];
+    for (const c of cells) {
+      const pad = " ".repeat(Math.max(0, 2 - visibleWidth(c.glyph)));
+      lines.push(border("│") + pad + theme.fg(c.color, c.glyph) + border("│"));
+    }
+    lines.push(border("╰──╯"));
+    return lines;
   }
 
   private cacheWidth = -1;
@@ -485,8 +495,8 @@ export class ItemsPaneController {
         {
           overlay: true,
           overlayOptions: () => ({
-            width: 1,
-            minWidth: 1,
+            width: 4,
+            minWidth: 4,
             maxHeight: "96%",
             anchor: "top-right",
             margin: { top: 2, right: 1 },

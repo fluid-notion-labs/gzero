@@ -56,7 +56,7 @@ contextual only via MCP — no direct SQLite or hub access.
   esc/q (or ctrl+c) closes. When the strip doesn't fit the width it
   slides — a window of tabs centered on the active one, `‹`/`›` marking
   hidden tabs
-- The **tasks strip** is always visible: a 1-column status rail on the
+- The **tasks strip** is always visible: a narrow bordered rail on the
   right edge, one glyph per task in timeline order — ✓ closed at top
   (past), ● in-progress, ○ open — so new tasks appear at the bottom and
   work flows upward as it completes. In-progress tasks spin (braille
