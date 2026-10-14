@@ -1,9 +1,10 @@
-// items-pane.ts — the workflow pane: persistent right-side work items.
+// items-pane.ts — the tasks sidebar: persistent right-side work items.
 //
 // A non-capturing overlay (never takes keyboard focus) anchored top-right,
 // a la Claude Code's task panel. Refreshed on session start, after each
-// agent run, and via `/items refresh`. Hidden automatically while the
-// workflow doc has no items or the terminal is too narrow; `/items` toggles.
+// agent run, and via `/tasks refresh`. Hidden automatically while the
+// repo has no items or the terminal is too narrow; `/tasks` toggles
+// (/items is an alias).
 //
 // Data comes from the `cx` CLI (`cx item list --json`), which scopes to the
 // session's repo identity by itself.
@@ -63,7 +64,6 @@ export function run(
 
 export class ItemsPane implements Component {
   rows: ItemRow[] = [];
-  scopeLabel = "";
   error: string | null = null;
   private theme: Theme | null = null;
   private tui: TUI | null = null;
@@ -148,7 +148,6 @@ export class ItemsPane implements Component {
     }));
     const scope = (items[0] as { scope?: string } | undefined)?.scope ?? "";
     const key = JSON.stringify(rows.slice(0, MAX_ROWS)) + scope;
-    this.scopeLabel = shortScope(scope);
     this.error = null;
     if (key === this.cacheKey) return false;
     this.cacheKey = key;
@@ -166,7 +165,7 @@ export class ItemsPane implements Component {
     const inner = w - 4; // │ + space + content + space + │
     const lines: string[] = [];
 
-    const title = truncateToWidth(` workflow${this.scopeLabel ? " · " + this.scopeLabel : ""} `, inner);
+    const title = truncateToWidth(" tasks ", inner);
     lines.push(
       theme.fg("borderMuted", "╭" + "─".repeat(w - 2) + "╮"),
     );
@@ -175,6 +174,8 @@ export class ItemsPane implements Component {
         theme.fg("toolTitle", title.padEnd(inner)) +
         theme.fg("borderMuted", " │"),
     );
+    // Rule under the title, separating the header from the list.
+    lines.push(theme.fg("borderMuted", "├" + "─".repeat(w - 2) + "┤"));
 
     if (this.error) {
       lines.push(
@@ -237,11 +238,6 @@ function padStyled(styled: string, width: number): string {
   return styled + " ".repeat(Math.max(0, width - plain.length));
 }
 
-function shortScope(scope: string): string {
-  if (!scope) return "";
-  const parts = scope.split("/");
-  return parts[parts.length - 1];
-}
 
 /**
  * Owns the overlay lifecycle. The `ctx.ui.custom` promise stays pending

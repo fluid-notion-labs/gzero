@@ -22,7 +22,7 @@ import {
   type Component,
   type Focusable,
 } from "@earendil-works/pi-tui";
-import { boxFrame, LineWindow, modalViewport, wrapPlain } from "./window.ts";
+import { boxFrame, LineWindow, modalViewport, scrollIndicator, wrapPlain } from "./window.ts";
 import { keyHint, viewerNav, type ViewerNav } from "./keymap.ts";
 import {
   distillSkill,
@@ -230,11 +230,12 @@ export function bucketTiers(rendered: string): TierSection[] {
 }
 
 /**
- * Read-only overlay viewer: a tab bar with the top-level tiers, and below
- * it a flat document of that tier's sections, each introduced by a
- * horizontal divider with its title. Navigation: ←/→ switch tiers,
- * ↑/↓ scroll line-wise, PgUp/PgDn page-wise, ctrl+↓/ctrl+↑ jump to
- * the next/previous section, esc/q closes.
+ * Read-only overlay viewer for /context: a tab bar with the top-level
+ * tiers, and below it a flat document of that tier's sections, each
+ * introduced by a horizontal divider with its title. Navigation: ←/→
+ * switch tiers, ↑/↓ scroll line-wise, PgUp/PgDn page-wise,
+ * ctrl+↓/ctrl+↑ jump to the next/previous section, esc/q closes.
+ * Fixed-size body like the context panel (renderFixed + indicator slot).
  */
 class TierViewer implements Component, Focusable {
   focused = false;
@@ -361,18 +362,22 @@ class TierViewer implements Component, Focusable {
       `←→ tier · ${keyHint(this.kb, "tui.select.up", "↑")}${keyHint(this.kb, "tui.select.down", "↓")} line ` +
       `· ${keyHint(this.kb, "tui.select.pageUp", "pgup")}/${keyHint(this.kb, "tui.select.pageDown", "pgdn")} page ` +
       `· ctrl+↓↑ section · ${keyHint(this.kb, "tui.select.cancel", "esc")}/q close`;
-    const footer = this.note ? `${hints} · ${this.note}` : hints;
+    const body = this.note ? `${hints} · ${this.note}` : hints;
+    // Fixed-size: the body area renders exactly viewport rows, so the
+    // box height doesn't jump as content changes. Indicator outside the
+    // dim wrapper — nested fg() resets would strip the dim styling.
+    const footer = scrollIndicator(this.window, t) + t.fg("dim", body);
     return boxFrame(width, [
       ...new Text(tabs, 1).render(inner),
       divider,
-      ...this.window.render().map((line) => ` ${line}`),
+      ...this.window.renderFixed().map((line) => ` ${line}`),
       divider,
-      ...new Text(t.fg("dim", footer), 1).render(inner),
+      ...new Text(footer, 1).render(inner),
     ], (s: string) => t.fg("borderMuted", s));
   }
 }
 
-// ---- Ctrl+W viewer: tabbed work items / workflow sections ----
+// ---- Ctrl+W context panel: tabbed tasks / workspace sections ----
 // Tree logic lives in items-tree.ts, the viewer component in
 // workflow-viewer.ts (both unit-tested).
 
@@ -389,7 +394,7 @@ import {
   type WorkflowPage,
 } from "./workflow-viewer.ts";
 
-// ---- workflow sections for the viewer's workflow tab ----
+// ---- workspace sections for the context panel's section tabs ----
 
 /** Fetch JSON from the cx CLI; throws with stderr's first line. */
 async function cxJson(args: string[]): Promise<unknown> {
@@ -442,7 +447,7 @@ async function openWorkflow(
   pane: ItemsPaneController,
 ): Promise<void> {
   if (ctx.mode !== "tui") {
-    ctx.ui.notify("The workflow viewer needs TUI mode", "warning");
+    ctx.ui.notify("The context panel needs TUI mode", "warning");
     return;
   }
   const paneWasActive = pane.active;
@@ -463,7 +468,7 @@ async function openWorkflow(
     const rows = flattenTree(buildItemTree(itemsRes.value));
     if (rows.length > 0) {
       pages.push({
-        label: "todo",
+        label: "tasks",
         note: `${rows.filter((r) => r.item.status !== "closed").length} open`,
         build: (inner, t) => buildItemBody(rows, inner, t),
       });
@@ -679,8 +684,22 @@ export default function (pi: ExtensionAPI) {
     itemsPane.close();
   });
 
+  pi.registerCommand("tasks", {
+    description: "Toggle the tasks sidebar; 'refresh' refetches now",
+    handler: async (args: string, ctx: ExtensionCommandContext) => {
+      const sub = args.trim().split(/\s+/)[0] ?? "";
+      if (sub === "off") {
+        itemsPane.close();
+      } else if (sub === "refresh") {
+        await itemsPane.refresh();
+      } else {
+        await itemsPane.toggle(ctx);
+      }
+    },
+  });
+
   pi.registerCommand("items", {
-    description: "Toggle the work-items pane; 'refresh' refetches now",
+    description: "Toggle the tasks sidebar (alias for /tasks)",
     handler: async (args: string, ctx: ExtensionCommandContext) => {
       const sub = args.trim().split(/\s+/)[0] ?? "";
       if (sub === "off") {
@@ -694,19 +713,19 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerCommand("workflow", {
-    description: "Open the workflow viewer (same as Ctrl+W)",
+    description: "Open the context panel (same as Ctrl+W)",
     handler: async (_args: string, ctx: ExtensionCommandContext) => {
       await openWorkflow(ctx, itemsPane);
     },
   });
 
-  // Ctrl+W → tabbed workflow viewer (work items / workflow sections).
-  // First-class pi shortcut instead of an editor subclass: matched before
-  // app keybindings and listed under Extensions in /hotkeys. It shadows
-  // `deleteWordBackward` (still on alt+backspace); /workflow is the
-  // discoverable path for the same action.
+  // Ctrl+W → the context panel (tasks + workspace sections, one tab
+  // each). First-class pi shortcut instead of an editor subclass:
+  // matched before app keybindings and listed under Extensions in
+  // /hotkeys. It shadows `deleteWordBackward` (still on alt+backspace);
+  // /workflow is the discoverable path for the same action.
   pi.registerShortcut(Key.ctrl("w"), {
-    description: "Open the workflow viewer (work items / sections)",
+    description: "Open the context panel (tasks / sections)",
     handler: (ctx) => openWorkflow(ctx, itemsPane),
   });
 

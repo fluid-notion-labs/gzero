@@ -5,6 +5,7 @@
 // setLines — the window counts display lines.
 
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import type { Theme } from "@earendil-works/pi-coding-agent";
 import { padToVisible } from "./items-tree.ts";
 
 /**
@@ -93,6 +94,40 @@ export class LineWindow {
     const thumbStart = Math.round(this.position * (this.viewport - thumbHeight));
     return slice.map((line, i) => `${line} ${i >= thumbStart && i < thumbStart + thumbHeight ? "▐" : "│"}`);
   }
+
+  /**
+   * Exactly `viewport` rows: the visible slice padded with blank rows
+   * when the content is shorter. Overlay panels are content-sized, so
+   * without this the box height changes with content — which makes the
+   * UI jumpy on every tab switch or data refresh.
+   */
+  renderFixed(avail?: number): string[] {
+    const rows = this.render(avail);
+    if (rows.length >= this.viewport) return rows.slice(0, this.viewport);
+    const blank =
+      avail === undefined
+        ? ""
+        : padToVisible("", this.scrollable ? avail - 2 : avail) + (this.scrollable ? " │" : "");
+    while (rows.length < this.viewport) rows.push(blank);
+    return rows;
+  }
+}
+
+/**
+ * Scroll-position indicator for panel footers: a fixed two-cell slot at
+ * the left, so the footer never shifts when arrows appear or vanish.
+ * Accent (pi's violet) down arrow when content remains below the
+ * viewport, up arrow when content sits above. Compose it *outside*
+ * theme.fg() wrappers — nested fg() resets would strip the dim styling
+ * from the rest of the footer line.
+ */
+export function scrollIndicator(
+  window: { scrollTop: number; viewport: number; contentHeight: number },
+  theme: Theme,
+): string {
+  const above = window.scrollTop > 0 ? theme.fg("accent", "↑") : " ";
+  const below = window.scrollTop + window.viewport < window.contentHeight ? theme.fg("accent", "↓") : " ";
+  return `${above}${below} `;
 }
 
 /**

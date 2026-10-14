@@ -1,20 +1,25 @@
-// workflow-viewer.ts — the Ctrl+W / /workflow full-screen viewer.
+// workflow-viewer.ts — the context panel: Ctrl+W / /workflow overlay.
 //
-// Two tabs: work items (the child_of tree) and workflow sections
-// (ws sections, checklists rendered as task lists). Kept free of
-// session/extension wiring so node:test can drive it directly; the
-// theme is passed in and callers feed it body data.
+// Flat tabs, one per thing: "tasks" (the child_of tree of work items)
+// first, then one tab per workspace section (ws sections, checklists
+// rendered as task lists). Kept free of session/extension wiring so
+// node:test can drive it directly; the theme is passed in and callers
+// feed it body data.
 //
 // The theme arrives via the constructor: pi-tui has no attach()
 // lifecycle, so relying on attach() left the theme null and the
 // overlay invisible (the "ctrl+w freezes pi" report).
+//
+// Size stability: overlay panels are content-sized, so the body area
+// renders exactly viewport rows (renderFixed) and the footer's scroll
+// indicator occupies a fixed slot — the panel never changes size.
 
 import { Text, matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { Component, Focusable, KeybindingsManager } from "@earendil-works/pi-tui";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { keyHint, viewerNav, type ViewerNav } from "./keymap.ts";
 import { type FlatRow } from "./items-tree.ts";
-import { boxFrame, LineWindow, modalViewport, wrapPlain } from "./window.ts";
+import { boxFrame, LineWindow, modalViewport, scrollIndicator, wrapPlain } from "./window.ts";
 
 const STATUS_ICON_FULL: Record<string, { icon: string; color: "muted" | "accent" | "success" | "warning" }> = {
   open: { icon: "○", color: "muted" },
@@ -298,13 +303,16 @@ export class WorkflowViewer implements Component, Focusable {
       `tab/shift+tab tab · ${keyHint(this.kb, "tui.select.up", "↑")}${keyHint(this.kb, "tui.select.down", "↓")} line ` +
       `· ${keyHint(this.kb, "tui.select.pageUp", "pgup")}/${keyHint(this.kb, "tui.select.pageDown", "pgdn")} page ` +
       `· home/end · ${keyHint(this.kb, "tui.select.cancel", "esc")}/q close`;
-    const footer = page?.note ? `${hints} · ${page.note}` : hints;
+    const foot = page?.note ? `${hints} · ${page.note}` : hints;
+    // Indicator outside the dim wrapper: nested fg() resets would strip
+    // the dim from the rest of the line.
+    const footer = scrollIndicator(this.window, t) + t.fg("dim", foot);
     return boxFrame(width, [
       ...new Text(tabs, 1).render(inner),
       t.fg("borderMuted", "─".repeat(inner)),
-      ...this.window.render(inner - 1).map((line) => ` ${line}`),
+      ...this.window.renderFixed(inner - 1).map((line) => ` ${line}`),
       t.fg("borderMuted", "─".repeat(inner)),
-      ...new Text(t.fg("dim", footer), 1).render(inner),
+      ...new Text(footer, 1).render(inner),
     ], (s: string) => t.fg("borderMuted", s));
   }
 
