@@ -535,6 +535,42 @@ function panelSkills(): PanelSkills {
   };
 }
 
+/** Presence (S1): label for the contexture panel's top bar. Counts
+ * other sessions in this scope seen within the TTL (mirrors
+ * PRESENCE_TTL_SECS = 300 on the Rust side). Empty when solo or
+ * unavailable — presence must never block the panel. */
+async function presenceLabel(): Promise<string> {
+  try {
+    const rows = (await cxJson(["sessions", "--json"])) as Array<{
+      session_id: string;
+      scope: string;
+      last_seen: number;
+    }>;
+    const me = process.env.CX_SESSION_ID ?? "";
+    const now = Date.now() / 1000;
+    const project = await projectScope();
+    const n = rows.filter(
+      (r) => r.session_id !== me && r.scope === project && now - r.last_seen < 300,
+    ).length;
+    return n === 0 ? "" : `${n} other session${n === 1 ? "" : "s"} here`;
+  } catch {
+    return "";
+  }
+}
+
+/** Repo identity, printed by the Rust side so normalization can never
+ * drift between here and cx-mcp; null outside a repo (presence is
+ * scoped, so no scope means no label). */
+async function projectScope(): Promise<string | null> {
+  try {
+    const res = await runProc("cx", ["scope"]);
+    if (res.code !== 0) return null;
+    return res.stdout.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
 /** The contexture panel: alt+c / /panel. The unified pane replacing
  * the overlay family once it reaches parity (work item 2c31). */
 async function openContexturePanel(
@@ -545,11 +581,12 @@ async function openContexturePanel(
     ctx.ui.notify("The contexture panel needs TUI mode", "warning");
     return;
   }
-  const [itemsRes, tiersRes, skillsRes, docsRes] = await Promise.allSettled([
+  const [itemsRes, tiersRes, skillsRes, docsRes, presenceRes] = await Promise.allSettled([
     cxJson(["item", "list", "--json"]) as Promise<RawItem[]>,
     loadTiers(),
     ensureSkills(),
     loadWorkflowSections(),
+    presenceLabel(),
   ]);
   const unwrap = <T>(r: PromiseSettledResult<T>): T | null =>
     r.status === "fulfilled" ? r.value : null;
@@ -561,7 +598,15 @@ async function openContexturePanel(
   );
   await ctx.ui.custom(
     (_tui, theme, keybindings, done) =>
-      new ContexturePanel(nodes, theme, done, keybindings, panelActions(), panelSkills()),
+      new ContexturePanel(
+        nodes,
+        theme,
+        done,
+        keybindings,
+        panelActions(),
+        panelSkills(),
+        unwrap(presenceRes) ?? "",
+      ),
     {
       overlay: true,
       overlayOptions: { width: "100%", maxHeight: "100%", anchor: "center" },

@@ -16,7 +16,7 @@ use crate::{Result, SqliteStore};
 pub const PRESENCE_TTL_SECS: i64 = 5 * 60;
 
 /// One session's presence row (the `sessions` table).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct SessionInfo {
     /// Stable for the lifetime of one pi session (plugin-generated UUID);
     /// CLI callers fall back to `cli-<pid>`.

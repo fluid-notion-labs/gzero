@@ -69,8 +69,11 @@ const tree = (): PanelNode[] => [
   },
 ];
 
-const make = (nodes: PanelNode[] = tree(), onDone: () => void = () => {}) =>
-  new ContexturePanel(nodes, theme as never, onDone);
+const make = (
+  nodes: PanelNode[] = tree(),
+  onDone: () => void = () => {},
+  presence?: string,
+) => new ContexturePanel(nodes, theme as never, onDone, undefined, undefined, undefined, presence);
 
 test("flattenTree shows children only under expanded parents", () => {
   const rows = flattenTree(tree());
@@ -159,6 +162,16 @@ test("render: sections live in the top bar, tree shows the active section", () =
   assert.ok(!treeSide.some((l) => l.includes("documentation")), "sections not in the tree");
   // Content area shows the selected node (task one placeholder).
   assert.ok(out.some((l) => l.length > 45 && l.includes("task one")));
+});
+
+test("render: presence tag rides in the top bar, absent when empty", () => {
+  const withPresence = make(tree(), () => {}, "2 other sessions here");
+  const out = plain(withPresence.render(120));
+  assert.ok(out[1].includes("⟨ 2 other sessions here ⟩"));
+
+  const solo = make();
+  const soloOut = plain(solo.render(120));
+  assert.ok(!soloOut.some((l) => l.includes("other session")), "no presence tag when solo");
 });
 
 test("render: selection highlight follows the cursor", () => {

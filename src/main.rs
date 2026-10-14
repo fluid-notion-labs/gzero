@@ -100,10 +100,28 @@ fn main() {
         return;
     }
     match args[0].as_str() {
+        "scope" => {
+            // Print the repo identity used to scope project-tier data —
+            // lets script/TS clients match scopes exactly.
+            match contextual::repo_identity() {
+                Some(id) => println!("{id}"),
+                None => {
+                    eprintln!("cx: not in a git repository");
+                    exit(1);
+                }
+            }
+        }
         "sessions" => {
             // Inspection view for S1 presence: all rows, stale marked.
             let store = open_store();
             let rows = store.all_sessions().unwrap_or_else(|e| panic!("cx: {e}"));
+            if args.iter().any(|a| a == "--json") {
+                println!(
+                    "{}",
+                    serde_json::to_string(&rows).unwrap_or_else(|e| panic!("cx: {e}"))
+                );
+                return;
+            }
             let (me, _) = contextual::sessions::session_identity();
             if rows.is_empty() {
                 println!("no sessions on record");

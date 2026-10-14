@@ -359,6 +359,9 @@ export class ContexturePanel implements Component, Focusable {
   /** Remembered tree cursor per section, restored on switch. */
   private sectionCursors: number[] = [];
   private error: string | null = null;
+  /** Presence (S1): prebuilt label like "2 other sessions here"; empty
+   * when this session is solo or presence is unavailable. */
+  private presence: string;
 
   constructor(
     nodes: PanelNode[],
@@ -368,6 +371,7 @@ export class ContexturePanel implements Component, Focusable {
     keybindings?: KeybindingsManager,
     actions?: PanelActions,
     skills?: PanelSkills,
+    presence?: string,
   ) {
     this.nodes = nodes;
     this.theme = theme;
@@ -381,6 +385,7 @@ export class ContexturePanel implements Component, Focusable {
     this.kb = keybindings;
     this.nav = viewerNav(keybindings);
     this.skills = skills;
+    this.presence = presence ?? "";
     this.buildCorpus();
     this.buildCatalog();
   }
@@ -905,6 +910,10 @@ export class ContexturePanel implements Component, Focusable {
       return i === this.active ? t.fg("accent", t.bold(label)) : t.fg("dim", label);
     });
     const line = `${t.fg("accent", t.bold("contexture"))}${sep}${tabs.join(sep)}`;
+    if (this.presence) {
+      const tag = t.fg("dim", ` ⟨ ${this.presence} ⟩`);
+      return truncateToWidth(`${line}${tag}`, width);
+    }
     return truncateToWidth(line, width);
   }
 
