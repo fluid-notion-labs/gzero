@@ -244,8 +244,7 @@ export function bucketTiers(rendered: string): TierSection[] {
  * tiers, and below it a flat document of that tier's sections, each
  * introduced by a horizontal divider with its title. Navigation: ←/→
  * switch tiers, ↑/↓ scroll line-wise, PgUp/PgDn page-wise,
- * ctrl+↓/ctrl+↑ jump to the next/previous section, esc/q closes;
- * ctrl+b closes too (the shortcut that opens the viewer toggles it).
+ * ctrl+↓/ctrl+↑ jump to the next/previous section, esc/q closes.
  * Fixed-size body like the context panel (renderFixed + indicator slot).
  */
 class TierViewer implements Component, Focusable {
@@ -325,10 +324,10 @@ class TierViewer implements Component, Focusable {
   }
 
   handleInput(data: string): void {
-    // esc / q close; ctrl+b toggles — the overlay owns input while
-    // active, so the extension shortcut can't see it (same as ctrl+w
-    // on the context panel).
-    if (this.nav.cancel(data) || matchesKey(data, "q") || matchesKey(data, "ctrl+b")) {
+    // esc / q close; ctrl+w closes while the overlay owns input (same
+    // toggle pattern as the context panel). The ctrl+b shortcut was
+    // removed — it shadowed the built-in tui.editor.cursorLeft.
+    if (this.nav.cancel(data) || matchesKey(data, "q")) {
       this.done();
     } else if (matchesKey(data, "left") || matchesKey(data, "shift+tab")) {
       this.switchTo((this.tab + this.sections.length - 1) % this.sections.length);
@@ -375,7 +374,7 @@ class TierViewer implements Component, Focusable {
     const hints =
       `←→ tier · ${keyHint(this.kb, "tui.select.up", "↑")}${keyHint(this.kb, "tui.select.down", "↓")} line ` +
       `· ${keyHint(this.kb, "tui.select.pageUp", "pgup")}/${keyHint(this.kb, "tui.select.pageDown", "pgdn")} page ` +
-      `· ctrl+↓↑ section · ${keyHint(this.kb, "tui.select.cancel", "esc")}/q close · ctrl+b toggle`;
+      `· ctrl+↓↑ section · ${keyHint(this.kb, "tui.select.cancel", "esc")}/q close`;
     const body = this.note ? `${hints} · ${this.note}` : hints;
     // Fixed-size: the body area renders exactly viewport rows, so the
     // box height doesn't jump as content changes. Indicator outside the
@@ -706,8 +705,8 @@ export default function (pi: ExtensionAPI) {
     return resolvedBody;
   };
 
-  // The tiered bag overlay (global / local / skills), shared by
-  // /context and ctrl+b. Shows ground truth: exactly what is injected
+  // The tiered bag overlay (global / local / skills), opened by
+  // /context. Shows ground truth: exactly what is injected
   // into the system prompt this session — the <context> block (global
   // + project tier defaults) and the <skills> block (session-loaded
   // skills). Returns when there is nothing to show.
@@ -892,15 +891,6 @@ export default function (pi: ExtensionAPI) {
   pi.registerShortcut(Key.ctrl("w"), {
     description: "Toggle the context panel (tasks / sections)",
     handler: (ctx) => openWorkflow(ctx, itemsPane),
-  });
-
-  // Ctrl+B → the context bag viewer: the /context tier overlay
-  // (global / local / skills). Same toggle pattern as ctrl+w — while
-  // the overlay is open it owns input and closes on the same ctrl+b
-  // (TierViewer.handleInput); /context is the discoverable path.
-  pi.registerShortcut(Key.ctrl("b"), {
-    description: "Toggle the context bag (global / local / skills)",
-    handler: (ctx) => openContextBag(ctx),
   });
 
   // ---- contexture panel (alt+c) — the unified pane ----
@@ -1156,7 +1146,7 @@ export default function (pi: ExtensionAPI) {
       }
 
       // Plain /context: show what the model is injected. In TUI mode the
-      // tiered overlay (shared with ctrl+b); elsewhere a notification.
+      // tiered overlay; elsewhere a notification.
       // Uses the same cache as injection, so this shows exactly what the
       // model gets.
       if (ctx.mode === "tui") {
