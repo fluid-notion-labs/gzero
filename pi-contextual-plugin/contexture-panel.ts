@@ -332,8 +332,10 @@ export class ContexturePanel implements Component, Focusable {
   private noteBuf = "";
   /** True while a move request is in flight (key repeat guard). */
   private moving = false;
-  /** 0 = all sections; 1..N = the (N-1)th top-level is the query scope. */
-  private scope = 0;
+  /** Active section (tasks | context | documentation) shown in the top bar. */
+  private active = 0;
+  /** Remembered tree cursor per section, restored on switch. */
+  private sectionCursors: number[] = [];
   private error: string | null = null;
 
   constructor(
@@ -348,7 +350,8 @@ export class ContexturePanel implements Component, Focusable {
     this.theme = theme;
     this.done = done;
     this.actions = actions;
-    this.rows = flattenTree(nodes);
+    this.sectionCursors = nodes.map(() => 0);
+    this.rows = flattenTree(nodes[this.active]?.children ?? []);
     const viewport = panelBodyRows();
     this.treeWin = new LineWindow(viewport);
     this.contentWin = new LineWindow(viewport);
@@ -376,6 +379,10 @@ export class ContexturePanel implements Component, Focusable {
     walk(this.nodes, null);
   }
 
+  get activeSection(): PanelNode | undefined {
+    return this.nodes[this.active];
+  }
+
   invalidate(): void {}
 
   get selected(): PanelRow {
@@ -396,24 +403,26 @@ export class ContexturePanel implements Component, Focusable {
     }
   }
 
-  /** ctrl+up / ctrl+down: jump to the previous/next top-level section. */
-  private jumpTopLevel(direction: 1 | -1): void {
-    let i = this.cursor + direction;
-    while (i >= 0 && i < this.rows.length) {
-      if (this.rows[i].depth === 0) {
-        this.cursor = i;
-        this.followCursor();
-        return;
-      }
-      i += direction;
-    }
+  /** Section switching: the top bar tabs (tab/shift+tab, ctrl+up/ctrl+down).
+   * The left tree then navigates inside the active section. Cursor is
+   * remembered per section. */
+  private switchSection(direction: 1 | -1): void {
+    const count = this.nodes.length;
+    if (count === 0) return;
+    this.sectionCursors[this.active] = this.cursor;
+    this.active = (this.active + direction + count) % count;
+    this.rows = flattenTree(this.activeSection?.children ?? []);
+    this.cursor = Math.min(this.sectionCursors[this.active] ?? 0, Math.max(0, this.rows.length - 1));
+    this.contentWin.scrollToStart();
+    this.followCursor();
+    if (this.mode === "search") this.runSearch();
   }
 
   private toggleExpanded(): void {
     const node = this.selected.node;
     if (!node.children || node.children.length === 0) return;
     node.expanded = !node.expanded;
-    this.rows = flattenTree(this.nodes);
+    this.rows = flattenTree(this.activeSection?.children ?? []);
     // Collapsing can leave the cursor past the end.
     if (this.cursor >= this.rows.length) this.cursor = this.rows.length - 1;
     this.followCursor();
@@ -440,18 +449,18 @@ export class ContexturePanel implements Component, Focusable {
     // extension shortcut can't see it (same pattern as ctrl+w/ctrl+b).
     if (this.nav.cancel(data) || matchesKey(data, "q") || matchesKey(data, "alt+c")) {
       this.done();
-    } else if (matchesKey(data, "shift+down")) {
-      this.moveScope(1);
-    } else if (matchesKey(data, "shift+up")) {
-      this.moveScope(-1);
+    } else if (matchesKey(data, "tab")) {
+      this.switchSection(1);
+    } else if (matchesKey(data, "shift+tab")) {
+      this.switchSection(-1);
     } else if (this.nav.up(data) || matchesKey(data, "k")) {
       this.moveCursor(-1);
     } else if (this.nav.down(data) || matchesKey(data, "j")) {
       this.moveCursor(1);
     } else if (matchesKey(data, "ctrl+up")) {
-      this.jumpTopLevel(-1);
+      this.switchSection(-1);
     } else if (matchesKey(data, "ctrl+down")) {
-      this.jumpTopLevel(1);
+      this.switchSection(1);
     } else if (matchesKey(data, "enter") || matchesKey(data, "right")) {
       this.toggleExpanded();
     } else if (matchesKey(data, "left")) {
@@ -626,23 +635,16 @@ export class ContexturePanel implements Component, Focusable {
     tasksNode.children = itemsToNodes(items);
     tasksNode.expanded = expanded;
     const curId = this.selected.node.id;
-    this.rows = flattenTree(this.nodes);
+    this.rows = flattenTree(this.activeSection?.children ?? []);
     const idx = this.rows.findIndex((r) => r.node.id === curId);
     this.cursor = idx >= 0 ? idx : Math.min(this.cursor, this.rows.length - 1);
     this.buildCorpus();
     this.followCursor();
   }
 
-  // ---- query scope (P4): shift+up/down selects a section for search ----
-
-  private moveScope(delta: number): void {
-    const count = this.nodes.length + 1; // +1 for "all"
-    this.scope = (this.scope + delta + count) % count;
-  }
-
-  /** Id of the scoped top-level section, or null when scope is "all". */
+  /** Search is scoped to the active section (the top bar tab). */
   private scopedRoot(): string | null {
-    return this.scope === 0 ? null : this.nodes[this.scope - 1]?.id ?? null;
+    return this.activeSection?.id ?? null;
   }
 
   // ---- fuzzy search (P3) ----
@@ -658,6 +660,14 @@ export class ContexturePanel implements Component, Focusable {
   private handleSearchInput(data: string): void {
     if (this.nav.cancel(data)) {
       this.mode = "tree";
+      return;
+    }
+    if (matchesKey(data, "tab")) {
+      this.switchSection(1);
+      return;
+    }
+    if (matchesKey(data, "shift+tab")) {
+      this.switchSection(-1);
       return;
     }
     if (this.nav.up(data)) {
@@ -745,7 +755,7 @@ export class ContexturePanel implements Component, Focusable {
     const path = this.pathTo(hit.node);
     if (!path) return;
     for (const node of path.slice(0, -1)) node.expanded = true;
-    this.rows = flattenTree(this.nodes);
+    this.rows = flattenTree(this.activeSection?.children ?? []);
     const idx = this.rows.findIndex((r) => r.node === hit.node);
     if (idx >= 0) {
       this.cursor = idx;
@@ -773,10 +783,22 @@ export class ContexturePanel implements Component, Focusable {
    * as the top-level tree rows — headings live here, not in a strip
    * along the top.
    */
+  /** The contextual top bar: title + the three section tabs with counts.
+   * The active tab is highlighted; the left tree navigates inside it. */
+  private topBarLine(width: number): string {
+    const t = this.theme;
+    const sep = t.fg("borderMuted", " │ ");
+    const tabs = this.nodes.map((section, i) => {
+      const count = section.children?.length ?? 0;
+      const label = `${section.label} ${count}`;
+      return i === this.active ? t.fg("accent", t.bold(label)) : t.fg("dim", label);
+    });
+    const line = `${t.fg("accent", t.bold("contexture"))}${sep}${tabs.join(sep)}`;
+    return truncateToWidth(line, width);
+  }
+
   private treeLines(width: number): string[] {
     const t = this.theme;
-    const title = t.fg("accent", t.bold("contexture"));
-    const rule = t.fg("borderMuted", "─".repeat(Math.max(0, width - 1)));
     const rows = this.rows.map((row, i) => {
       const indent = "  ".repeat(row.depth);
       const expandable = (row.node.children?.length ?? 0) > 0;
@@ -786,7 +808,7 @@ export class ContexturePanel implements Component, Focusable {
         i === this.cursor ? t.fg("accent", t.bold(text)) : row.depth === 0 ? t.bold(text) : text;
       return ` ${styled}`;
     });
-    return [title, rule, ...rows];
+    return rows;
   }
 
   /** Content-area lines: search results, action menu, note input, or
@@ -882,21 +904,21 @@ export class ContexturePanel implements Component, Focusable {
       body.push(`${tree}${" ".repeat(pad)}${t.fg("borderMuted", "│")}${content}`);
     }
 
-    const scoped = this.scopedRoot();
-    const scopeLabel = scoped ? ` ◆${scoped}` : "";
     const hints =
       this.mode === "search"
-        ? `type to search · ↑↓ result · enter jump · esc back`
+        ? `type to search (this section) · tab section · ↑↓ result · enter jump · esc back`
         : this.mode === "actions"
           ? `↑↓ action · enter run · esc back`
           : this.mode === "note"
             ? `type note · enter save · esc cancel`
             : this.mode === "move"
               ? `↕ reorder · enter/esc done`
-              : `/ search · shift+↑↓ scope${scopeLabel} · e edit · m move · ctrl+↑↓ toplevel · ↑↓ move · ` +
+              : `/ search · tab/shift+tab section · e edit · m move · ↑↓ move · ` +
                 `${keyHint(this.kb, "tui.select.cancel", "esc")}/alt+c close`;
 
     return boxFrame(width, [
+      this.topBarLine(inner),
+      t.fg("borderMuted", "─".repeat(inner)),
       ...body,
       t.fg("borderMuted", "─".repeat(inner)),
       scrollIndicator(this.contentWin, t) + t.fg("dim", hints),

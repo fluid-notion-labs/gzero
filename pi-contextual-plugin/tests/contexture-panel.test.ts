@@ -84,38 +84,37 @@ test("panelBodyRows scales with terminal rows, with a floor", () => {
 
 test("up/down move the cursor within bounds", () => {
   const p = make();
-  assert.equal(p.selected.node.id, "tasks");
-  p.handleInput("\x1b[B"); // down → task one
-  assert.equal(p.selected.node.id, "t1");
-  p.handleInput("\x1b[A"); // up → back
-  assert.equal(p.selected.node.id, "tasks");
+  assert.equal(p.selected.node.id, "t1"); // tree starts inside tasks
   p.handleInput("\x1b[A"); // up at the top stays
-  assert.equal(p.selected.node.id, "tasks");
+  assert.equal(p.selected.node.id, "t1");
 });
 
-test("ctrl+down / ctrl+up jump between the three top-levels", () => {
+test("tab / ctrl+up-down switch the active section, top bar tabs", () => {
   const p = make();
-  p.handleInput("\x1b[B"); // down → t1
-  p.handleInput("\x1b[1;5B"); // ctrl+down → context (next top-level)
-  assert.equal(p.selected.node.id, "context");
+  p.handleInput("\x1b[1;5B"); // ctrl+down → context
+  assert.equal(get(p, "active"), 1);
+  assert.equal(p.selected.node.id, "global"); // first entry of the section
   p.handleInput("\x1b[1;5B"); // ctrl+down → documentation
-  assert.equal(p.selected.node.id, "documentation");
-  p.handleInput("\x1b[1;5B"); // ctrl+down at the end stays
-  assert.equal(p.selected.node.id, "documentation");
-  p.handleInput("\x1b[1;5A"); // ctrl+up → context
-  assert.equal(p.selected.node.id, "context");
-  p.handleInput("\x1b[1;5A"); // ctrl+up → tasks
-  assert.equal(p.selected.node.id, "tasks");
+  assert.equal(p.selected.node.id, "d1");
+  p.handleInput("\t"); // tab wraps to tasks
+  assert.equal(get(p, "active"), 0);
+  assert.equal(p.selected.node.id, "t1");
+  p.handleInput("\x1b[Z"); // shift+tab → back to documentation
+  assert.equal(get(p, "active"), 2);
+  // Cursor is remembered per section: tasks was on t1.
+  p.handleInput("\x1b[Z");
+  p.handleInput("\x1b[Z");
+  assert.equal(p.selected.node.id, "t1");
 });
 
 test("enter toggles children; collapsed parents hide their subtree", () => {
   const p = make();
   p.handleInput("\x1b[1;5B"); // ctrl+down → context
-  p.handleInput("\r"); // enter → collapse context
-  assert.equal(p.selected.node.id, "context");
+  p.handleInput("\r"); // enter → collapse global (selected entry)
+  assert.equal(p.selected.node.id, "global");
   const visible = flattenTree((p as unknown as { nodes: PanelNode[] }).nodes).map((r) => r.node.id);
-  assert.ok(!visible.includes("global"));
-  p.handleInput("\r"); // enter → expand again
+  assert.ok(visible.includes("global"), "section entry stays visible");
+  p.handleInput("\r"); // expand again
   assert.ok(visibleContains((p as unknown as { nodes: PanelNode[] }).nodes, "global"));
 });
 
@@ -124,12 +123,13 @@ function visibleContains(nodes: PanelNode[], id: string): boolean {
 }
 
 test("collapsing above the cursor keeps the cursor valid", () => {
-  const p = make();
-  p.handleInput("\x1b[B"); // down → t1 (child of tasks)
-  p.handleInput("\x1b[A"); // up → tasks
-  p.handleInput("\r"); // collapse tasks → subtree hidden
+  const p = make(searchableTree());
+  p.handleInput("\t"); // context: [tier-global, global-notes, stance, skills, product-stance]
+  for (let i = 0; i < 4; i++) p.handleInput("\x1b[B"); // → product-stance (last)
+  p.handleInput("\x1b[A\x1b[A"); // up twice → tier-global
+  p.handleInput("\r"); // collapse → subtree hidden, rows shrink
   const sel = p.selected;
-  assert.ok(["tasks", "context", "documentation"].includes(sel.node.id));
+  assert.ok(["tier-global", "skills", "product-stance"].includes(sel.node.id));
 });
 
 test("done fires on escape, q and alt+c", () => {
@@ -143,26 +143,30 @@ test("done fires on escape, q and alt+c", () => {
   assert.equal(closed, 3);
 });
 
-test("render: headings live in the left tree column, content to the right", () => {
+test("render: sections live in the top bar, tree shows the active section", () => {
   const p = make();
   const out = plain(p.render(100));
-  // The three section headings appear as left-column tree rows.
+  // After the box border, the contextual top bar: title + three tabs with counts.
+  assert.ok(out[1].includes("contexture"));
+  assert.ok(out[1].includes("tasks 1"));
+  assert.ok(out[1].includes("context 3"));
+  assert.ok(out[1].includes("documentation 1"));
+  // The left tree lists the active section's entries, not the sections.
   const treeSide = out.map((l) => l.slice(0, 40));
-  assert.ok(treeSide.some((l) => l.includes("tasks")));
-  assert.ok(treeSide.some((l) => l.includes("context")));
-  assert.ok(treeSide.some((l) => l.includes("documentation")));
-  // The pane title is inside the left column too (no top header strip).
-  assert.ok(out[1].slice(0, 40).includes("contexture"));
-  // Content area shows the selected node (tasks placeholder).
-  assert.ok(out.some((l) => l.length > 45 && l.includes("tasks")));
+  assert.ok(treeSide.some((l) => l.includes("task one")));
+  assert.ok(!treeSide.some((l) => l.includes("documentation")), "sections not in the tree");
+  // Content area shows the selected node (task one placeholder).
+  assert.ok(out.some((l) => l.length > 45 && l.includes("task one")));
 });
 
 test("render: selection highlight follows the cursor", () => {
   const p = make();
-  p.handleInput("\x1b[1;5B"); // ctrl+down → context
+  p.handleInput("\x1b[1;5B"); // ctrl+down → context section
   const out = plain(p.render(100));
-  const selected = out.find((l) => l.includes("▾ context"));
-  assert.ok(selected, "context row rendered");
+  const selected = out.find((l) => l.slice(0, 40).includes("· global"));
+  assert.ok(selected, "global row rendered in the tree");
+  // Top bar marks the active tab.
+  assert.ok(out[1].includes("context"));
 });
 
 const plain = (lines: string[]): string[] => lines.map((l) => stripVTControlCodes(l));
@@ -310,6 +314,7 @@ const searchableTree = (): PanelNode[] => [
     children: [
       { id: "tier-global", label: "global", children: [
         { id: "tier-global/global-notes", label: "global/notes", searchText: "Begin each task in a jj workspace", detail: () => [] },
+      { id: "term-stance", label: "stance", searchText: "product stance definition", detail: () => [] },
       ] },
       { id: "skills", label: "skills", children: [
         { id: "skill-fn/product-stance", label: "product-stance", searchText: "product positioning and stance fn", detail: () => [] },
@@ -333,32 +338,33 @@ interface SearchHit {
   score: number;
 }
 
-test("slash enters search; typing filters across tasks, skills, terms", () => {
+test("slash enters search; scoped to the active section", () => {
   const p = make(searchableTree());
   p.handleInput("/");
   assert.equal(get(p, "mode"), "search");
-  p.handleInput("prod");
-  const ids = hits(p).map((h) => h.id);
-  assert.ok(ids.includes("bbb2"), "task matches");
-  assert.ok(ids.includes("skill-fn/product-stance"), "skill matches");
+  p.handleInput("prod"); // in tasks: only the task matches
+  let ids = hits(p).map((h) => h.id);
+  assert.deepEqual(ids, ["bbb2"]);
+  p.handleInput("\t"); // tab → context section, search re-runs
+  ids = hits(p).map((h) => h.id);
+  assert.ok(ids.includes("skill-fn/product-stance"), "skill matches in context");
 });
 
-test("ordering: tasks before skills before terms", () => {
+test("ordering: skills before terms within a section", () => {
   const p = make(searchableTree());
+  p.handleInput("\t"); // context section
   p.handleInput("/");
-  p.handleInput("product"); // matches task + skill
-  const list = hits(p);
-  const taskIdx = list.findIndex((h) => h.category === 0);
-  const skillIdx = list.findIndex((h) => h.category === 1);
-  assert.ok(taskIdx >= 0 && skillIdx > taskIdx);
-  p.handleInput("\x7f\x7f\x7f\x7f\x7f\x7f\x7f"); // clear → workspace matches term
-  p.handleInput("workspace");
+  p.handleInput("product"); // matches skill + term
   const cats = hits(p).map((h) => h.category);
-  assert.deepEqual(cats, [2], "only the term matches");
+  assert.deepEqual(cats, [1, 2], "skill before term");
+  p.handleInput("\x7f\x7f\x7f\x7f\x7f\x7f\x7f");
+  p.handleInput("workspace");
+  assert.deepEqual(hits(p).map((h) => h.category), [2], "only the term matches");
 });
 
 test("documentation nodes are not part of the corpus", () => {
   const p = make(searchableTree());
+  p.handleInput("\t\t"); // documentation section
   p.handleInput("/");
   p.handleInput("ignored");
   assert.equal(hits(p).length, 0);
@@ -366,8 +372,9 @@ test("documentation nodes are not part of the corpus", () => {
 
 test("enter jumps to the hit, expanding ancestors, and returns to tree mode", () => {
   const p = make(searchableTree());
+  p.handleInput("\t"); // context section
   p.handleInput("/");
-  p.handleInput("workspace"); // term under context > global (global collapsed here)
+  p.handleInput("workspace"); // term under context > global
   p.handleInput("\r"); // enter → jump
   assert.equal(get(p, "mode"), "tree");
   assert.equal(p.selected.node.id, "tier-global/global-notes");
@@ -396,28 +403,31 @@ test("search content shows the query line and result tags", () => {
   const p = make(searchableTree());
   p.handleInput("/");
   p.handleInput("product");
-  const out = plain(p.render(100)).join("\n");
+  let out = plain(p.render(100)).join("\n");
   assert.ok(out.includes("/product"));
   assert.ok(out.includes("[task]"));
+  p.handleInput("\t"); // context section → skill + term hits
+  out = plain(p.render(100)).join("\n");
   assert.ok(out.includes("[skill]"));
 });
 
 // ---- P4 edit actions and scoped query ----
 
 test("e opens the action menu on a task, not on other nodes", () => {
-  const p = make(itemsToNodes([
-    item({ id: "t1", title: "do it", status: "open", priority: 1 }),
-  ]));
+  const p = make([
+    { id: "tasks", label: "tasks", expanded: true, children: [{ id: "x1", label: "not a task" }] },
+  ]);
   p.handleInput("e");
-  assert.equal(get(p, "mode"), "tree"); // no item on the stub tree's nodes
+  assert.equal(get(p, "mode"), "tree"); // no item on non-task nodes
 
   const real = new ContexturePanel(
-    itemsToNodes([item({ id: "t1", title: "do it", status: "open", priority: 1 })]),
+    [{ id: "tasks", label: "tasks", expanded: true, children: itemsToNodes([item({ id: "t1", title: "do it", status: "open", priority: 1 })]) }],
     theme as never,
     () => {},
     undefined,
     { editItem: async () => {}, reloadItems: async () => [] },
   );
+  real.handleInput("j"); // select the task
   real.handleInput("e");
   assert.equal(get(real, "mode"), "actions");
   const content = plain(real.render(100)).join("\n");
@@ -428,12 +438,13 @@ test("e opens the action menu on a task, not on other nodes", () => {
 
 test("action menu reflects current status; closed tasks can reopen", () => {
   const real = new ContexturePanel(
-    itemsToNodes([item({ id: "t1", title: "done thing", status: "closed", priority: 0 })]),
+    [{ id: "tasks", label: "tasks", expanded: true, children: itemsToNodes([item({ id: "t1", title: "done thing", status: "closed", priority: 0 })]) }],
     theme as never,
     () => {},
     undefined,
     { editItem: async () => {}, reloadItems: async () => [] },
   );
+  real.handleInput("j");
   real.handleInput("e");
   const content = plain(real.render(100)).join("\n");
   assert.ok(!content.includes("status → closed"), "no close action on a closed task");
@@ -464,8 +475,7 @@ async function actionFixture() {
     undefined,
     actions,
   );
-  // Cursor starts on the tasks wrapper; select the task itself.
-  p.handleInput("j");
+  // Cursor starts on the first task (rows begin at the section's children).
   return { p, edits, getItems: () => items };
 }
 
@@ -504,7 +514,7 @@ test("add note flow: menu → note input → typed text → enter saves", async 
 test("esc from the note input returns to the action menu, not the tree", () => {
   let closed = 0;
   const p = new ContexturePanel(
-    itemsToNodes([item({ id: "t1", title: "do it", status: "open", priority: 1 })]),
+    [{ id: "tasks", label: "tasks", expanded: true, children: itemsToNodes([item({ id: "t1", title: "do it", status: "open", priority: 1 })]) }],
     theme as never,
     () => {
       closed++;
@@ -512,6 +522,7 @@ test("esc from the note input returns to the action menu, not the tree", () => {
     undefined,
     { editItem: async () => {}, reloadItems: async () => [] },
   );
+  p.handleInput("j");
   p.handleInput("e");
   for (let i = 0; i < 5; i++) p.handleInput("\x1b[B");
   p.handleInput("\r");
@@ -523,19 +534,16 @@ test("esc from the note input returns to the action menu, not the tree", () => {
   assert.equal(closed, 0);
 });
 
-test("shift+up/down cycles the query scope; scoped search restricts hits", () => {
+test("section switching scopes the search; tab back and forth", () => {
   const p = make(searchableTree());
+  p.handleInput("\t"); // context section
   p.handleInput("/");
   p.handleInput("workspace");
-  assert.equal(hits(p).length, 1); // term under context
-  p.handleInput("\x1b");
-  p.handleInput("\x1b[1;2B"); // shift+down → scope tasks
-  assert.equal(get(p, "scope"), 1);
-  p.handleInput("/");
-  p.handleInput("workspace");
-  assert.equal(hits(p).length, 0, "term is outside the tasks scope");
+  assert.equal(hits(p).length, 1); // term in context
+  p.handleInput("\x1b[Z"); // shift+tab → back to tasks; search re-runs
+  assert.equal(hits(p).length, 0, "term is outside the tasks section");
   p.handleInput("\x7f\x7f\x7f\x7f\x7f\x7f\x7f\x7f\x7f");
-  p.handleInput("login"); // a task
+  p.handleInput("login"); // a task in tasks
   assert.equal(hits(p).length, 1);
 });
 
@@ -616,9 +624,10 @@ async function moveFixture() {
 
 const flushMove = () => new Promise((resolve) => setImmediate(resolve));
 
-// Select a node by id, expanding ancestors as needed.
+// Select a node by id within the active section's tree.
 function select(p: InstanceType<typeof ContexturePanel>, id: string): void {
-  const rows = flattenTree(get(p, "nodes") as PanelNode[]);
+  const nodes = get(p, "nodes") as PanelNode[];
+  const rows = flattenTree(nodes[get(p, "active") as number]?.children ?? []);
   const idx = rows.findIndex((r) => r.node.id === id);
   set(p, "cursor", idx);
   set(p, "rows", rows);
