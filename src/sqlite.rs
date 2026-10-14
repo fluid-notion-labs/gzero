@@ -26,6 +26,16 @@ CREATE TABLE IF NOT EXISTS tombstones (
 CREATE TABLE IF NOT EXISTS source_hashes (
     source TEXT PRIMARY KEY,
     hash TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sessions (
+    session_id TEXT PRIMARY KEY,
+    machine    TEXT NOT NULL,
+    scope      TEXT NOT NULL,
+    cwd        TEXT NOT NULL,
+    pid        INTEGER NOT NULL,
+    label      TEXT NOT NULL DEFAULT '',
+    started_at INTEGER NOT NULL,
+    last_seen  INTEGER NOT NULL
 );";
 
 /// SQLite-backed bag. One row per (text, source) assertion.
@@ -66,6 +76,12 @@ impl SqliteStore {
     /// In-memory store for tests.
     pub fn in_memory() -> Result<Self> {
         Self::open(":memory:")
+    }
+
+    /// Crate-internal access for feature modules (sessions) that live
+    /// outside sqlite.rs but operate on the same connection.
+    pub(crate) fn conn(&self) -> &Connection {
+        &self.conn
     }
 }
 

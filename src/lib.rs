@@ -28,9 +28,11 @@ pub mod automerge_store;
 pub mod hub;
 pub mod items;
 pub mod sections;
+pub mod sessions;
 pub mod snapshot;
 pub mod sqlite;
 pub use automerge_store::AutomergeStore;
+pub use sessions::{SessionInfo, PRESENCE_TTL_SECS};
 pub use sqlite::SqliteStore;
 
 /// One atom's stored record: an assertion of `text` by `source`.
