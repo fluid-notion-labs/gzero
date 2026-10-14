@@ -39,3 +39,13 @@ test("overly long single word is not broken, keeps indent", () => {
     "  supercalifragilistic",
   ]);
 });
+
+test("wide characters wrap by display column, not string length", () => {
+  // Each CJK char is 2 columns: "你好世界" is 8 columns wide, not 4 chars.
+  // Words are not broken; 4-char words measure 8 columns so each wraps.
+  assert.deepEqual(wrapPlain("你好 世界 深呼吸", 6), [
+    "你好",
+    "世界",
+    "深呼吸",
+  ]);
+});

@@ -99,6 +99,9 @@ export class LineWindow {
  * Wrap plain (ANSI-free) text to a width, preserving blank lines and each
  * line's leading indentation. Continuation lines reuse the original indent,
  * so task-list/nested content keeps its shape (e.g. `  - [ ] child`).
+ *
+ * Widths are display columns (visibleWidth), not string lengths — wide
+ * characters (CJK, emoji) would otherwise wrap at the wrong position.
  */
 export function wrapPlain(text: string, width: number): string[] {
   const out: string[] = [];
@@ -109,14 +112,21 @@ export function wrapPlain(text: string, width: number): string[] {
       out.push("");
       continue;
     }
+    // The indent is spaces/tabs; tab counts as one column here, matching
+    // how the terminal renders it after `indent + line` is emitted.
+    const indentWidth = visibleWidth(indent);
+    const lineWidth = width - indentWidth;
     let line = "";
+    let lineWidthSoFar = 0;
     for (const word of body.split(/\s+/)) {
-      const next = line ? `${line} ${word}` : word;
-      if (next.length > width - indent.length && line) {
+      const add = (lineWidthSoFar > 0 ? 1 : 0) + visibleWidth(word);
+      if (lineWidthSoFar + add > lineWidth && line) {
         out.push(indent + line);
         line = word;
+        lineWidthSoFar = visibleWidth(word);
       } else {
-        line = next;
+        line = line ? `${line} ${word}` : word;
+        lineWidthSoFar += add;
       }
     }
     if (line) out.push(indent + line);
