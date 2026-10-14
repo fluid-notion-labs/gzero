@@ -103,6 +103,8 @@ interface SearchHit {
   node: PanelNode;
   category: number;
   score: number;
+  /** Set on catalog hits: enter loads this skill instead of jumping. */
+  skillId?: string;
 }
 /** Higher is better. */
 function hitRank(hit: SearchHit): number {
@@ -131,6 +133,22 @@ interface SkillLike {
   description: string;
   vendor: string;
   file: string;
+}
+
+/** Canonical skill node id (vendor/name, lowercased). */
+export function skillId(entry: { vendor: string; name: string }): string {
+  return `skill-${entry.vendor}/${entry.name.toLowerCase()}`;
+}
+
+/** Skills capability: the panel tree shows only loaded skills; search
+ * additionally matches the full catalog so enter can load one. */
+export interface PanelSkills {
+  /** The full vendored catalog (for search). */
+  catalog(): SkillLike[];
+  /** Load a skill for the session (by canonical id). */
+  activate(id: string): Promise<void>;
+  /** Currently loaded skills (rebuilds the skills node after activation). */
+  activated(): SkillLike[];
 }
 
 const STATUS_ICON: Record<string, string> = {
@@ -203,10 +221,10 @@ export function tiersToNodes(tiers: TierLike[]): PanelNode[] {
   }));
 }
 
-/** Vendored skills → PanelNodes (flat list; the tier node holds it). */
+/** Loaded skills → PanelNodes (flat list; the tier node holds it). */
 export function skillsToNodes(entries: SkillLike[]): PanelNode[] {
   return entries.map((entry) => ({
-    id: `skill-${entry.vendor}/${entry.name.toLowerCase()}`,
+    id: skillId(entry),
     label: entry.name,
     searchText: `${entry.description} ${entry.vendor}`,
     detail: (width: number, theme: Theme): string[] => {
@@ -326,6 +344,10 @@ export class ContexturePanel implements Component, Focusable {
   private hits: SearchHit[] = [];
   private sel = 0;
   private corpus: { node: PanelNode; category: number; text: string; root: string }[] = [];
+  /** Skills capability: catalog searchable in the context section. */
+  private skills: PanelSkills | undefined;
+  /** Catalog entries not yet loaded: { id, entry, text }. */
+  private catalog: { id: string; entry: SkillLike; text: string }[] = [];
   // Edit state (P4): action menu over a task, note input, scope.
   private actions: PanelActions | undefined;
   private actionSel = 0;
@@ -345,6 +367,7 @@ export class ContexturePanel implements Component, Focusable {
     /** Injected by ctx.ui.custom; optional for tests. */
     keybindings?: KeybindingsManager,
     actions?: PanelActions,
+    skills?: PanelSkills,
   ) {
     this.nodes = nodes;
     this.theme = theme;
@@ -357,7 +380,26 @@ export class ContexturePanel implements Component, Focusable {
     this.contentWin = new LineWindow(viewport);
     this.kb = keybindings;
     this.nav = viewerNav(keybindings);
+    this.skills = skills;
     this.buildCorpus();
+    this.buildCatalog();
+  }
+
+  /** Catalog entries minus already-loaded ones (those are in the tree). */
+  private buildCatalog(): void {
+    if (!this.skills) {
+      this.catalog = [];
+      return;
+    }
+    const loaded = new Set(this.skills.activated().map(skillId));
+    this.catalog = this.skills
+      .catalog()
+      .filter((e) => !loaded.has(skillId(e)))
+      .map((e) => ({
+        id: skillId(e),
+        entry: e,
+        text: `${e.name} ${e.description} ${e.vendor}`.trim(),
+      }));
   }
 
   /** Searchable entries: tasks, skills, terms — documentation is browsable,
@@ -647,6 +689,30 @@ export class ContexturePanel implements Component, Focusable {
     return this.activeSection?.id ?? null;
   }
 
+  /** Load a skill from a catalog search hit; the skills node then shows
+   * it and it leaves the catalog. */
+  private async loadSkill(id: string): Promise<void> {
+    if (!this.skills) return;
+    try {
+      await this.skills.activate(id);
+      await this.refreshSkills();
+      this.error = null;
+    } catch (e) {
+      this.error = e instanceof Error ? e.message : String(e);
+    }
+  }
+
+  /** Rebuild the skills node from the loaded set after an activation. */
+  private async refreshSkills(): Promise<void> {
+    if (!this.skills) return;
+    const context = this.nodes.find((n) => n.id === "context");
+    const skillsNode = context?.children?.find((n) => n.id === "skills");
+    if (skillsNode) skillsNode.children = skillsToNodes(this.skills.activated());
+    this.buildCorpus();
+    this.buildCatalog();
+    if (this.mode === "search") this.runSearch();
+  }
+
   // ---- fuzzy search (P3) ----
 
   private enterSearch(): void {
@@ -720,6 +786,20 @@ export class ContexturePanel implements Component, Focusable {
         scored.push({ node: entry.node, category: entry.category, score });
       }
     }
+    // Skill catalog (context section only): findable and loadable.
+    if (root === "context") {
+      for (const entry of this.catalog) {
+        const score = fuzzyScore(parsed.text, entry.text);
+        if (score !== null) {
+          scored.push({
+            node: { id: entry.id, label: entry.entry.name },
+            category: 1,
+            score,
+            skillId: entry.id,
+          });
+        }
+      }
+    }
     // Category dominates (tasks > skills > terms); fuzzy ranks within it.
     scored.sort((a, b) => hitRank(b) - hitRank(a));
     this.hits = scored.slice(0, 50);
@@ -752,6 +832,11 @@ export class ContexturePanel implements Component, Focusable {
   private jumpToHit(): void {
     const hit = this.hits[this.sel];
     if (!hit) return;
+    // Catalog hit: load the skill, then the tree picks it up.
+    if (hit.skillId) {
+      void this.loadSkill(hit.skillId);
+      return;
+    }
     const path = this.pathTo(hit.node);
     if (!path) return;
     for (const node of path.slice(0, -1)) node.expanded = true;
@@ -853,7 +938,7 @@ export class ContexturePanel implements Component, Focusable {
     const t = this.theme;
     const out = [`${t.fg("accent", "/")}${this.query}▌`];
     if (!this.query.trim()) {
-      out.push(t.fg("dim", "(type to search — tasks, skills, terms)"));
+      out.push(t.fg("dim", "(type to search — [skill+] hits load on enter)"));
       return out;
     }
     if (this.hits.length === 0) {
@@ -863,7 +948,8 @@ export class ContexturePanel implements Component, Focusable {
     const tags = ["task", "skill", "term"];
     this.hits.forEach((hit, i) => {
       const marker = i === this.sel ? t.fg("accent", "▸ ") : "  ";
-      const tag = t.fg("dim", `[${tags[hit.category]}] `);
+      // Catalog skills aren't loaded yet: [skill+] means enter loads it.
+      const tag = t.fg(hit.skillId ? "accent" : "dim", `[${tags[hit.category]}${hit.skillId ? "+" : ""}] `);
       out.push(truncateToWidth(`${marker}${tag}${hit.node.label}`, width));
     });
     return out;
@@ -906,7 +992,7 @@ export class ContexturePanel implements Component, Focusable {
 
     const hints =
       this.mode === "search"
-        ? `type to search (this section) · tab section · ↑↓ result · enter jump · esc back`
+        ? `type to search (this section) · [skill+] enter loads · tab section · esc back`
         : this.mode === "actions"
           ? `↑↓ action · enter run · esc back`
           : this.mode === "note"

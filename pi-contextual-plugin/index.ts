@@ -35,16 +35,19 @@ import {
   SkillsAutocomplete,
   skillBody,
   type SkillEntry,
+  addLoadedSkill,
 } from "./skills.ts";
 import {
   ContexturePanel,
   docsToNodes,
   itemsToNodes,
   skillsToNodes,
+  skillId,
   tiersToNodes,
   type ItemPatch,
   type PanelActions,
   type PanelNode,
+  type PanelSkills,
 } from "./contexture-panel.ts";
 import { ItemsPaneController, run as runProc } from "./items-pane.ts";
 import { messageText, registerReview, type ReviewDeps } from "./review.ts";
@@ -456,13 +459,13 @@ function renderChecklist(md: string, kind: string | undefined): string {
 }
 
 /** The contexture panel's tree: tasks (work items), context (the
- * three tiers, skills from the catalog), documentation (ws sections
+ * three tiers, plus loaded skills), documentation (ws sections
  * expanded into n-deep heading trees). Failed sources degrade to a
  * placeholder child so the pane still opens. */
 function contextureTree(
   items: RawItem[] | null,
   tiers: TierSection[] | null,
-  skills: SkillEntry[] | null,
+  loadedSkills: SkillEntry[] | null,
   docs: TierSection[] | null,
 ): PanelNode[] {
   const placeholder = (id: string, label: string): PanelNode[] => [{ id, label }];
@@ -471,9 +474,10 @@ function contextureTree(
   const tierNodes = tiers
     ? tiersToNodes(tiers)
     : placeholder("tiers-empty", "(nothing resolved)");
-  const skillNodes = skills
-    ? skillsToNodes(skills)
-    : placeholder("skills-empty", "(no SKILL.md vendored — run tools/skills/pull.py)");
+  const skillNodes =
+    loadedSkills && loadedSkills.length > 0
+      ? skillsToNodes(loadedSkills)
+      : placeholder("skills-empty", "(none loaded — / to search and add)");
   const docsNodes = docs && docs.length > 0 ? docsToNodes(docs) : placeholder("docs-empty", "(no ws sections)");
   return [
     { id: "tasks", label: "tasks", expanded: true, children: itemsNodes },
@@ -516,6 +520,21 @@ function panelActions(): PanelActions {
   };
 }
 
+/** The panel's skills path: the catalog comes from the discovery cache
+ * (warmed below), activation is the same session-loaded set the
+ * injection uses. */
+function panelSkills(): PanelSkills {
+  return {
+    catalog: () => getSkillsCache(),
+    activated: () => getLoadedSkills(),
+    activate: async (id) => {
+      const entry = getSkillsCache().find((s) => skillId(s) === id);
+      if (!entry) throw new Error(`skill ${id} not found in catalog`);
+      addLoadedSkill(entry);
+    },
+  };
+}
+
 /** The contexture panel: alt+c / /panel. The unified pane replacing
  * the overlay family once it reaches parity (work item 2c31). */
 async function openContexturePanel(
@@ -537,12 +556,12 @@ async function openContexturePanel(
   const nodes = contextureTree(
     unwrap(itemsRes),
     unwrap(tiersRes),
-    unwrap(skillsRes),
+    getLoadedSkills(), // only loaded skills in the tree; catalog is for search
     unwrap(docsRes),
   );
   await ctx.ui.custom(
     (_tui, theme, keybindings, done) =>
-      new ContexturePanel(nodes, theme, done, keybindings, panelActions()),
+      new ContexturePanel(nodes, theme, done, keybindings, panelActions(), panelSkills()),
     {
       overlay: true,
       overlayOptions: { width: "100%", maxHeight: "100%", anchor: "center" },

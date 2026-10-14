@@ -13,10 +13,12 @@ import {
   itemsToNodes,
   panelBodyRows,
   skillsToNodes,
+  skillId,
   tiersToNodes,
   type ItemPatch,
   type PanelActions,
   type PanelNode,
+  type PanelSkills,
 } from "../contexture-panel.ts";
 import type { RawItem } from "../items-tree.ts";
 
@@ -425,7 +427,7 @@ test("e opens the action menu on a task, not on other nodes", () => {
     theme as never,
     () => {},
     undefined,
-    { editItem: async () => {}, reloadItems: async () => [] },
+    { editItem: async () => {}, reloadItems: async () => [], moveItem: async () => {} },
   );
   real.handleInput("j"); // select the task
   real.handleInput("e");
@@ -442,7 +444,7 @@ test("action menu reflects current status; closed tasks can reopen", () => {
     theme as never,
     () => {},
     undefined,
-    { editItem: async () => {}, reloadItems: async () => [] },
+    { editItem: async () => {}, reloadItems: async () => [], moveItem: async () => {} },
   );
   real.handleInput("j");
   real.handleInput("e");
@@ -467,6 +469,7 @@ async function actionFixture() {
       );
     },
     reloadItems: async () => items,
+    moveItem: async () => {},
   };
   const p = new ContexturePanel(
     [{ id: "tasks", label: "tasks", expanded: true, children: itemsToNodes(items) }],
@@ -520,7 +523,7 @@ test("esc from the note input returns to the action menu, not the tree", () => {
       closed++;
     },
     undefined,
-    { editItem: async () => {}, reloadItems: async () => [] },
+    { editItem: async () => {}, reloadItems: async () => [], moveItem: async () => {} },
   );
   p.handleInput("j");
   p.handleInput("e");
@@ -684,6 +687,77 @@ test("m enters move mode; arrow moves the queue and the tree follows", async () 
   assert.equal(p.selected.node.id, "c1", "cursor stays on the highlighted task");
   p.handleInput("\x1b");
   assert.equal(get(p, "mode"), "tree");
+});
+
+// ---- skills: loaded-only tree, catalog search to load ----
+
+const skillEntry = (name: string, vendor = "fn", description = "") => ({
+  name,
+  description: description || `${name} skill description`,
+  vendor,
+  file: `/tmp/${vendor}/${name}/SKILL.md`,
+});
+
+async function skillsFixture() {
+  const loaded = new Map<string, ReturnType<typeof skillEntry>>([
+    ["skill-fn/loaded-one", skillEntry("loaded-one")],
+  ]);
+  const catalog = [skillEntry("loaded-one"), skillEntry("unloaded-one"), skillEntry("other", "acme")];
+  const skills: PanelSkills = {
+    catalog: () => catalog,
+    activated: () => [...loaded.values()],
+    activate: async (id) => {
+      const entry = catalog.find((e) => skillId(e) === id);
+      if (!entry) throw new Error(`unknown skill ${id}`);
+      loaded.set(skillId(entry), entry);
+    },
+  };
+  const nodes: PanelNode[] = [
+    { id: "tasks", label: "tasks", expanded: true, children: [] },
+    {
+      id: "context",
+      label: "context",
+      expanded: true,
+      children: [
+        { id: "tier-global", label: "global", children: [] },
+        { id: "skills", label: "skills", expanded: true, children: skillsToNodes(skills.activated()) },
+      ],
+    },
+    { id: "documentation", label: "documentation", children: [] },
+  ];
+  const p = new ContexturePanel(nodes, theme as never, () => {}, undefined, undefined, skills);
+  return { p, loaded, skills };
+}
+
+const flushSkill = () => new Promise((resolve) => setImmediate(resolve));
+
+test("catalog search in context finds unloaded skills; enter loads them", async () => {
+  const { p, loaded } = await skillsFixture();
+  p.handleInput("\t"); // context section
+  p.handleInput("/");
+  p.handleInput("unloaded");
+  const hitsList = hits(p);
+  assert.deepEqual(hitsList.map((h) => h.id), ["skill-fn/unloaded-one"]);
+  const out = plain(p.render(100)).join("\n");
+  assert.ok(out.includes("[skill+]"), "catalog hit marked as loadable");
+  p.handleInput("\r"); // enter loads the skill
+  await flushSkill();
+  assert.ok(loaded.has("skill-fn/unloaded-one"), "skill activated");
+  // Now it's in the tree (no + marker) and out of the catalog.
+  const skillsNode = (get(p, "nodes") as PanelNode[])
+    .find((n) => n.id === "context")
+    ?.children?.find((n) => n.id === "skills");
+  assert.ok(skillsNode?.children?.some((c) => c.id === "skill-fn/unloaded-one"));
+  const after = plain(p.render(100)).join("\n");
+  assert.ok(after.includes("[skill] unloaded-one"), "loaded skills tagged plainly");
+  assert.ok(!after.includes("[skill+] unloaded-one"), "no loadable hits left for this query");
+});
+
+test("catalog is only searchable in the context section", async () => {
+  const { p } = await skillsFixture();
+  p.handleInput("/"); // tasks section active
+  p.handleInput("unloaded");
+  assert.deepEqual(hits(p), []);
 });
 
 test("collapsed documentation sections keep the tree short", () => {
