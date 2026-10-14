@@ -689,6 +689,48 @@ test("m enters move mode; arrow moves the queue and the tree follows", async () 
   assert.equal(get(p, "mode"), "tree");
 });
 
+// ---- content-area paging ----
+
+test("pgup/pgdn/home/end page long detail content; selection resets scroll", () => {
+  const long = Array.from({ length: 60 }, (_, i) => `line-${i}`);
+  const nodes: PanelNode[] = [
+    {
+      id: "context",
+      label: "context",
+      expanded: true,
+      children: [
+        {
+          id: "s1",
+          label: "rust-engineer",
+          children: [],
+          detail: (width: number) => long.map((l) => l.slice(0, width)),
+        },
+        { id: "s2", label: "short", children: [], detail: () => ["brief"] },
+      ],
+    },
+  ];
+  const p = new ContexturePanel(nodes, theme as never, () => {}, undefined);
+  p.render(100); // populate the content window
+  const win = get(p, "contentWin") as { scrollTop: number; viewport: number };
+  const vp = win.viewport;
+  assert.ok(long.length > vp, "content overflows the viewport");
+  p.handleInput("\x1b[6~"); // pgdn
+  assert.ok(win.scrollTop > 0, "paged down");
+  p.handleInput("\x1b[6~"); // pgdn again → clamps at the end
+  const end = win.scrollTop;
+  p.handleInput("\x1b[6~");
+  assert.equal(win.scrollTop, end, "clamped");
+  p.handleInput("\x1b[5~"); // pgup
+  assert.ok(win.scrollTop < end, "paged up");
+  p.handleInput("\x1b[F"); // end
+  assert.equal(win.scrollTop, end);
+  p.handleInput("\x1b[H"); // home
+  assert.equal(win.scrollTop, 0);
+  p.handleInput("\x1b[B"); // move selection → scroll resets to top
+  assert.equal(win.scrollTop, 0);
+  p.render(100); // refreshed content reflects the new scroll
+});
+
 // ---- skills: loaded-only tree, catalog search to load ----
 
 const skillEntry = (name: string, vendor = "fn", description = "") => ({

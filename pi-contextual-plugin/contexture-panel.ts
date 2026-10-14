@@ -443,6 +443,30 @@ export class ContexturePanel implements Component, Focusable {
     else if (this.cursor >= top + this.treeWin.viewport) {
       this.treeWin.scrollTo(this.cursor - this.treeWin.viewport + 1);
     }
+    // New selection → show its detail from the top.
+    this.contentWin.scrollToStart();
+  }
+
+  /** Content-area paging: long details (skill bodies, ws docs) overflow
+   * the viewport; pgup/pgdn/home/end page them. */
+  private handleContentScroll(data: string): boolean {
+    if (this.nav.pageUp(data)) {
+      this.contentWin.scrollBy(-this.contentWin.viewport + 2);
+      return true;
+    }
+    if (this.nav.pageDown(data)) {
+      this.contentWin.scrollBy(this.contentWin.viewport - 2);
+      return true;
+    }
+    if (matchesKey(data, "home")) {
+      this.contentWin.scrollToStart();
+      return true;
+    }
+    if (matchesKey(data, "end") || matchesKey(data, "shift+g")) {
+      this.contentWin.scrollToEnd();
+      return true;
+    }
+    return false;
   }
 
   /** Section switching: the top bar tabs (tab/shift+tab, ctrl+up/ctrl+down).
@@ -491,6 +515,8 @@ export class ContexturePanel implements Component, Focusable {
     // extension shortcut can't see it (same pattern as ctrl+w/ctrl+b).
     if (this.nav.cancel(data) || matchesKey(data, "q") || matchesKey(data, "alt+c")) {
       this.done();
+    } else if (this.handleContentScroll(data)) {
+      // content-area paging (pgup/pgdn/home/end)
     } else if (matchesKey(data, "tab")) {
       this.switchSection(1);
     } else if (matchesKey(data, "shift+tab")) {
@@ -999,7 +1025,7 @@ export class ContexturePanel implements Component, Focusable {
             ? `type note · enter save · esc cancel`
             : this.mode === "move"
               ? `↕ reorder · enter/esc done`
-              : `/ search · tab/shift+tab section · e edit · m move · ↑↓ move · ` +
+              : `/ search · tab/shift+tab section · ↑↓ move · e edit · m move · pgup/pgdn page · ` +
                 `${keyHint(this.kb, "tui.select.cancel", "esc")}/alt+c close`;
 
     return boxFrame(width, [
