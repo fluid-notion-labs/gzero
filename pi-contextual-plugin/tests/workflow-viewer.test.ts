@@ -82,21 +82,24 @@ test("left/right arrows also switch tabs", () => {
 });
 
 test("per-tab scroll resets on switch; window re-centers (sliding window)", () => {
-  const body = Array.from({ length: 40 }, (_, i) => `line-${i}`);
+  // Zero-padded 3-digit names: `line-3` is a substring of `line-30`,
+  // which made these assertions collide with whatever else was on screen.
+  // The body is long enough that the scrolled position and the re-centered
+  // window don't overlap.
+  const body = Array.from({ length: 100 }, (_, i) => `line-${String(i).padStart(3, "0")}`);
   const v = new WorkflowViewer(
     [page("a", body), page("b", body.slice())],
     theme as never,
     () => {},
   );
-  v.handleInput("\x1b[B"); // slide down a few lines on tab a
-  v.handleInput("\x1b[B");
-  v.handleInput("\x1b[B");
+  v.render(60); // open: cache built, window centered
+  for (let i = 0; i < 30; i++) v.handleInput("\x1b[B"); // slide well past center
   let out = plain(v.render(60)).join("\n");
-  assert.ok(out.includes("line-3"));
+  assert.ok(out.includes("line-070"));
   v.handleInput("\t"); // switch: window re-centers on the new tab
   out = plain(v.render(60)).join("\n");
-  assert.ok(!out.includes("line-0"), "not pinned to the top");
-  assert.ok(!out.includes("line-3"), "not the previously scrolled position");
+  assert.ok(!out.includes("line-000"), "not pinned to the top");
+  assert.ok(!out.includes("line-070"), "not the previously scrolled position");
   assert.ok(/line-\d+/.test(out), "window shows middle content");
 });
 
