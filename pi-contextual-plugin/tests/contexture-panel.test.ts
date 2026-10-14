@@ -1,0 +1,568 @@
+// Tests for the contexture panel (P0 skeleton): tree flattening,
+// cursor movement, top-level jumps, expand/collapse, close keys, and
+// the left-tree-with-content two-column render.
+import { test } from "node:test";
+import assert from "node:assert/strict";
+const stripVTControlCodes = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
+import {
+  ContexturePanel,
+  docsToNodes,
+  flattenTree,
+  fuzzyScore,
+  headingTree,
+  itemsToNodes,
+  panelBodyRows,
+  skillsToNodes,
+  tiersToNodes,
+  type ItemPatch,
+  type PanelActions,
+  type PanelNode,
+} from "../contexture-panel.ts";
+import type { RawItem } from "../items-tree.ts";
+
+const item = (over: Partial<RawItem>): RawItem => ({
+  id: "xxxx",
+  title: "t",
+  priority: 0,
+  status: "open",
+  assignee: "",
+  labels: [],
+  blocked_by: [],
+  blocks: [],
+  child_of: [],
+  notes: {},
+  created: 0,
+  ...over,
+});
+
+const flatItem = (it: RawItem, depth: number) => ({ item: it, depth });
+
+// Minimal stub theme: pass text through, enough for render().
+const theme = {
+  fg: (_c: string, s: string) => s,
+  bold: (s: string) => s,
+};
+
+const tree = (): PanelNode[] => [
+  {
+    id: "tasks",
+    label: "tasks",
+    expanded: true,
+    children: [{ id: "t1", label: "task one" }],
+  },
+  {
+    id: "context",
+    label: "context",
+    expanded: true,
+    children: [
+      { id: "global", label: "global" },
+      { id: "local", label: "local" },
+      { id: "skills", label: "skills" },
+    ],
+  },
+  {
+    id: "documentation",
+    label: "documentation",
+    children: [{ id: "d1", label: "architecture" }],
+  },
+];
+
+const make = (nodes: PanelNode[] = tree(), onDone: () => void = () => {}) =>
+  new ContexturePanel(nodes, theme as never, onDone);
+
+test("flattenTree shows children only under expanded parents", () => {
+  const rows = flattenTree(tree());
+  const ids = rows.map((r) => r.node.id);
+  assert.deepEqual(ids, ["tasks", "t1", "context", "global", "local", "skills", "documentation"]);
+  assert.equal(rows[1].depth, 1);
+  assert.equal(rows[6].depth, 0);
+});
+
+test("panelBodyRows scales with terminal rows, with a floor", () => {
+  assert.ok(panelBodyRows() >= 6);
+});
+
+test("up/down move the cursor within bounds", () => {
+  const p = make();
+  assert.equal(p.selected.node.id, "tasks");
+  p.handleInput("\x1b[B"); // down → task one
+  assert.equal(p.selected.node.id, "t1");
+  p.handleInput("\x1b[A"); // up → back
+  assert.equal(p.selected.node.id, "tasks");
+  p.handleInput("\x1b[A"); // up at the top stays
+  assert.equal(p.selected.node.id, "tasks");
+});
+
+test("ctrl+down / ctrl+up jump between the three top-levels", () => {
+  const p = make();
+  p.handleInput("\x1b[B"); // down → t1
+  p.handleInput("\x1b[1;5B"); // ctrl+down → context (next top-level)
+  assert.equal(p.selected.node.id, "context");
+  p.handleInput("\x1b[1;5B"); // ctrl+down → documentation
+  assert.equal(p.selected.node.id, "documentation");
+  p.handleInput("\x1b[1;5B"); // ctrl+down at the end stays
+  assert.equal(p.selected.node.id, "documentation");
+  p.handleInput("\x1b[1;5A"); // ctrl+up → context
+  assert.equal(p.selected.node.id, "context");
+  p.handleInput("\x1b[1;5A"); // ctrl+up → tasks
+  assert.equal(p.selected.node.id, "tasks");
+});
+
+test("enter toggles children; collapsed parents hide their subtree", () => {
+  const p = make();
+  p.handleInput("\x1b[1;5B"); // ctrl+down → context
+  p.handleInput("\r"); // enter → collapse context
+  assert.equal(p.selected.node.id, "context");
+  const visible = flattenTree((p as unknown as { nodes: PanelNode[] }).nodes).map((r) => r.node.id);
+  assert.ok(!visible.includes("global"));
+  p.handleInput("\r"); // enter → expand again
+  assert.ok(visibleContains((p as unknown as { nodes: PanelNode[] }).nodes, "global"));
+});
+
+function visibleContains(nodes: PanelNode[], id: string): boolean {
+  return flattenTree(nodes).some((r) => r.node.id === id);
+}
+
+test("collapsing above the cursor keeps the cursor valid", () => {
+  const p = make();
+  p.handleInput("\x1b[B"); // down → t1 (child of tasks)
+  p.handleInput("\x1b[A"); // up → tasks
+  p.handleInput("\r"); // collapse tasks → subtree hidden
+  const sel = p.selected;
+  assert.ok(["tasks", "context", "documentation"].includes(sel.node.id));
+});
+
+test("done fires on escape, q and alt+c", () => {
+  let closed = 0;
+  const p = make(tree(), () => {
+    closed++;
+  });
+  p.handleInput("\x1b");
+  p.handleInput("q");
+  p.handleInput("\x1b\x63"); // alt+c
+  assert.equal(closed, 3);
+});
+
+test("render: headings live in the left tree column, content to the right", () => {
+  const p = make();
+  const out = plain(p.render(100));
+  // The three section headings appear as left-column tree rows.
+  const treeSide = out.map((l) => l.slice(0, 40));
+  assert.ok(treeSide.some((l) => l.includes("tasks")));
+  assert.ok(treeSide.some((l) => l.includes("context")));
+  assert.ok(treeSide.some((l) => l.includes("documentation")));
+  // The pane title is inside the left column too (no top header strip).
+  assert.ok(out[1].slice(0, 40).includes("contexture"));
+  // Content area shows the selected node (tasks placeholder).
+  assert.ok(out.some((l) => l.length > 45 && l.includes("tasks")));
+});
+
+test("render: selection highlight follows the cursor", () => {
+  const p = make();
+  p.handleInput("\x1b[1;5B"); // ctrl+down → context
+  const out = plain(p.render(100));
+  const selected = out.find((l) => l.includes("▾ context"));
+  assert.ok(selected, "context row rendered");
+});
+
+const plain = (lines: string[]): string[] => lines.map((l) => stripVTControlCodes(l));
+
+// ---- P1 data builders ----
+
+test("itemsToNodes builds the child_of tree with status glyphs and detail", () => {
+  const nodes = itemsToNodes([
+    item({ id: "p1", title: "parent", status: "in_progress" }),
+    item({ id: "c1", title: "child", child_of: ["p1"], priority: 2 }),
+  ]);
+  assert.equal(nodes.length, 1);
+  assert.equal(nodes[0].label, "● parent");
+  const child = nodes[0].children![0];
+  assert.equal(child.label, "○ child");
+  assert.equal(child.id, "c1");
+  const detail = child.detail!(80, theme as never);
+  assert.ok(detail.some((l) => l.includes("p2 · c1")));
+});
+
+test("itemsToNodes surfaces notes in the detail", () => {
+  const nodes = itemsToNodes([item({ id: "n1", notes: { a: { text: "a note here" } } })]);
+  const detail = nodes[0].detail!(80, theme as never).map((l) => stripVTControlCodes(l));
+  assert.ok(detail.some((l) => l.includes("a note here")));
+});
+
+test("itemsToNodes renders string-valued notes (storage shape) without crashing", () => {
+  // Storage writes plain strings; the {text} shape crashed truncateToWidth.
+  const nodes = itemsToNodes([
+    item({
+      id: "n2",
+      title: "write product.md",
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      notes: { "6881": "Obsolete: the vision section holds this." } as any,
+    }),
+  ]);
+  const detail = nodes[0].detail!(80, theme as never).map((l) => stripVTControlCodes(l));
+  assert.ok(detail.some((l) => l.includes("Obsolete: the vision section holds this.")));
+});
+
+test("itemDetail tolerates missing fields", () => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const nodes = itemsToNodes([{} as any]);
+  const detail = nodes[0].detail!(80, theme as never).map((l) => stripVTControlCodes(l));
+  assert.ok(detail[0].includes("(untitled)"));
+});
+
+test("tiersToNodes maps tier sections to children with text detail", () => {
+  const nodes = tiersToNodes([
+    { label: "global", nodes: [{ label: "global/notes", text: "line one\nline two" }] },
+  ]);
+  assert.equal(nodes[0].label, "global");
+  const child = nodes[0].children![0];
+  assert.equal(child.label, "global/notes");
+  const detail = child.detail!(40, theme as never);
+  assert.ok(detail.some((l) => l.includes("line one")));
+  assert.ok(detail.some((l) => l.includes("line two")));
+});
+
+test("skillsToNodes lists the catalog with description detail", () => {
+  const nodes = skillsToNodes([
+    { name: "my-skill", description: "does things", vendor: "fn", file: "/tmp/x/SKILL.md" },
+  ]);
+  assert.equal(nodes[0].label, "my-skill");
+  assert.ok(nodes[0].id.startsWith("skill-fn/my-skill"));
+  const detail = nodes[0].detail!(80, theme as never).map((l) => stripVTControlCodes(l));
+  assert.ok(detail.some((l) => l.includes("fn · /tmp/x/SKILL.md")));
+});
+
+test("headingTree nests headings n-deep and attaches body text", () => {
+  const nodes = headingTree(
+    [
+      "intro text before any heading",
+      "# Top",
+      "top body",
+      "## Sub",
+      "sub body",
+      "### Deep",
+      "deep body",
+      "## Second",
+      "second body",
+    ].join("\n"),
+  );
+  assert.equal(nodes[0].label, "(intro)");
+  const top = nodes[1];
+  assert.equal(top.label, "Top");
+  const sub = top.children![0];
+  assert.equal(sub.label, "Sub");
+  const deep = sub.children![0];
+  assert.equal(deep.label, "Deep");
+  // Deep body text belongs to Deep; Second is a sibling of Sub.
+  const deepDetail = deep.detail!(40, theme as never);
+  assert.ok(deepDetail.some((l) => l.includes("deep body")));
+  assert.equal(top.children![1].label, "Second");
+  const secondDetail = top.children![1].detail!(40, theme as never);
+  assert.ok(secondDetail.some((l) => l.includes("second body")));
+});
+
+test("headingTree skips an over-nested jump (#### after ## nests under ##)", () => {
+  const nodes = headingTree(["# A", "## B", "#### D"].join("\n"));
+  const a = nodes[0];
+  const b = a.children![0];
+  assert.equal(b.children![0].label, "D");
+});
+
+test("docsToNodes wraps a section body in a heading tree or body fallback", () => {
+  const withHeadings = docsToNodes([
+    { label: "arch", nodes: [{ label: "Architecture", text: "# Overview\nstuff" }] },
+  ]);
+  assert.equal(withHeadings[0].label, "arch");
+  assert.equal(withHeadings[0].children![0].label, "Overview");
+
+  const plainBody = docsToNodes([
+    { label: "now", nodes: [{ label: "Now", text: "just text" }] },
+  ]);
+  assert.equal(plainBody[0].children![0].label, "(body)");
+  const detail = plainBody[0].children![0].detail!(40, theme as never);
+  assert.ok(detail.some((l) => l.includes("just text")));
+});
+
+// ---- P3 fuzzy search ----
+
+test("fuzzyScore ranks substring over subsequence, null on no match", () => {
+  assert.equal(fuzzyScore("jj", "jj workflow"), 100);
+  assert.ok((fuzzyScore("jw", "jj workflow") ?? 0) > 0);
+  assert.equal(fuzzyScore("xyz", "jj workflow"), null);
+  assert.ok((fuzzyScore("jj", "jj x") ?? 0) > (fuzzyScore("jj", "a jj b jj") ?? 0)); // earliest wins
+  assert.ok((fuzzyScore("jc", "j j c") ?? 0) > 0); // streaks help
+});
+
+const searchableTree = (): PanelNode[] => [
+  {
+    id: "tasks",
+    label: "tasks",
+    expanded: true,
+    children: [
+      { id: "aaa1", label: "○ fix login bug", searchText: "fix login bug", children: [], item: item({ id: "aaa1", title: "fix login bug", status: "open", priority: 0 }) },
+      { id: "bbb2", label: "○ write product.md", searchText: "write product.md", children: [], item: item({ id: "bbb2", title: "write product.md", status: "open", priority: 1 }) },
+    ],
+  },
+  {
+    id: "context",
+    label: "context",
+    expanded: true,
+    children: [
+      { id: "tier-global", label: "global", children: [
+        { id: "tier-global/global-notes", label: "global/notes", searchText: "Begin each task in a jj workspace", detail: () => [] },
+      ] },
+      { id: "skills", label: "skills", children: [
+        { id: "skill-fn/product-stance", label: "product-stance", searchText: "product positioning and stance fn", detail: () => [] },
+      ] },
+    ],
+  },
+  { id: "documentation", label: "documentation", children: [
+    { id: "doc-arch", label: "architecture", searchText: "ignored — docs are not searchable" },
+  ] },
+];
+
+const get = (p: ContexturePanel, field: string): unknown =>
+  (p as unknown as Record<string, unknown>)[field];
+
+const hits = (p: ContexturePanel): { id: string; category: number }[] =>
+  (get(p, "hits") as SearchHit[]).map((h) => ({ id: h.node.id, category: h.category }));
+
+interface SearchHit {
+  node: PanelNode;
+  category: number;
+  score: number;
+}
+
+test("slash enters search; typing filters across tasks, skills, terms", () => {
+  const p = make(searchableTree());
+  p.handleInput("/");
+  assert.equal(get(p, "mode"), "search");
+  p.handleInput("prod");
+  const ids = hits(p).map((h) => h.id);
+  assert.ok(ids.includes("bbb2"), "task matches");
+  assert.ok(ids.includes("skill-fn/product-stance"), "skill matches");
+});
+
+test("ordering: tasks before skills before terms", () => {
+  const p = make(searchableTree());
+  p.handleInput("/");
+  p.handleInput("product"); // matches task + skill
+  const list = hits(p);
+  const taskIdx = list.findIndex((h) => h.category === 0);
+  const skillIdx = list.findIndex((h) => h.category === 1);
+  assert.ok(taskIdx >= 0 && skillIdx > taskIdx);
+  p.handleInput("\x7f\x7f\x7f\x7f\x7f\x7f\x7f"); // clear → workspace matches term
+  p.handleInput("workspace");
+  const cats = hits(p).map((h) => h.category);
+  assert.deepEqual(cats, [2], "only the term matches");
+});
+
+test("documentation nodes are not part of the corpus", () => {
+  const p = make(searchableTree());
+  p.handleInput("/");
+  p.handleInput("ignored");
+  assert.equal(hits(p).length, 0);
+});
+
+test("enter jumps to the hit, expanding ancestors, and returns to tree mode", () => {
+  const p = make(searchableTree());
+  p.handleInput("/");
+  p.handleInput("workspace"); // term under context > global (global collapsed here)
+  p.handleInput("\r"); // enter → jump
+  assert.equal(get(p, "mode"), "tree");
+  assert.equal(p.selected.node.id, "tier-global/global-notes");
+  // Ancestors expanded: the node is visible in the flattened rows.
+  const rows = flattenTree((get(p, "nodes") as PanelNode[]));
+  assert.ok(rows.some((r) => r.node.id === "tier-global/global-notes"));
+});
+
+test("typing q in search mode edits the query instead of closing", () => {
+  let closed = 0;
+  const p = make(searchableTree(), () => {
+    closed++;
+  });
+  p.handleInput("/");
+  p.handleInput("q");
+  assert.equal(closed, 0);
+  assert.equal(get(p, "query"), "q");
+  p.handleInput("\x1b"); // esc leaves search mode, not the panel
+  assert.equal(get(p, "mode"), "tree");
+  assert.equal(closed, 0);
+  p.handleInput("q"); // in tree mode, q closes
+  assert.equal(closed, 1);
+});
+
+test("search content shows the query line and result tags", () => {
+  const p = make(searchableTree());
+  p.handleInput("/");
+  p.handleInput("product");
+  const out = plain(p.render(100)).join("\n");
+  assert.ok(out.includes("/product"));
+  assert.ok(out.includes("[task]"));
+  assert.ok(out.includes("[skill]"));
+});
+
+// ---- P4 edit actions and scoped query ----
+
+test("e opens the action menu on a task, not on other nodes", () => {
+  const p = make(itemsToNodes([
+    item({ id: "t1", title: "do it", status: "open", priority: 1 }),
+  ]));
+  p.handleInput("e");
+  assert.equal(get(p, "mode"), "tree"); // no item on the stub tree's nodes
+
+  const real = new ContexturePanel(
+    itemsToNodes([item({ id: "t1", title: "do it", status: "open", priority: 1 })]),
+    theme as never,
+    () => {},
+    undefined,
+    { editItem: async () => {}, reloadItems: async () => [] },
+  );
+  real.handleInput("e");
+  assert.equal(get(real, "mode"), "actions");
+  const content = plain(real.render(100)).join("\n");
+  assert.ok(content.includes("status → in_progress"));
+  assert.ok(content.includes("status → closed"));
+  assert.ok(content.includes("add note"));
+});
+
+test("action menu reflects current status; closed tasks can reopen", () => {
+  const real = new ContexturePanel(
+    itemsToNodes([item({ id: "t1", title: "done thing", status: "closed", priority: 0 })]),
+    theme as never,
+    () => {},
+    undefined,
+    { editItem: async () => {}, reloadItems: async () => [] },
+  );
+  real.handleInput("e");
+  const content = plain(real.render(100)).join("\n");
+  assert.ok(!content.includes("status → closed"), "no close action on a closed task");
+  assert.ok(content.includes("status → open"));
+});
+
+async function actionFixture() {
+  const edits: { id: string; patch: ItemPatch }[] = [];
+  let items = [
+    item({ id: "t1", title: "do it", status: "open", priority: 1 }),
+    item({ id: "t2", title: "other", status: "open", priority: 2, child_of: ["t1"] }),
+  ];
+  const actions: PanelActions = {
+    editItem: async (id, patch) => {
+      edits.push({ id, patch });
+      items = items.map((it) =>
+        it.id === id
+          ? { ...it, status: patch.status ?? it.status, priority: patch.priority ?? it.priority }
+          : it,
+      );
+    },
+    reloadItems: async () => items,
+  };
+  const p = new ContexturePanel(
+    [{ id: "tasks", label: "tasks", expanded: true, children: itemsToNodes(items) }],
+    theme as never,
+    () => {},
+    undefined,
+    actions,
+  );
+  // Cursor starts on the tasks wrapper; select the task itself.
+  p.handleInput("j");
+  return { p, edits, getItems: () => items };
+}
+
+const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+test("enter runs an action, refreshes the tree, keeps the cursor", async () => {
+  const { p, edits } = await actionFixture();
+  p.handleInput("e");
+  p.handleInput("\r"); // run first action: status → in_progress
+  await flush();
+  assert.deepEqual(edits, [{ id: "t1", patch: { status: "in_progress" } }]);
+  assert.equal(get(p, "mode"), "tree");
+  assert.equal(p.selected.node.id, "t1");
+  assert.equal(p.selected.node.item?.status, "in_progress");
+  // Child still in the tree after reload.
+  assert.ok(flattenTree((get(p, "nodes") as PanelNode[])).some((r) => r.node.id === "t2"));
+});
+
+test("add note flow: menu → note input → typed text → enter saves", async () => {
+  const { p, edits } = await actionFixture();
+  p.handleInput("e");
+  const noteIdx = 4; // last menu entry: add note…
+  p.handleInput("\x1b[B");
+  p.handleInput("\x1b[B");
+  p.handleInput("\x1b[B");
+  p.handleInput("\x1b[B");
+  p.handleInput("\r");
+  assert.equal(get(p, "mode"), "note");
+  p.handleInput("remember the thing");
+  p.handleInput("\r");
+  await flush();
+  assert.deepEqual(edits, [{ id: "t1", patch: { note: "remember the thing" } }]);
+  assert.equal(get(p, "mode"), "tree");
+});
+
+test("esc from the note input returns to the action menu, not the tree", () => {
+  let closed = 0;
+  const p = new ContexturePanel(
+    itemsToNodes([item({ id: "t1", title: "do it", status: "open", priority: 1 })]),
+    theme as never,
+    () => {
+      closed++;
+    },
+    undefined,
+    { editItem: async () => {}, reloadItems: async () => [] },
+  );
+  p.handleInput("e");
+  for (let i = 0; i < 5; i++) p.handleInput("\x1b[B");
+  p.handleInput("\r");
+  p.handleInput("\x1b");
+  assert.equal(get(p, "mode"), "actions");
+  assert.equal(closed, 0);
+  p.handleInput("\x1b");
+  assert.equal(get(p, "mode"), "tree");
+  assert.equal(closed, 0);
+});
+
+test("shift+up/down cycles the query scope; scoped search restricts hits", () => {
+  const p = make(searchableTree());
+  p.handleInput("/");
+  p.handleInput("workspace");
+  assert.equal(hits(p).length, 1); // term under context
+  p.handleInput("\x1b");
+  p.handleInput("\x1b[1;2B"); // shift+down → scope tasks
+  assert.equal(get(p, "scope"), 1);
+  p.handleInput("/");
+  p.handleInput("workspace");
+  assert.equal(hits(p).length, 0, "term is outside the tasks scope");
+  p.handleInput("\x7f\x7f\x7f\x7f\x7f\x7f\x7f\x7f\x7f");
+  p.handleInput("login"); // a task
+  assert.equal(hits(p).length, 1);
+});
+
+test("query tokens: is:open, is:active, p<N> restrict to matching tasks", () => {
+  const p = make(searchableTree());
+  p.handleInput("/");
+  p.handleInput("is:open");
+  const ids = hits(p).map((h) => h.id);
+  assert.ok(ids.includes("aaa1") && ids.includes("bbb2"));
+  p.handleInput(" p2");
+  assert.deepEqual(hits(p).map((h) => h.id), []); // neither is p2
+  p.handleInput("\x7f\x7f\x7f");
+  p.handleInput(" ");
+  // Token-only query (is:open): both open tasks match.
+  assert.equal(hits(p).length, 2);
+  p.handleInput("\x1b");
+  p.handleInput("/");
+  p.handleInput("is:active workspace");
+  assert.equal(hits(p).length, 0, "token filter excludes non-tasks");
+});
+
+test("collapsed documentation sections keep the tree short", () => {
+  const nodes = docsToNodes([
+    { label: "arch", nodes: [{ label: "Architecture", text: "# Overview\nstuff" }] },
+  ]);
+  // PanelNode defaults to collapsed: heading children exist but stay hidden.
+  assert.ok(nodes[0].children![0].children!.length >= 0);
+  const rows = flattenTree(nodes);
+  assert.deepEqual(rows.map((r) => r.node.label), ["arch"]);
+});

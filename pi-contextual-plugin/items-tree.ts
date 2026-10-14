@@ -15,7 +15,8 @@ export interface RawItem {
   blocked_by: string[];
   blocks: string[];
   child_of: string[];
-  notes: Record<string, { text: string }>;
+  /** Storage writes plain strings; older items use { text } objects. */
+  notes: Record<string, string | { text: string }>;
   created: number;
   /** Position in the scope's display queue (Storage-owned); falls back to created. */
   order?: number;
@@ -80,14 +81,14 @@ export function buildItemTree(items: RawItem[]): ItemNode[] {
 
   const childrenOf = new Map<string, RawItem[]>();
   for (const it of items) {
-    for (const parent of it.child_of) {
+    for (const parent of it.child_of ?? []) {
       if (!childrenOf.has(parent)) childrenOf.set(parent, []);
       childrenOf.get(parent)!.push(it);
     }
   }
 
   const roots = items.filter(
-    (it) => it.child_of.length === 0 || it.child_of.every((p) => !byId.has(p)),
+    (it) => (it.child_of ?? []).length === 0 || it.child_of.every((p) => !byId.has(p)),
   );
 
   const placed = new Set<string>();

@@ -36,6 +36,16 @@ import {
   skillBody,
   type SkillEntry,
 } from "./skills.ts";
+import {
+  ContexturePanel,
+  docsToNodes,
+  itemsToNodes,
+  skillsToNodes,
+  tiersToNodes,
+  type ItemPatch,
+  type PanelActions,
+  type PanelNode,
+} from "./contexture-panel.ts";
 import { ItemsPaneController, run as runProc } from "./items-pane.ts";
 import { messageText, registerReview, type ReviewDeps } from "./review.ts";
 import {
@@ -446,6 +456,97 @@ function renderChecklist(md: string, kind: string | undefined): string {
   });
 }
 
+/** The contexture panel's tree: tasks (work items), context (the
+ * three tiers, skills from the catalog), documentation (ws sections
+ * expanded into n-deep heading trees). Failed sources degrade to a
+ * placeholder child so the pane still opens. */
+function contextureTree(
+  items: RawItem[] | null,
+  tiers: TierSection[] | null,
+  skills: SkillEntry[] | null,
+  docs: TierSection[] | null,
+): PanelNode[] {
+  const placeholder = (id: string, label: string): PanelNode[] => [{ id, label }];
+  const itemsNodes =
+    items && items.length > 0 ? itemsToNodes(items) : placeholder("tasks-empty", "(no work items)");
+  const tierNodes = tiers
+    ? tiersToNodes(tiers)
+    : placeholder("tiers-empty", "(nothing resolved)");
+  const skillNodes = skills
+    ? skillsToNodes(skills)
+    : placeholder("skills-empty", "(no SKILL.md vendored — run tools/skills/pull.py)");
+  const docsNodes = docs && docs.length > 0 ? docsToNodes(docs) : placeholder("docs-empty", "(no ws sections)");
+  return [
+    { id: "tasks", label: "tasks", expanded: true, children: itemsNodes },
+    {
+      id: "context",
+      label: "context",
+      expanded: true,
+      children: [
+        ...tierNodes,
+        { id: "skills", label: "skills", children: skillNodes },
+      ],
+    },
+    { id: "documentation", label: "documentation", children: docsNodes },
+  ];
+}
+
+/** The panel's edit path: cx item edit for patches, cx item note for
+ * note appends (separate command). */
+function panelActions(): PanelActions {
+  const cxEdit = async (id: string, patch: ItemPatch): Promise<void> => {
+    if (patch.note) {
+      const res = await runProc("cx", ["item", "note", id, patch.note], 10000);
+      if (res.code !== 0) throw new Error(res.stderr.trim().split("\n")[0] || "cx item note failed");
+      return;
+    }
+    const args = ["item", "edit", id];
+    if (patch.status) args.push("--status", patch.status);
+    if (patch.priority !== undefined) args.push("--priority", String(patch.priority));
+    if (patch.title) args.push("--title", patch.title);
+    const res = await runProc("cx", args, 10000);
+    if (res.code !== 0) throw new Error(res.stderr.trim().split("\n")[0] || "cx item edit failed");
+  };
+  return {
+    editItem: cxEdit,
+    reloadItems: async () => (await cxJson(["item", "list", "--json"])) as RawItem[],
+  };
+}
+
+/** The contexture panel: alt+c / /panel. The unified pane replacing
+ * the overlay family once it reaches parity (work item 2c31). */
+async function openContexturePanel(
+  ctx: ExtensionContext,
+  loadTiers: () => Promise<TierSection[]>,
+): Promise<void> {
+  if (ctx.mode !== "tui") {
+    ctx.ui.notify("The contexture panel needs TUI mode", "warning");
+    return;
+  }
+  const [itemsRes, tiersRes, skillsRes, docsRes] = await Promise.allSettled([
+    cxJson(["item", "list", "--json"]) as Promise<RawItem[]>,
+    loadTiers(),
+    ensureSkills(),
+    loadWorkflowSections(),
+  ]);
+  const unwrap = <T>(r: PromiseSettledResult<T>): T | null =>
+    r.status === "fulfilled" ? r.value : null;
+  const nodes = contextureTree(
+    unwrap(itemsRes),
+    unwrap(tiersRes),
+    unwrap(skillsRes),
+    unwrap(docsRes),
+  );
+  await ctx.ui.custom(
+    (_tui, theme, keybindings, done) =>
+      new ContexturePanel(nodes, theme, done, keybindings, panelActions()),
+    {
+      overlay: true,
+      overlayOptions: { width: "100%", maxHeight: "100%", anchor: "center" },
+    },
+  );
+}
+
 async function openWorkflow(
   ctx: ExtensionContext,
   pane: ItemsPaneController,
@@ -796,6 +897,33 @@ export default function (pi: ExtensionAPI) {
   pi.registerShortcut(Key.ctrl("b"), {
     description: "Toggle the context bag (global / local / skills)",
     handler: (ctx) => openContextBag(ctx),
+  });
+
+  // ---- contexture panel (alt+c) — the unified pane ----
+  // Fresh build (design: work item 2c31): one left-tree pane with
+  // tasks / context / documentation. The existing overlays above are
+  // untouched until this reaches parity (P5 cutover); /panel is the
+  // discoverable path.
+  /** Tiers for the panel's context subtree: resolved via the same
+   * cached resolution the injection uses. Empty on failure — the pane
+   * shows a placeholder. */
+  const loadTierSections = async (): Promise<TierSection[]> => {
+    const cxMcp = await findCxMcp();
+    if (!cxMcp) return [];
+    const body = await cachedResolved(cxMcp);
+    if (!body) return [];
+    return bucketTiers(body).filter((s) => s.nodes.length > 0);
+  };
+  pi.registerShortcut(Key.alt("c"), {
+    description: "Toggle the contexture panel (tasks / context / documentation)",
+    handler: (ctx) => openContexturePanel(ctx, loadTierSections),
+  });
+
+  pi.registerCommand("panel", {
+    description: "Toggle the contexture panel (same as alt+c)",
+    handler: async (_args: string, ctx: ExtensionCommandContext) => {
+      await openContexturePanel(ctx, loadTierSections);
+    },
   });
 
   // Work guard: claim / park / release the repo so later sessions see
