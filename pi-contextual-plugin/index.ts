@@ -59,7 +59,7 @@ import {
   registerWorkstyles,
 } from "./workstyles.ts";
 import { execFile, spawn } from "node:child_process";
-import { existsSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -634,8 +634,41 @@ async function openWorkflow(
   }
 }
 
+/**
+ * Session + machine identity (S1 presence).
+ *
+ * The session id is generated fresh per factory call — one per pi
+ * session. Machine id is a stable UUID file so presence rows can
+ * distinguish local sessions from other machines' sessions.
+ */
+function sessionIdentity(): { sessionId: string; machineId: string } {
+  const sessionId = crypto.randomUUID();
+  const machineFile = path.join(os.homedir(), ".pi", "agent", "machine-id");
+  let machineId: string;
+  try {
+    machineId = readFileSync(machineFile, "utf8").trim();
+    if (!machineId) throw new Error("empty");
+  } catch {
+    machineId = crypto.randomUUID();
+    try {
+      mkdirSync(path.dirname(machineFile), { recursive: true });
+      writeFileSync(machineFile, machineId + "\n");
+    } catch {
+      // best-effort; an ephemeral id still distinguishes machines poorly
+      // but works locally
+    }
+  }
+  return { sessionId, machineId };
+}
+
 export default function (pi: ExtensionAPI) {
   const itemsPane = new ItemsPaneController();
+
+  // Presence identity: exported for every cx-mcp spawn (the model's MCP
+  // server and the plugin's own internal calls) via process.env.
+  const { sessionId, machineId } = sessionIdentity();
+  process.env.CX_SESSION_ID = sessionId;
+  process.env.CX_MACHINE_ID = machineId;
   let cxMcpPath: string | null | undefined;
   /** Resolved default context for this session; injected every turn. */
   let resolvedBody: string | null = null;
