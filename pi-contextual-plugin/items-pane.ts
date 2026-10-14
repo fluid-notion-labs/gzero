@@ -98,12 +98,12 @@ const STATUS_ICON: Record<string, { icon: string; color: "muted" | "accent" | "s
   closed: { icon: "✓", color: "success" },
 };
 
-const MAX_ROWS = 28;
-
 /**
  * Task rows a surface may show on a terminal of `rows` lines: enough
  * headroom that neither the strip nor the panel reaches the chat — the
- * rule is to leave 2 lines of space at the bottom.
+ * rule is to leave 2 lines of space at the bottom. Both surfaces share
+ * this cap so the panel is always the same height as the strip (its
+ * extra title/rule chrome consumes the remaining headroom).
  */
 export function taskRowCap(rows: number | undefined): number {
   return Math.max(1, (rows ?? 40) - 6);
@@ -245,7 +245,7 @@ export class ItemsPane implements Component {
       created: Number(f.item.created ?? 0),
     }));
     const scope = (items[0] as { scope?: string } | undefined)?.scope ?? "";
-    const key = JSON.stringify(rows.slice(0, MAX_ROWS)) + scope;
+    const key = JSON.stringify(rows.slice(0, taskRowCap(process.stdout.rows))) + scope;
     this.error = null;
     if (key === this.cacheKey) return false;
     this.cacheKey = key;
@@ -264,8 +264,10 @@ export class ItemsPane implements Component {
     const w = Math.min(width, 60);
     const inner = w - 4; // │ + space + content + space + │
     const lines: string[] = [];
-    // Same height as the strip: task rows capped by terminal height.
-    const maxRows = Math.min(MAX_ROWS, taskRowCap(process.stdout.rows));
+    // Same height as the strip: the same taskRowCap governs both
+    // surfaces, so the old fixed 28-row cap cannot bind first on tall
+    // terminals and leave the panel shorter than the strip.
+    const maxRows = taskRowCap(process.stdout.rows);
 
     const title = truncateToWidth(" tasks ", inner);
     lines.push(
