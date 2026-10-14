@@ -85,6 +85,7 @@ cx item gate <id> [--met|--unmet] [\"text\"]  set/satisfy the close gate
 cx item label <id> add|rm <label>
 cx item edge <id> add|rm blocks|child-of|discovered-from <target>
 cx item rm <id>   delete an item
+cx sessions       session presence rows (stale marked; S1 inspection)
 env: CX_DB        bag location (default ~/.pi/agent/context.db)
 env: CX_WS_DB     workflow doc: sections + items (default ~/.pi/agent/context.ws)";
 
@@ -99,6 +100,36 @@ fn main() {
         return;
     }
     match args[0].as_str() {
+        "sessions" => {
+            // Inspection view for S1 presence: all rows, stale marked.
+            let store = open_store();
+            let rows = store.all_sessions().unwrap_or_else(|e| panic!("cx: {e}"));
+            let (me, _) = contextual::sessions::session_identity();
+            if rows.is_empty() {
+                println!("no sessions on record");
+                return;
+            }
+            for s in rows {
+                let stale =
+                    contextual::sessions::now() - s.last_seen > contextual::PRESENCE_TTL_SECS;
+                let marker = if s.session_id == me {
+                    " (me)"
+                } else if stale {
+                    " (stale)"
+                } else {
+                    ""
+                };
+                let m = (contextual::sessions::now() - s.last_seen) / 60;
+                println!(
+                    "{}{}  {}  {}  seen {}m ago",
+                    &s.session_id[..s.session_id.len().min(12)],
+                    marker,
+                    s.scope,
+                    if s.cwd.is_empty() { "?" } else { &s.cwd },
+                    m
+                );
+            }
+        }
         "add" => {
             if args.len() < 2 {
                 eprintln!("usage: cx add file.md ...");
