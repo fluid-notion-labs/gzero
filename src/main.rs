@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use std::process::exit;
 
 use contextual::hub::{events_for_snapshot, Event, Hub};
-use contextual::items::{EdgeKind, ItemEdit, NewItem, Status, WorkItem};
+use contextual::items::{EdgeKind, ItemEdit, MoveTarget, NewItem, Status, WorkItem};
 use contextual::sections::{checklist_progress, Section, SectionKind};
 use contextual::snapshot::Atom;
 use contextual::{source_counts, tag_counts, AutomergeStore, SqliteStore, Storage};
@@ -768,7 +768,11 @@ fn item_command(args: &[String]) {
         }
         "list" | "ready" => {
             let ranked = if sub == "ready" {
-                Some(store.item_rank(&scope).unwrap_or_else(|e| die("cx item", e)))
+                Some(
+                    store
+                        .item_rank(&scope)
+                        .unwrap_or_else(|e| die("cx item", e)),
+                )
             } else {
                 None
             };
@@ -805,9 +809,7 @@ fn item_command(args: &[String]) {
                 let all = store
                     .item_list(&scope)
                     .unwrap_or_else(|e| die("cx item", e));
-                let pinned = store
-                    .item_pinned_ids(&scope)
-                    .unwrap_or_default();
+                let pinned = store.item_pinned_ids(&scope).unwrap_or_default();
                 if json {
                     let arr: Vec<_> = items
                         .iter()
@@ -966,6 +968,33 @@ fn item_command(args: &[String]) {
             .unwrap_or_else(|e| die("cx item", e));
             println!("{} {} -> {}", scope, it.id, it.status.as_str());
         }
+        "move" => {
+            let id = id_of(
+                &pos,
+                1,
+                "cx item move <id> top|bottom|before|after [sibling]",
+            );
+            let rel = pos.get(2).map(|s| s.to_lowercase()).unwrap_or_default();
+            let target = match rel.as_str() {
+                "top" => MoveTarget::Top,
+                "bottom" => MoveTarget::Bottom,
+                "before" => MoveTarget::Before(
+                    pos.get(3)
+                        .map(String::clone)
+                        .unwrap_or_else(|| usage_move()),
+                ),
+                "after" => MoveTarget::After(
+                    pos.get(3)
+                        .map(String::clone)
+                        .unwrap_or_else(|| usage_move()),
+                ),
+                _ => usage_move(),
+            };
+            let it = store
+                .item_move(&scope, &id, target)
+                .unwrap_or_else(|e| die("cx item", e));
+            println!("moved {} -> queue position {}", it.id, it.order);
+        }
         "gate" => {
             let id = id_of(&pos, 1, "cx item gate <id> [--met|--unmet] [\"text\"]");
             let met = if flags.contains_key("met") {
@@ -986,7 +1015,11 @@ fn item_command(args: &[String]) {
             println!(
                 "{}: gate={} met={}",
                 it.id,
-                if it.gate.is_empty() { "(none)" } else { &it.gate },
+                if it.gate.is_empty() {
+                    "(none)"
+                } else {
+                    &it.gate
+                },
                 it.gate_met
             );
         }
@@ -1126,11 +1159,17 @@ fn flag_text(flags: &BTreeMap<String, String>, key: &str, file_key: &str) -> Str
     String::new()
 }
 
+fn usage_move() -> ! {
+    eprintln!("cx item move <id> top|bottom|before|after <sibling>");
+    exit(2);
+}
+
 fn item_json(it: &WorkItem) -> serde_json::Value {
     serde_json::json!({
         "scope": it.scope, "id": it.id, "title": it.title,
         "priority": it.priority, "status": it.status.as_str(),
         "assignee": it.assignee, "created": it.created,
+        "order": it.order, "closed_at": it.closed_at,
         "labels": it.labels.iter().collect::<Vec<_>>(),
         "notes": it.notes,
         "blocks": it.blocks.iter().collect::<Vec<_>>(),

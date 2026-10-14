@@ -81,21 +81,23 @@ test("left/right arrows also switch tabs", () => {
   assert.ok(plain(v.render(60)).join("\n").includes("row-a"));
 });
 
-test("per-tab scroll position resets on switch, persists per session", () => {
+test("per-tab scroll resets on switch; window re-centers (sliding window)", () => {
   const body = Array.from({ length: 40 }, (_, i) => `line-${i}`);
   const v = new WorkflowViewer(
     [page("a", body), page("b", body.slice())],
     theme as never,
     () => {},
   );
-  v.handleInput("\x1b[B"); // down a few lines on tab a
+  v.handleInput("\x1b[B"); // slide down a few lines on tab a
   v.handleInput("\x1b[B");
   v.handleInput("\x1b[B");
   let out = plain(v.render(60)).join("\n");
   assert.ok(out.includes("line-3"));
-  v.handleInput("\t"); // switch: scroll resets to top
+  v.handleInput("\t"); // switch: window re-centers on the new tab
   out = plain(v.render(60)).join("\n");
-  assert.ok(out.includes("line-0"));
+  assert.ok(!out.includes("line-0"), "not pinned to the top");
+  assert.ok(!out.includes("line-3"), "not the previously scrolled position");
+  assert.ok(/line-\d+/.test(out), "window shows middle content");
 });
 
 test("done fires on escape and q", () => {

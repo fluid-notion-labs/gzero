@@ -773,7 +773,9 @@ fn tool_item_pin(args: &serde_json::Value, store: &mut AutomergeStore) -> Result
         .ok_or("item_pin: missing id")?;
     let pinned = args.get("pinned").and_then(|v| v.as_bool()).unwrap_or(true);
     let scope = ws_scope_arg(args);
-    let it = store.item_pin(&scope, id, pinned).map_err(|e| e.to_string())?;
+    let it = store
+        .item_pin(&scope, id, pinned)
+        .map_err(|e| e.to_string())?;
     Ok(if pinned {
         format!(
             "pinned {} — it now rides in resolve output until unpinned or closed",
@@ -796,9 +798,7 @@ fn tool_plan_next(args: &serde_json::Value, store: &AutomergeStore) -> Result<St
         .item_plan_next(&scope, limit)
         .map_err(|e| e.to_string())?;
     if ranked.is_empty() {
-        return Ok(format!(
-            "nothing ready: no open unblocked items in {scope}"
-        ));
+        return Ok(format!("nothing ready: no open unblocked items in {scope}"));
     }
     if json {
         let arr: Vec<_> = ranked
@@ -843,7 +843,11 @@ fn tool_item_gate(args: &serde_json::Value, store: &mut AutomergeStore) -> Resul
     Ok(format!(
         "{}: gate={} met={}",
         it.id,
-        if it.gate.is_empty() { "(none)" } else { &it.gate },
+        if it.gate.is_empty() {
+            "(none)"
+        } else {
+            &it.gate
+        },
         it.gate_met
     ))
 }

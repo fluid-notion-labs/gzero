@@ -44,6 +44,8 @@ const STATUS_ICON: Record<string, { icon: string; color: "muted" | "accent" | "s
 };
 
 const MAX_ROWS = 28;
+/** How many recently finished items float at the top of the pane. */
+const RECENT_FINISHED = 3;
 
 export function run(
   cmd: string,
@@ -120,10 +122,21 @@ export class ItemsPane implements Component {
       }
       return false;
     }
-    // Tree order via items-tree: children trail their parent, siblings
-    // sorted by rankForSort (status, priority). Depth drives indentation.
+    // Tree order via items-tree: siblings in queue order (Storage-owned;
+    // no status/priority sorting). On top, the three most recently
+    // finished items float; everything else stays in queue order.
     const flat = flattenTree(buildItemTree(items as unknown as RawItem[]));
-    const rows: ItemRow[] = flat.map((f) => ({
+    const recentFinished = flat
+      .filter((f) => f.item.status === "closed" && typeof f.item.closed_at === "number")
+      .sort((a, b) => (b.item.closed_at ?? 0) - (a.item.closed_at ?? 0))
+      .slice(0, RECENT_FINISHED)
+      .map((f) => f.item.id);
+    const floats = new Set(recentFinished);
+    const ordered = [
+      ...flat.filter((f) => floats.has(f.item.id)),
+      ...flat.filter((f) => !floats.has(f.item.id)),
+    ];
+    const rows: ItemRow[] = ordered.map((f) => ({
       id: String(f.item.id ?? ""),
       title: String(f.item.title ?? ""),
       priority: Number(f.item.priority ?? 0),

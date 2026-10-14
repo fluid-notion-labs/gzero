@@ -120,6 +120,14 @@ pub struct WorkItem {
     pub design: String,
     /// Creation time, millis since the epoch.
     pub created: u64,
+    /// Position in the scope's display queue. Explicit data, not a
+    /// sort heuristic: consumers walk this, nothing re-sorts by status
+    /// or priority. Legacy records (field absent) fall back to
+    /// `created`, which preserves their creation order.
+    pub order: u64,
+    /// When the item was closed (millis), set on the close transition
+    /// and cleared on reopen. None for legacy closes.
+    pub closed_at: Option<u64>,
     pub labels: BTreeSet<String>,
     /// Append-only notes: note id -> text.
     pub notes: BTreeMap<String, String>,
@@ -150,6 +158,21 @@ pub struct Ranked {
 /// W4 admission policy: max items in progress per scope. Evaluated
 /// locally at write time — capacity is a rule, not merged state.
 pub const WIP_LIMIT: usize = 3;
+
+/// Gap between fresh positions in a scope's display queue. Midpoint
+/// inserts shrink gaps; `item_move` rebalances the queue when one is
+/// exhausted.
+pub const QUEUE_STEP: u64 = 1024;
+
+/// Queue move targets for `item_move`. `Before`/`After` name a sibling
+/// by id or unique prefix.
+#[derive(Debug, Clone)]
+pub enum MoveTarget {
+    Top,
+    Bottom,
+    Before(String),
+    After(String),
+}
 
 /// Fields for `item_add` (defaults via `Default`).
 #[derive(Debug, Clone, Default)]
@@ -199,6 +222,9 @@ impl AutomergeStore {
         };
         let existing: HashSet<String> = self.doc.keys(&scope_id).collect();
         let id = fresh_id(&existing);
+        // Queue position before the record exists, so the scan sees only
+        // prior items.
+        let order = self.queue_next_order(scope)?;
         let rec = self.doc.put_object(&scope_id, &id, ObjType::Map)?;
         self.doc.put(&rec, "title", new.title.trim())?;
         self.doc.put(&rec, "priority", new.priority)?;
@@ -208,6 +234,7 @@ impl AutomergeStore {
         self.doc.put(&rec, "design", new.design.as_str())?;
         self.doc.put(&rec, "gate", new.gate.as_str())?;
         self.doc.put(&rec, "created", created_millis())?;
+        self.doc.put(&rec, "order", order as i64)?;
         for sub in ["labels", "notes", "blocks", "discovered_from", "child_of"] {
             self.doc.put_object(&rec, sub, ObjType::Map)?;
         }
@@ -345,13 +372,21 @@ impl AutomergeStore {
             self.doc.put(&rec, "gate", g.as_str())?;
         }
         if let Some(m) = edit.gate_met {
-            self.doc.put(&rec, "gate_met", if m { 1i64 } else { 0i64 })?;
+            self.doc
+                .put(&rec, "gate_met", if m { 1i64 } else { 0i64 })?;
         }
         if let Some(d) = &edit.design {
             self.doc.put(&rec, "design", d.as_str())?;
         }
         if let Some(s) = edit.status {
             self.doc.put(&rec, "status", s.as_str())?;
+            // Track completion time for recency (recent-finished views);
+            // cleared on reopen so a re-close gets a fresh stamp.
+            if s == Status::Closed {
+                self.doc.put(&rec, "closed_at", created_millis())?;
+            } else if item.status == Status::Closed {
+                self.doc.delete(&rec, "closed_at").ok();
+            }
         }
         self.doc.commit();
         self.flush()?;
@@ -371,7 +406,8 @@ impl AutomergeStore {
             return Err(format!(
                 "capacity: {} item(s) already in progress (wip limit {}) — close or park one first",
                 in_prog, WIP_LIMIT
-            ).into());
+            )
+            .into());
         }
         self.item_edit(
             scope,
@@ -381,6 +417,123 @@ impl AutomergeStore {
                 ..Default::default()
             },
         )
+    }
+
+    // ---- display queue ----
+
+    /// Next append position: past the end of the scope's queue.
+    fn queue_next_order(&self, scope: &str) -> Result<u64> {
+        Ok(self
+            .item_list(scope)?
+            .iter()
+            .map(|it| it.order)
+            .max()
+            .unwrap_or(0)
+            + QUEUE_STEP)
+    }
+
+    /// The scope's queue: items ordered by `order`, id as tiebreak.
+    fn queue_sorted(&self, scope: &str) -> Result<Vec<WorkItem>> {
+        let mut items = self.item_list(scope)?;
+        items.sort_by(|a, b| a.order.cmp(&b.order).then_with(|| a.id.cmp(&b.id)));
+        Ok(items)
+    }
+
+    /// Write `order` for one item (record must exist).
+    fn queue_put_order(&mut self, scope: &str, id: &str, order: u64) -> Result<()> {
+        let rec = self
+            .item_rec(scope, id)?
+            .ok_or_else(|| format!("item: {id:?} not found"))?;
+        self.doc.put(&rec, "order", order as i64)?;
+        Ok(())
+    }
+
+    /// Renumber the whole queue `0, STEP, 2*STEP, …` in the given order.
+    /// Self-healing: fixes exhausted gaps and normalizes legacy items.
+    fn queue_rebalance(&mut self, scope: &str, ids: &[String]) -> Result<()> {
+        for (i, id) in ids.iter().enumerate() {
+            self.queue_put_order(scope, id, (i as u64) * QUEUE_STEP)?;
+        }
+        self.doc.commit();
+        self.flush()?;
+        Ok(())
+    }
+
+    /// Move an item within its scope's display queue. Position is
+    /// explicit data (`order`), never re-derived from status or
+    /// priority — completed items stay where they are. Insertion takes
+    /// the midpoint of the target gap; a whole-queue rebalance only
+    /// when the gap is exhausted.
+    pub fn item_move(&mut self, scope: &str, id: &str, target: MoveTarget) -> Result<WorkItem> {
+        let full = self.item_resolve(scope, id)?;
+        let target = match target {
+            MoveTarget::Top | MoveTarget::Bottom => target,
+            MoveTarget::Before(sib) => MoveTarget::Before(self.queued_sibling(scope, &sib, &full)?),
+            MoveTarget::After(sib) => MoveTarget::After(self.queued_sibling(scope, &sib, &full)?),
+        };
+        let queue = self.queue_sorted(scope)?;
+        let without: Vec<String> = queue
+            .iter()
+            .filter(|it| it.id != full)
+            .map(|it| it.id.clone())
+            .collect();
+
+        // Target slot in `without` (0..=len).
+        let slot = match &target {
+            MoveTarget::Top => 0,
+            MoveTarget::Bottom => without.len(),
+            MoveTarget::Before(sib) => without
+                .iter()
+                .position(|x| x == sib)
+                .ok_or_else(|| format!("item: sibling {sib:?} not in queue"))?,
+            MoveTarget::After(sib) => {
+                without
+                    .iter()
+                    .position(|x| x == sib)
+                    .ok_or_else(|| format!("item: sibling {sib:?} not in queue"))?
+                    + 1
+            }
+        };
+
+        // Try a midpoint insert; rebalance only when the gap is gone.
+        let prev: Option<u64> = match slot.checked_sub(1) {
+            Some(i) => Some(self.item_get(scope, &without[i])?.expect("in queue").order),
+            None => None,
+        };
+        let next: Option<u64> = match without.get(slot) {
+            Some(nid) => Some(self.item_get(scope, nid)?.expect("in queue").order),
+            None => None,
+        };
+        let inserted: Option<u64> = match (prev, next) {
+            (None, None) => Some(QUEUE_STEP), // empty queue
+            (None, Some(n)) if n >= QUEUE_STEP => Some(n - QUEUE_STEP),
+            (Some(p), None) => Some(p + QUEUE_STEP),
+            (Some(p), Some(n)) if n >= p + 2 => Some(p + (n - p) / 2),
+            _ => None, // gap exhausted → rebalance
+        };
+        match inserted {
+            Some(order) => {
+                self.queue_put_order(scope, &full, order)?;
+                self.doc.commit();
+                self.flush()?;
+            }
+            None => {
+                let mut ids = without;
+                ids.insert(slot, full.clone());
+                self.queue_rebalance(scope, &ids)?;
+            }
+        }
+        Ok(self.item_get(scope, &full)?.expect("just moved"))
+    }
+
+    /// Resolve a move sibling: must exist in the scope and not be the
+    /// item being moved.
+    fn queued_sibling(&self, scope: &str, sib: &str, moving: &str) -> Result<String> {
+        let full = self.item_resolve(scope, sib)?;
+        if full == moving {
+            return Err("item: cannot move relative to itself".into());
+        }
+        Ok(full)
     }
 
     /// Any non-closed -> `closed`. Refused while a gate is set and not
@@ -395,7 +548,8 @@ impl AutomergeStore {
             return Err(format!(
                 "gate not met on {}: {} — mark it met first (`cx item gate {} --met`)",
                 full, item.gate, full
-            ).into());
+            )
+            .into());
         }
         self.item_edit(
             scope,
@@ -436,7 +590,8 @@ impl AutomergeStore {
                 },
             )?;
         }
-        self.item_get(scope, id)?.ok_or_else(|| "item: vanished".into())
+        self.item_get(scope, id)?
+            .ok_or_else(|| "item: vanished".into())
     }
 
     /// `closed -> open`.
@@ -541,7 +696,11 @@ impl AutomergeStore {
     // ---- pinned (W3: "put task X in my context") ----
 
     fn pinned_opt(&self) -> Option<ObjId> {
-        self.doc.get(ROOT, "pinned").ok().flatten().map(|(_, id)| id)
+        self.doc
+            .get(ROOT, "pinned")
+            .ok()
+            .flatten()
+            .map(|(_, id)| id)
     }
 
     fn ensure_pinned(&mut self) -> Result<ObjId> {
@@ -740,6 +899,22 @@ impl AutomergeStore {
             acceptance: self.sval(rec, "acceptance"),
             design: self.sval(rec, "design"),
             created: self.ival(rec, "created").max(0) as u64,
+            order: {
+                let o = self.ival(rec, "order");
+                if o > 0 {
+                    o as u64
+                } else {
+                    self.ival(rec, "created").max(0) as u64
+                }
+            },
+            closed_at: {
+                let ca = self.ival(rec, "closed_at");
+                if ca > 0 {
+                    Some(ca as u64)
+                } else {
+                    None
+                }
+            },
             labels: set_of("labels"),
             notes,
             blocks: set_of("blocks"),
@@ -884,7 +1059,12 @@ mod tests {
         assert!(s.item_pinned("sc").unwrap().is_empty());
         s.item_pin("sc", &a.id, true).unwrap();
         s.item_pin("sc", &b.id, true).unwrap();
-        let pinned: Vec<String> = s.item_pinned("sc").unwrap().into_iter().map(|i| i.id).collect();
+        let pinned: Vec<String> = s
+            .item_pinned("sc")
+            .unwrap()
+            .into_iter()
+            .map(|i| i.id)
+            .collect();
         // priority order, not pin order
         assert_eq!(pinned, vec![b.id.clone(), a.id.clone()]);
         // idempotent-ish: unpin by full id works
@@ -924,10 +1104,10 @@ mod tests {
         assert!(ranked[0].why.iter().any(|w| w == "priority 4"));
         assert_eq!(ranked[1].item.id, root.id);
         // unblocks is counted: root blocks one open item
-        assert!(ranked[1]
-            .why
-            .iter()
-            .any(|w| w == "unblocks 1"), "root's evidence names the unblocked count");
+        assert!(
+            ranked[1].why.iter().any(|w| w == "unblocks 1"),
+            "root's evidence names the unblocked count"
+        );
     }
 
     #[test]
@@ -963,7 +1143,10 @@ mod tests {
         for id in &ids[..3] {
             s.item_claim("sc", id).unwrap();
         }
-        assert!(s.item_claim("sc", &ids[3]).is_err(), "fourth claim hits the wip limit");
+        assert!(
+            s.item_claim("sc", &ids[3]).is_err(),
+            "fourth claim hits the wip limit"
+        );
         // reclaiming an in-progress item is fine (doesn't count itself)
         s.item_claim("sc", &ids[0]).unwrap();
         s.item_close("sc", &ids[1]).unwrap();
@@ -1081,5 +1264,95 @@ mod tests {
         assert_eq!(Status::parse("in_progress"), Some(Status::InProgress));
         assert_eq!(Status::parse("closed"), Some(Status::Closed));
         assert_eq!(Status::parse("done"), None);
+    }
+
+    #[test]
+    fn queue_append_and_order() {
+        let mut s = AutomergeStore::in_memory().unwrap();
+        let a = s.item_add("sc", new("a")).unwrap();
+        let b = s.item_add("sc", new("b")).unwrap();
+        let c = s.item_add("sc", new("c")).unwrap();
+        assert!(a.order < b.order && b.order < c.order);
+        assert_eq!(c.order - a.order, 2 * QUEUE_STEP);
+    }
+
+    #[test]
+    fn queue_move_before_after_midpoint() {
+        let mut s = AutomergeStore::in_memory().unwrap();
+        let a = s.item_add("sc", new("a")).unwrap();
+        let b = s.item_add("sc", new("b")).unwrap();
+        let c = s.item_add("sc", new("c")).unwrap();
+        // c between a and b: midpoint of (a.order, b.order)
+        let moved = s
+            .item_move("sc", &c.id, MoveTarget::Before(b.id.clone()))
+            .unwrap();
+        let q = s.queue_sorted("sc").unwrap();
+        let ids: Vec<String> = q.iter().map(|it| it.id.clone()).collect();
+        assert_eq!(ids, vec![a.id.clone(), c.id.clone(), b.id.clone()]);
+        assert!(moved.order > a.order && moved.order < b.order);
+        // after a: back between a and b
+        s.item_move("sc", &c.id, MoveTarget::After(a.id.clone()))
+            .unwrap();
+        let q = s.queue_sorted("sc").unwrap();
+        let ids: Vec<String> = q.iter().map(|it| it.id.clone()).collect();
+        assert_eq!(ids, vec![a.id.clone(), c.id, b.id]);
+    }
+
+    #[test]
+    fn queue_move_top_bottom() {
+        let mut s = AutomergeStore::in_memory().unwrap();
+        let a = s.item_add("sc", new("a")).unwrap();
+        let b = s.item_add("sc", new("b")).unwrap();
+        let c = s.item_add("sc", new("c")).unwrap();
+        s.item_move("sc", &a.id, MoveTarget::Bottom).unwrap();
+        let ids: Vec<String> = s
+            .queue_sorted("sc")
+            .unwrap()
+            .iter()
+            .map(|it| it.id.clone())
+            .collect();
+        assert_eq!(ids, vec![b.id.clone(), c.id.clone(), a.id.clone()]);
+        s.item_move("sc", &a.id, MoveTarget::Top).unwrap();
+        let ids: Vec<String> = s
+            .queue_sorted("sc")
+            .unwrap()
+            .iter()
+            .map(|it| it.id.clone())
+            .collect();
+        assert_eq!(ids, vec![a.id.clone(), b.id, c.id]);
+    }
+
+    #[test]
+    fn queue_rebalance_on_exhausted_gap() {
+        let mut s = AutomergeStore::in_memory().unwrap();
+        let a = s.item_add("sc", new("a")).unwrap();
+        let b = s.item_add("sc", new("b")).unwrap();
+        // Repeatedly move c between a and b: gaps shrink until a
+        // rebalance fires, which must keep the order valid.
+        let c = s.item_add("sc", new("c")).unwrap();
+        for _ in 0..12 {
+            s.item_move("sc", &c.id, MoveTarget::Before(b.id.clone()))
+                .unwrap();
+        }
+        let q = s.queue_sorted("sc").unwrap();
+        for w in q.windows(2) {
+            assert!(
+                w[1].order > w[0].order,
+                "queue not strictly increasing after rebalance"
+            );
+        }
+    }
+
+    #[test]
+    fn closed_at_set_on_close_cleared_on_reopen() {
+        let mut s = AutomergeStore::in_memory().unwrap();
+        let a = s.item_add("sc", new("a")).unwrap();
+        assert_eq!(a.closed_at, None);
+        let closed = s.item_close("sc", &a.id).unwrap();
+        assert!(closed.closed_at.is_some());
+        let reopened = s.item_reopen("sc", &a.id).unwrap();
+        assert_eq!(reopened.closed_at, None);
+        let reclosed = s.item_close("sc", &a.id).unwrap();
+        assert!(reclosed.closed_at.unwrap() >= closed.closed_at.unwrap());
     }
 }

@@ -17,6 +17,10 @@ export interface RawItem {
   child_of: string[];
   notes: Record<string, { text: string }>;
   created: number;
+  /** Position in the scope's display queue (Storage-owned); falls back to created. */
+  order?: number;
+  /** When the item closed (millis), set by Storage on close; null for legacy. */
+  closed_at?: number | null;
 }
 
 export interface ItemNode {
@@ -29,10 +33,9 @@ export interface FlatRow {
   depth: number;
 }
 
-export function rankForSort(item: RawItem): number {
-  if (item.status === "closed") return 2;
-  if (item.blocked_by.length > 0) return 1;
-  return item.status === "in_progress" ? 0 : 1;
+/** Queue position: explicit `order` from Storage, falling back to created. */
+export function queueOrder(item: RawItem): number {
+  return typeof item.order === "number" && item.order > 0 ? item.order : item.created;
 }
 
 export function padToVisible(styled: string, width: number): string {
@@ -42,11 +45,14 @@ export function padToVisible(styled: string, width: number): string {
   return fitted + " ".repeat(width - vw);
 }
 
-/** Shared comparator: rank, then priority (desc), then id. */
+/**
+ * Shared comparator: queue order, then id. Status and priority are
+ * deliberately NOT sort keys — position is explicit data owned by
+ * Storage (see distributed-architecture-debt, DEBT-001).
+ */
 function compareNodes(a: ItemNode, b: ItemNode): number {
   return (
-    rankForSort(a.item) - rankForSort(b.item) ||
-    b.item.priority - a.item.priority ||
+    queueOrder(a.item) - queueOrder(b.item) ||
     a.item.id.localeCompare(b.item.id)
   );
 }

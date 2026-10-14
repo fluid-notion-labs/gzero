@@ -239,6 +239,8 @@ export class WorkflowViewer implements Component, Focusable {
     const lines = page ? page.build(inner, this.theme) : [];
     this.cache = { tab: this.tab, inner, lines };
     this.window.setLines(lines);
+    // Sliding window: open centered on the content; up/down slides it.
+    this.window.scrollTo(Math.round((lines.length - this.window.viewport) / 2));
     return lines;
   }
 
