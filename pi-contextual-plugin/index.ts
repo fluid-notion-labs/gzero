@@ -11,18 +11,15 @@ import type {
   ExtensionAPI,
   ExtensionCommandContext,
   ExtensionContext,
-  KeybindingsManager,
   Theme,
 } from "@earendil-works/pi-coding-agent";
-import { CustomEditor } from "@earendil-works/pi-coding-agent";
 import {
+  Key,
   Text,
   matchesKey,
   truncateToWidth,
   type Component,
-  type EditorTheme,
   type Focusable,
-  type TUI,
 } from "@earendil-works/pi-tui";
 import { boxFrame, LineWindow, modalViewport, wrapPlain } from "./window.ts";
 import {
@@ -487,30 +484,6 @@ async function openWorkflow(
   }
 }
 
-/**
- * Editor wrapper: intercepts Ctrl+W (opens the workflow viewer); every
- * other key forwards unchanged. Note: Ctrl+W was `deleteWordBackward`
- * — that remains available on alt+backspace.
- */
-class WorkflowEditor extends CustomEditor {
-  constructor(
-    tui: TUI,
-    theme: EditorTheme,
-    keybindings: KeybindingsManager,
-    private openWorkflow: () => void,
-  ) {
-    super(tui, theme, keybindings);
-  }
-
-  handleInput(data: string): void {
-    if (matchesKey(data, "ctrl+w")) {
-      this.openWorkflow();
-      return;
-    }
-    super.handleInput(data);
-  }
-}
-
 export default function (pi: ExtensionAPI) {
   const itemsPane = new ItemsPaneController();
   let cxMcpPath: string | null | undefined;
@@ -673,17 +646,9 @@ export default function (pi: ExtensionAPI) {
     } catch {
       // tools/list failure shouldn't block the session; injection degrades anyway.
     }
-    // TUI setup. Order matters: the editor wrapper is installed first —
-    // the pane's custom interaction stays pending by design, so nothing
-    // may await it. The pane itself opens fire-and-forget.
+    // The pane's custom interaction stays pending by design, so nothing
+    // may await it. It opens fire-and-forget.
     if (ctx.mode === "tui") {
-      // Ctrl+W → tabbed workflow viewer (work items / workflow sections).
-      ctx.ui.setEditorComponent(
-        (tui, theme, keybindings) =>
-          new WorkflowEditor(tui, theme, keybindings, () =>
-            void openWorkflow(ctx, itemsPane),
-          ),
-      );
       void itemsPane.open(ctx);
     }
   });
@@ -715,6 +680,16 @@ export default function (pi: ExtensionAPI) {
     handler: async (_args: string, ctx: ExtensionCommandContext) => {
       await openWorkflow(ctx, itemsPane);
     },
+  });
+
+  // Ctrl+W → tabbed workflow viewer (work items / workflow sections).
+  // First-class pi shortcut instead of an editor subclass: matched before
+  // app keybindings and listed under Extensions in /hotkeys. It shadows
+  // `deleteWordBackward` (still on alt+backspace); /workflow is the
+  // discoverable path for the same action.
+  pi.registerShortcut(Key.ctrl("w"), {
+    description: "Open the workflow viewer (work items / sections)",
+    handler: (ctx) => openWorkflow(ctx, itemsPane),
   });
 
   pi.on("before_agent_start", async (event, ctx) => {
