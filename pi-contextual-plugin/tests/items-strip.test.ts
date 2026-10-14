@@ -63,7 +63,7 @@ test("overflow drops from the top (past) and marks it with ⋮", () => {
   assert.deepEqual(stripLines(rows, { frame: 0, cap: 10 })[0], { glyph: "○", color: "muted" });
 });
 
-test("strip renders as a 4-column bordered rail with right-aligned glyphs", () => {
+test("strip renders as a 5-column bordered rail with centered glyphs", () => {
   const pane = new ItemsPane();
   pane.mode = "strip";
   pane.rows = [row({ id: "a", status: "open" }), row({ id: "b", status: "in_progress" })];
@@ -72,12 +72,12 @@ test("strip renders as a 4-column bordered rail with right-aligned glyphs", () =
   const lines = pane.render(40);
   // Top border, two task rows (timeline order: in-progress above open), bottom border.
   assert.deepEqual(lines, [
-    "╭──╮",
-    "│ " + SPINNER_FRAMES[0] + "│",
-    "│ ○│", // 1-cell glyph: right-aligned in the 2-cell slot
-    "╰──╯",
+    "╭───╮",
+    "│ " + SPINNER_FRAMES[0] + " │", // 1-cell glyph centered in the 3-cell slot
+    "│ ○ │",
+    "╰───╯",
   ]);
-  assert.ok(lines.every((l) => l.length === 4));
+  assert.ok(lines.every((l) => l.length === 5));
   // Panel mode renders the framed sidebar, not glyphs.
   pane.mode = "panel";
   const panel = pane.render(60);
@@ -96,5 +96,5 @@ test("empty strip stays visible: bordered rail with a quiet placeholder", () => 
   const theme = { fg: (_c: string, s: string) => s } as never;
   (pane as unknown as { theme: unknown }).theme = theme;
   const lines = pane.render(40);
-  assert.deepEqual(lines, ["╭──╮", "│ ·│", "╰──╯"]);
+  assert.deepEqual(lines, ["╭───╮", "│ · │", "╰───╯"]);
 });

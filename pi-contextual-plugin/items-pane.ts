@@ -319,12 +319,12 @@ export class ItemsPane implements Component {
   }
 
   /**
-   * Strip mode: a 4-column bordered rail — a 2-cell content slot per
-   * task with the glyph right-aligned, so glyphs that some terminals
-   * render two cells wide still fit inside the borders. One row per
-   * task; always visible (a quiet · when there are no tasks). Capped at
-   * terminal height; overflow drops from the top (past) with ⋮ marking
-   * the hidden items.
+   * Strip mode: a 5-column bordered rail — a 3-cell content slot per
+   * task with the glyph centered, so glyphs that some terminals render
+   * two cells wide still fit inside the borders and the rail reads
+   * symmetric. One row per task; always visible (a quiet · when there
+   * are no tasks). Capped at terminal height; overflow drops from the
+   * top (past) with ⋮ marking the hidden items.
    */
   private renderStrip(): string[] {
     const theme = this.theme;
@@ -335,12 +335,17 @@ export class ItemsPane implements Component {
       : this.rows.length === 0
         ? [{ glyph: "·", color: "dim" as StripColor }]
         : stripLines(this.rows, { frame: this.frame, cap: Math.max(1, (process.stdout.rows ?? 40) - 6) });
-    const lines = [border("╭──╮")];
+    const lines = [border("╭───╮")];
     for (const c of cells) {
-      const pad = " ".repeat(Math.max(0, 2 - visibleWidth(c.glyph)));
-      lines.push(border("│") + pad + theme.fg(c.color, c.glyph) + border("│"));
+      const vw = Math.min(3, visibleWidth(c.glyph));
+      const left = Math.floor((3 - vw) / 2);
+      lines.push(
+        border("│") +
+          " ".repeat(left) + theme.fg(c.color, c.glyph) + " ".repeat(3 - vw - left) +
+          border("│"),
+      );
     }
-    lines.push(border("╰──╯"));
+    lines.push(border("╰───╯"));
     return lines;
   }
 
@@ -495,8 +500,8 @@ export class ItemsPaneController {
         {
           overlay: true,
           overlayOptions: () => ({
-            width: 4,
-            minWidth: 4,
+            width: 5,
+            minWidth: 5,
             maxHeight: "96%",
             anchor: "top-right",
             margin: { top: 2, right: 1 },
