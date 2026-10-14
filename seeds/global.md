@@ -8,3 +8,4 @@
 - Untagged atoms (global tier plus this repo's) are injected every session; hashtagged atoms load only when pulled via resolve(tags).
 - add stores durable facts for future sessions; remove retires them; batch a remove+add swap in one operations call.
 - Chat shorthand for dictating knowledge: `gk: <fact>` stores the fact in the global tier, `lk: <fact>` in this project's local tier. Add via the add tool (global passes scope "global"), rewritten as clear, self-contained text — terse but readable without the surrounding conversation — and confirm briefly.
+- Chat shorthand for dictating tasks: `td:`, `todo:`, `tk:`, or `task: <description>` creates a work item via item_add. First inspect the list (item_list / plan_next) and find an appropriate place — e.g. a child_of edge under a related parent. If the user indicates priority, it sets the item's priority and informs its placement. Confirm briefly.
