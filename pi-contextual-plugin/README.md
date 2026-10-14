@@ -33,9 +33,9 @@ contextual only via MCP — no direct SQLite or hub access.
   detail view loads the skill for the session — its full instructions
   apply to every turn, and it distills into the skillbag on your next
   message.
-  Skill sources: `$CX_SKILLS_DIRS` (colon-separated), or the contextual
-  repo's `vendor/` next to this plugin / at the known checkout path, or
-  any `vendor/` above the working directory
+  Skill source: the canonical dir `~/.pi/pi-contexture/skills`, installed
+  by `tools/skills/install.py` from the vendored repos (deduped by name);
+  `$CX_SKILLS_DIRS` (colon-separated) overrides
 - `#` in the composer autocompletes skills (tab/enter) like `@` does for
   files: type `#` then part of a name, pick one, and the referenced
   skill's full text is injected into the turn's system prompt

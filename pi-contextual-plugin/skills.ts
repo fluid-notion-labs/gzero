@@ -1,13 +1,14 @@
-// Skills picker: alt-s (or /skills) browses the vendored agent skills —
+// Skills picker: alt-s (or /skills) browses the installed agent skills —
 // search by title/description, enter to read the full SKILL.md, esc to
 // close. The bag holds distilled atoms; this is the window onto the depth
-// they point at. Source of truth: the vendor/ clones that
-// tools/skills/pull.py pulls from (CX_SKILLS_DIRS overrides, colon-separated).
+// they point at. Source of truth: the canonical dir
+// ~/.pi/pi-contexture/skills, populated by tools/skills/install.py from
+// the vendor/ clones (CX_SKILLS_DIRS overrides, colon-separated). One
+// location, no cwd or repo-path guessing, so every session sees the same set.
 
 import { appendFileSync, existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, relative } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join, relative } from "node:path";
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import {
   Input,
@@ -40,20 +41,7 @@ const MAX_VISIBLE = 12;
 function vendorDirs(): string[] {
   const env = process.env.CX_SKILLS_DIRS;
   if (env?.trim()) return env.split(":").filter(Boolean);
-  // Defaults, in order: the vendor dir beside the checkout that ships this
-  // plugin; the known contextual repo location; any `vendor/` above cwd.
-  const dirs = [
-    join(dirname(fileURLToPath(import.meta.url)), "..", "vendor"),
-    join(homedir(), "projects", "explorations", "nursery", "contextual", "vendor"),
-  ];
-  let dir = process.cwd();
-  for (let i = 0; i < 5; i++) {
-    dirs.push(join(dir, "vendor"));
-    const parent = dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return [...new Set(dirs)];
+  return [join(homedir(), ".pi", "pi-contexture", "skills")];
 }
 
 /** Recursively collect SKILL.md paths under a root, shallow (skip node_modules/.git). */
@@ -172,8 +160,7 @@ export function discoverSkills(): SkillEntry[] {
       });
     }
   }
-  entries.sort((a, b) => a.name.localeCompare(b.name));
-  return entries;
+  return dedupeByName(entries).sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /** All whitespace-separated terms must appear (case-insensitive) in name or description. */
@@ -547,7 +534,7 @@ async function openPicker(ctx: ExtensionContext): Promise<void> {
   const skills = await ensureSkills();
   if (skills.length === 0) {
     ctx.ui.notify(
-      `No SKILL.md files found (looked in: ${vendorDirs().join(", ")}). Run tools/skills/pull.py to vendor some.`,
+      `No SKILL.md files found (looked in: ${vendorDirs().join(", ")}). Run tools/skills/install.py to install the vendored skills.`,
       "warning",
     );
     return;
@@ -612,9 +599,18 @@ async function discoverChunked(): Promise<SkillEntry[]> {
       await new Promise((resolve) => setImmediate(resolve));
     }
   }
-  entries.sort((a, b) => a.name.localeCompare(b.name));
-  skillsCache = entries;
-  return entries;
+  const unique = dedupeByName(entries);
+  unique.sort((a, b) => a.name.localeCompare(b.name));
+  skillsCache = unique;
+  return unique;
+}
+
+/** One entry per skill name: mirrored skills (the same SKILL.md vendored
+ * under several repos) would list twice and make `#skill:<name>` ambiguous.
+ * First occurrence wins, matching install.py's priority order. */
+function dedupeByName(entries: SkillEntry[]): SkillEntry[] {
+  const seen = new Set<string>();
+  return entries.filter((e) => (seen.has(e.name) ? false : (seen.add(e.name), true)));
 }
 
 /** Kick off skill discovery without blocking the caller (fills the cache progressively). */
