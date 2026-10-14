@@ -9,7 +9,7 @@
 // lifecycle, so relying on attach() left the theme null and the
 // overlay invisible (the "ctrl+w freezes pi" report).
 
-import { Text, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
+import { Text, matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { Component, Focusable, KeybindingsManager } from "@earendil-works/pi-tui";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { keyHint, viewerNav, type ViewerNav } from "./keymap.ts";
@@ -251,17 +251,48 @@ export class WorkflowViewer implements Component, Focusable {
     return lines;
   }
 
+  /**
+   * Tab strip: every label, joined with │. When the full strip exceeds
+   * the width, show a window of labels centered on the active tab (‹ ›
+   * mark hidden tabs on either side) so the active tab is always visible.
+   */
+  private tabStrip(width: number): string {
+    const t = this.theme;
+    const label = (p: WorkflowPage, active: boolean) => {
+      const s = ` ${p.label} `;
+      return active ? t.fg("accent", t.bold(s)) : t.fg("dim", s);
+    };
+    const sep = t.fg("dim", "│");
+    const parts = this.pages.map((p, i) => label(p, i === this.tab));
+    const full = parts.join(sep);
+    if (visibleWidth(full) <= width) return full;
+    // Hidden-tab markers: the chevron costs columns too, so keep a budget.
+    const chevL = t.fg("dim", "‹");
+    const chevR = t.fg("dim", "›");
+    let lo = this.tab;
+    let hi = this.tab;
+    const fits = (l: number, h: number, left: boolean, right: boolean) =>
+      visibleWidth(parts.slice(l, h + 1).join(sep)) +
+        (left ? 2 : 0) + (right ? 2 : 0) <= width;
+    // Grow the window around the active tab; trim the far side first.
+    while (lo > 0 || hi < parts.length - 1) {
+      const canL = lo > 0;
+      const canR = hi < parts.length - 1;
+      if (canL && fits(lo - 1, hi, true, canR)) lo--;
+      else if (canR && fits(lo, hi + 1, canL, true)) hi++;
+      else break;
+    }
+    const hiddenL = lo > 0;
+    const hiddenR = hi < parts.length - 1;
+    return (hiddenL ? chevL : "") + parts.slice(lo, hi + 1).join(sep) + (hiddenR ? chevR : "");
+  }
+
   render(width: number): string[] {
     const t = this.theme;
     if (width < 12) return [];
     const body = this.body(width);
     const inner = Math.max(width - 2, 20);
-    const tabs = this.pages
-      .map((p, i) => {
-        const label = ` ${p.label} `;
-        return i === this.tab ? t.fg("accent", t.bold(label)) : t.fg("dim", label);
-      })
-      .join(t.fg("dim", "│"));
+    const tabs = this.tabStrip(inner);
     const page = this.pages[this.tab];
     const hints =
       `tab/shift+tab tab · ${keyHint(this.kb, "tui.select.up", "↑")}${keyHint(this.kb, "tui.select.down", "↓")} line ` +

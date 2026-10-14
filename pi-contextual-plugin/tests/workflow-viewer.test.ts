@@ -161,3 +161,38 @@ test("buildSectionBody lays out titled dividers and keeps body indentation", () 
   assert.ok(out.some((l) => l.includes("   - nested")));
   assert.ok(out.some((l) => l.includes("☐ task")));
 });
+
+test("flat tabs: one tab per page, full strip when it fits", () => {
+  const v = new WorkflowViewer(
+    [page("todo", ["row-a"]), page("architecture", ["sec-a"]), page("now", ["sec-b"])],
+    theme as never,
+    () => {},
+  );
+  const out = plain(v.render(120)).join("\n");
+  for (const label of ["todo", "architecture", "now"]) {
+    assert.ok(out.includes(label), `label ${label} visible when strip fits`);
+  }
+});
+
+test("strip window keeps the active tab visible with many long labels", () => {
+  const labels = ["todo", "architecture", "distributed-architecture-debt", "user-stories", "vision", "now", "decisions"];
+  const v = new WorkflowViewer(
+    labels.map((l, i) => page(l, [`body-${i}`])),
+    theme as never,
+    () => {},
+  );
+  // Active tab in the middle: strip must still show it.
+  v.handleInput("\t");
+  v.handleInput("\t");
+  v.handleInput("\t");
+  const active = labels[3];
+  // 60 cols: neither the todo tab nor the later tabs fit alongside the
+  // center, so both chevrons must appear.
+  const out = plain(v.render(60)).join("\n");
+  assert.ok(out.includes(active), "active tab visible in narrow strip");
+  assert.ok(out.includes("‹"), "left chevron when tabs hidden");
+  assert.ok(out.includes("›"), "right chevron when tabs hidden");
+  // Strip stays within the width.
+  const strip = out.split("\n").find((l) => l.includes(active))!;
+  assert.ok(strip.replace(/\x1b\[[0-9;]*m/g, "").length <= 60, "strip fits the width");
+});

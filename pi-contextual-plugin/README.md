@@ -45,6 +45,15 @@ contextual only via MCP — no direct SQLite or hub access.
   idempotent (bag dedupes by text); explicitly removed atoms stay
   removed (tombstones). Plain hashtags still type normally — just keep
   typing past the popup. Skill discovery is precached on session start
+- `Ctrl+W` or `/workflow` opens the workflow viewer: a flat horizontal
+  tab bar with one tab per thing — `todo` (the work-item tree) first,
+  then one tab per workflow section in `cx ws list` order
+  (architecture, user-stories, …). tab/shift+tab (or ←→) cycle tabs,
+  ↑↓/j/k scroll, pgup/pgdn page, home/end (and g/G) jump, esc/q (or
+  ctrl+c) closes. When the strip doesn't fit the width it slides — a
+  window of tabs centered on the active one, `‹`/`›` marking hidden
+  tabs. `/items` toggles the always-on work-items pane (non-capturing,
+  top-right)
 - warns on a stale `cx-mcp` (missing tools via `tools/list`)
 - offers to install contextual on first run if `cx-mcp` is missing
 

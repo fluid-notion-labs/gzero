@@ -421,7 +421,7 @@ async function loadWorkflowSections(): Promise<TierSection[]> {
       // body fetch failed; the list entry still shows
     }
     sections.push({
-      label: `${s.name}${s.kind === "checklist" ? " ☑" : ""}`,
+      label: s.name,
       nodes: [{ label: title, text: body }],
     });
   }
@@ -453,23 +453,29 @@ async function openWorkflow(
     cxJson(["item", "list", "--json"]) as Promise<RawItem[]>,
     loadWorkflowSections(),
   ]);
+  // Flat tabs: one per thing. "todo" is the work-item tree; every ws
+  // section gets its own tab (in cx ws list order) so navigation is
+  // tab-cycle + scroll instead of scrolling through everything. Each
+  // section tab still renders its titled divider — the tab shows the
+  // short name, the divider carries the full title.
   const pages: WorkflowPage[] = [];
   if (itemsRes.status === "fulfilled") {
     const rows = flattenTree(buildItemTree(itemsRes.value));
     if (rows.length > 0) {
       pages.push({
-        label: "items",
+        label: "todo",
         note: `${rows.filter((r) => r.item.status !== "closed").length} open`,
         build: (inner, t) => buildItemBody(rows, inner, t),
       });
     }
   }
-  if (sectionsRes.status === "fulfilled" && sectionsRes.value.length > 0) {
-    const sections = sectionsRes.value;
-    pages.push({
-      label: "workflow",
-      build: (inner, t) => buildSectionBody(sections, inner, t),
-    });
+  if (sectionsRes.status === "fulfilled") {
+    for (const section of sectionsRes.value) {
+      pages.push({
+        label: section.label,
+        build: (inner, t) => buildSectionBody([section], inner, t),
+      });
+    }
   }
   if (pages.length === 0) {
     const err = (r: PromiseSettledResult<unknown>) =>
