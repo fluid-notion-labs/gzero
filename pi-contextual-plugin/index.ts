@@ -510,6 +510,10 @@ function panelActions(): PanelActions {
   return {
     editItem: cxEdit,
     reloadItems: async () => (await cxJson(["item", "list", "--json"])) as RawItem[],
+    moveItem: async (id, rel, sibling) => {
+      const res = await runProc("cx", ["item", "move", id, rel, sibling], 10000);
+      if (res.code !== 0) throw new Error(res.stderr.trim().split("\n")[0] || "cx item move failed");
+    },
   };
 }
 

@@ -49,6 +49,8 @@ export interface ItemPatch {
 export interface PanelActions {
   editItem(id: string, patch: ItemPatch): Promise<void>;
   reloadItems(): Promise<RawItem[]>;
+  /** Reorder in the queue: `id` moves before/after `sibling` (cx item move). */
+  moveItem(id: string, rel: "before" | "after", sibling: string): Promise<void>;
 }
 
 /** One visible row: a node plus its depth in the tree. */
@@ -319,7 +321,7 @@ export class ContexturePanel implements Component, Focusable {
   private nav: ViewerNav;
   private kb: KeybindingsManager | undefined;
   // Search state (P3): one query across tasks > skills > terms.
-  private mode: "tree" | "search" | "actions" | "note" = "tree";
+  private mode: "tree" | "search" | "actions" | "note" | "move" = "tree";
   private query = "";
   private hits: SearchHit[] = [];
   private sel = 0;
@@ -328,6 +330,8 @@ export class ContexturePanel implements Component, Focusable {
   private actions: PanelActions | undefined;
   private actionSel = 0;
   private noteBuf = "";
+  /** True while a move request is in flight (key repeat guard). */
+  private moving = false;
   /** 0 = all sections; 1..N = the (N-1)th top-level is the query scope. */
   private scope = 0;
   private error: string | null = null;
@@ -424,6 +428,10 @@ export class ContexturePanel implements Component, Focusable {
       this.handleActionInput(data);
       return;
     }
+    if (this.mode === "move") {
+      this.handleMoveInput(data);
+      return;
+    }
     if (this.mode === "note") {
       this.handleNoteInput(data);
       return;
@@ -455,7 +463,70 @@ export class ContexturePanel implements Component, Focusable {
       this.mode = "actions";
       this.actionSel = 0;
       this.error = null;
+    } else if (data === "m" && this.selected.node.item && this.actions) {
+      this.mode = "move";
+      this.error = null;
     }
+  }
+
+  // ---- queue reordering (m) ----
+
+  private handleMoveInput(data: string): void {
+    if (this.nav.cancel(data) || matchesKey(data, "enter") || matchesKey(data, "q")) {
+      this.mode = "tree";
+      return;
+    }
+    if (this.nav.up(data) || matchesKey(data, "k")) this.doMove(-1);
+    else if (this.nav.down(data) || matchesKey(data, "j")) this.doMove(1);
+  }
+
+  /** The queue move a directional step performs for the selected task.
+   * Hierarchical: a sub-task at the edge of its sibling group moves the
+   * parent instead, so the whole block shifts (user request). */
+  private moveStep(dir: -1 | 1): { id: string; rel: "before" | "after"; sibling: string } | null {
+    let node = this.selected.node;
+    for (;;) {
+      const item = node.item;
+      if (!item) return null;
+      const parent = this.parentOf(node);
+      const list = parent ? parent.children ?? [] : this.nodes;
+      const idx = list.indexOf(node);
+      if (idx < 0) return null;
+      const sib = list[idx + dir];
+      if (sib?.item) {
+        return { id: item.id, rel: dir < 0 ? "before" : "after", sibling: sib.item.id };
+      }
+      // No neighbor at this level: climb (or stop at the top).
+      if (!parent?.item) return null;
+      node = parent;
+    }
+  }
+
+  private parentOf(target: PanelNode): PanelNode | null {
+    const stack: { node: PanelNode; parent: PanelNode | null }[] = this.nodes.map((n) => ({ node: n, parent: null }));
+    while (stack.length) {
+      const { node, parent } = stack.pop()!;
+      if (node === target) return parent;
+      for (const child of node.children ?? []) stack.push({ node: child, parent: node });
+    }
+    return null;
+  }
+
+  private doMove(dir: -1 | 1): void {
+    if (this.moving || !this.actions) return;
+    const step = this.moveStep(dir);
+    if (!step) return;
+    this.moving = true;
+    void (async () => {
+      try {
+        await this.actions!.moveItem(step.id, step.rel, step.sibling);
+        await this.refreshItems();
+        this.error = null;
+      } catch (e) {
+        this.error = e instanceof Error ? e.message : String(e);
+      }
+      this.moving = false;
+    })();
   }
 
   // ---- edit actions (P4) ----
@@ -820,8 +891,10 @@ export class ContexturePanel implements Component, Focusable {
           ? `↑↓ action · enter run · esc back`
           : this.mode === "note"
             ? `type note · enter save · esc cancel`
-            : `/ search · shift+↑↓ scope${scopeLabel} · e edit · ctrl+↑↓ toplevel · ↑↓ move · ` +
-              `${keyHint(this.kb, "tui.select.cancel", "esc")}/alt+c close`;
+            : this.mode === "move"
+              ? `↕ reorder · enter/esc done`
+              : `/ search · shift+↑↓ scope${scopeLabel} · e edit · m move · ctrl+↑↓ toplevel · ↑↓ move · ` +
+                `${keyHint(this.kb, "tui.select.cancel", "esc")}/alt+c close`;
 
     return boxFrame(width, [
       ...body,

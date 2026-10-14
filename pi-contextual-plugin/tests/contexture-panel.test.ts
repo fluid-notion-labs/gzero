@@ -557,6 +557,126 @@ test("query tokens: is:open, is:active, p<N> restrict to matching tasks", () => 
   assert.equal(hits(p).length, 0, "token filter excludes non-tasks");
 });
 
+// ---- queue reordering (m) ----
+
+const moveTree = (): PanelNode[] => [
+  {
+    id: "tasks",
+    label: "tasks",
+    expanded: true,
+    children: [
+      { id: "r1", label: "○ root one", children: [], item: item({ id: "r1", title: "root one", status: "open", priority: 0, order: 1 }) },
+      {
+        id: "r2",
+        label: "○ root two",
+        expanded: true,
+        item: item({ id: "r2", title: "root two", status: "open", priority: 0, order: 2 }),
+        children: [
+          { id: "c1", label: "○ child one", children: [], item: item({ id: "c1", title: "child one", status: "open", priority: 0, order: 3, child_of: ["r2"] }) },
+          { id: "c2", label: "○ child two", children: [], item: item({ id: "c2", title: "child two", status: "open", priority: 0, order: 4, child_of: ["r2"] }) },
+        ],
+      },
+      { id: "r3", label: "○ root three", children: [], item: item({ id: "r3", title: "root three", status: "open", priority: 0, order: 5 }) },
+    ],
+  },
+];
+
+async function moveFixture() {
+  const moves: { id: string; rel: string; sibling: string }[] = [];
+  let order: Record<string, number> = { r1: 1, r2: 2, c1: 3, c2: 4, r3: 5 };
+  const items = (): RawItem[] =>
+    [
+      item({ id: "r1", title: "root one", status: "open", priority: 0 }),
+      item({ id: "r2", title: "root two", status: "open", priority: 0, child_of: [] }),
+      item({ id: "c1", title: "child one", status: "open", priority: 0, child_of: ["r2"] }),
+      item({ id: "c2", title: "child two", status: "open", priority: 0, child_of: ["r2"] }),
+      item({ id: "r3", title: "root three", status: "open", priority: 0 }),
+    ].map((it) => ({ ...it, order: order[it.id] }));
+  const actions = {
+    editItem: async () => {},
+    reloadItems: async () => items(),
+    moveItem: async (id: string, rel: string, sibling: string) => {
+      moves.push({ id, rel, sibling });
+      // Emulate the queue: place id directly before/after sibling.
+      const seq = Object.entries(order).sort((a, b) => a[1] - b[1]).map(([k]) => k).filter((k) => k !== id);
+      const at = seq.indexOf(sibling) + (rel === "after" ? 1 : 0);
+      seq.splice(at, 0, id);
+      order = Object.fromEntries(seq.map((k, i) => [k, i + 1]));
+    },
+  };
+  const p = new ContexturePanel(
+    [{ id: "tasks", label: "tasks", expanded: true, children: itemsToNodes(items()) }],
+    theme as never,
+    () => {},
+    undefined,
+    actions,
+  );
+  return { p, moves, get order() { return order; } };
+}
+
+const flushMove = () => new Promise((resolve) => setImmediate(resolve));
+
+// Select a node by id, expanding ancestors as needed.
+function select(p: InstanceType<typeof ContexturePanel>, id: string): void {
+  const rows = flattenTree(get(p, "nodes") as PanelNode[]);
+  const idx = rows.findIndex((r) => r.node.id === id);
+  set(p, "cursor", idx);
+  set(p, "rows", rows);
+}
+
+// Stubs for the private accessors used in tests.
+function set(obj: object, key: string, value: unknown): void {
+  (obj as Record<string, unknown>)[key] = value;
+}
+
+test("moveStep: sibling swap, then climb to the parent at the edge", () => {
+  const { p } = moveFixtureSync();
+  select(p, "c2"); // second child of r2
+  const step = get(p, "moveStep").call(p, -1);
+  assert.deepEqual(step, { id: "c2", rel: "before", sibling: "c1" });
+  select(p, "c1"); // first child → the parent r2 moves
+  assert.deepEqual(get(p, "moveStep").call(p, -1), { id: "r2", rel: "before", sibling: "r1" });
+  select(p, "r1"); // first root → cannot move up
+  assert.equal(get(p, "moveStep").call(p, -1), null);
+  // Downward mirror image.
+  select(p, "c1");
+  assert.deepEqual(get(p, "moveStep").call(p, 1), { id: "c1", rel: "after", sibling: "c2" });
+  select(p, "c2");
+  assert.deepEqual(get(p, "moveStep").call(p, 1), { id: "r2", rel: "after", sibling: "r3" });
+  select(p, "r3");
+  assert.equal(get(p, "moveStep").call(p, 1), null);
+});
+
+function moveFixtureSync() {
+  const p = new ContexturePanel(moveTree(), theme as never, () => {}, undefined, {
+    editItem: async () => {},
+    reloadItems: async () => [],
+    moveItem: async () => {},
+  });
+  return { p };
+}
+
+test("m enters move mode; arrow moves the queue and the tree follows", async () => {
+  const { p, moves } = await moveFixture();
+  select(p, "c1"); // first child of r2
+  p.handleInput("m");
+  assert.equal(get(p, "mode"), "move");
+  p.handleInput("\x1b[A"); // up → r2 moves before r1
+  await flushMove();
+  assert.deepEqual(moves, [{ id: "r2", rel: "before", sibling: "r1" }]);
+  assert.equal(get(p, "mode"), "move", "stays in move mode for repeat presses");
+  // After the move, r2 (and its children) display before r1.
+  const ids = flattenTree(get(p, "nodes") as PanelNode[]).map((r) => r.node.id);
+  const r1 = ids.indexOf("r1");
+  const r2 = ids.indexOf("r2");
+  const c1 = ids.indexOf("c1");
+  assert.ok(r2 < r1, "r2 moved above r1");
+  assert.ok(c1 > r2, "child still under r2");
+  assert.equal(p.selected.node.id, "c1", "cursor stays on the highlighted task");
+  p.handleInput("\x1b");
+  assert.equal(get(p, "mode"), "tree");
+});
+
 test("collapsed documentation sections keep the tree short", () => {
   const nodes = docsToNodes([
     { label: "arch", nodes: [{ label: "Architecture", text: "# Overview\nstuff" }] },
