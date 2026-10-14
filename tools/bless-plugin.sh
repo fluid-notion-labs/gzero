@@ -1,21 +1,21 @@
 #!/bin/sh
-# Point the live personal extension at ~/.pi/agent/extensions/contextual
-# to THIS checkout's plugin — as a symlink, not a copy.
+# Bless a snapshot of THIS checkout's plugin as the live personal
+# extension at ~/.pi/agent/extensions/contextual — a copy, not a link.
 #
-# A symlink means every pi session (plain or via tools/run-pi) reads the
-# same files: edits in the checkout are picked up by `/reload` with no
-# re-bless step. Historically this was a symlink, then a copied snapshot
-# to decouple pi from fast-moving dev; with tools/run-pi covering dev
-# sessions, the symlink is back and blessing is a one-time setup.
+# Plain `pi` sessions run the blessed snapshot and never see work-in-
+# progress; the snapshot only changes when this script runs (normally
+# after merging to main). For iterating on the plugin, use
+# tools/run-pi, which loads the checkout copy directly:
 #
-# Whichever checkout the script runs from is what pi loads — point it at
-# the default checkout to keep it stable across workspace work:
+#   tools/bless-plugin.sh     # refresh the blessed snapshot (from main)
+#   tools/run-pi              # dev: pi against the source tree
 #
-#   tools/bless-plugin.sh
+# Bless from the default checkout, not a workspace — the default
+# checkout tracks main.
 #
 # No node_modules needed: pi's extension loader resolves
 # @earendil-works/* imports itself (jiti aliases to the host's own
-# packages), so the linked checkout runs standalone.
+# packages), so the copied files run standalone.
 set -e
 root="$(cd "$(dirname "$0")/.." && pwd)"
 src="$root/pi-contextual-plugin"
@@ -28,8 +28,12 @@ if [ -L "$dest" ] || [ -e "$dest" ]; then
   rm -rf "$dest"
 fi
 mkdir -p "$(dirname "$dest")"
-ln -s "$src" "$dest"
 
-echo "linked $src"
-echo "     -> $dest"
-echo "pi picks up edits via /reload; no re-bless needed"
+# The plugin is the root-level TypeScript sources plus its README;
+# tests and editor config are dev-only and stay out of the snapshot.
+mkdir -p "$dest"
+cp "$src"/*.ts "$src/package.json" "$src/README.md" "$dest/"
+
+echo "blessed $src"
+echo "      -> $dest (snapshot: $(git -C "$root" log -1 --format=%h 2>/dev/null || echo '?'))"
+echo "plain pi runs this copy; re-bless after merging to main"
