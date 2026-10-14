@@ -27,6 +27,60 @@ export interface ItemRow {
   blocked_by: string[];
   /** Tree depth from child_of edges; rendered as two spaces per level. */
   depth: number;
+  /** Creation time; the strip's timeline ordering uses it within groups. */
+  created: number;
+}
+
+/** Spinner frames for in-progress tasks in the strip (braille dots). */
+export const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+type StripColor = "muted" | "accent" | "success" | "warning" | "dim";
+
+/**
+ * Strip timeline order: closed (past) at top, then in-progress, then
+ * open (future) — new tasks appear at the bottom and work flows upward
+ * as it completes. Oldest first within each group. The full panel keeps
+ * tree order; this ordering is strip-only.
+ */
+export function stripOrder(rows: ItemRow[]): ItemRow[] {
+  const rank = (r: ItemRow) => (r.status === "closed" ? 0 : r.status === "in_progress" ? 1 : 2);
+  return [...rows].sort((a, b) => rank(a) - rank(b) || a.created - b.created);
+}
+
+/** One cell of the strip: status glyph (or spinner frame) + color. */
+export function stripGlyph(row: ItemRow, frame: number): { glyph: string; color: StripColor } {
+  if (row.blocked_by.length > 0 && row.status !== "closed") return { glyph: "⊘", color: "warning" };
+  if (row.status === "closed") return { glyph: "✓", color: "dim" };
+  if (row.status === "in_progress") {
+    return { glyph: SPINNER_FRAMES[((frame % SPINNER_FRAMES.length) + SPINNER_FRAMES.length) % SPINNER_FRAMES.length], color: "accent" };
+  }
+  return { glyph: "○", color: "muted" };
+}
+
+/**
+ * Pure strip model: timeline-ordered glyph cells, capped at `cap` rows.
+ * Overflow drops from the TOP (past) — current work stays visible — and
+ * a ⋮ marks the hidden older items in the first cell.
+ */
+export function stripLines(
+  rows: ItemRow[],
+  opts: { frame: number; cap: number },
+): { glyph: string; color: StripColor }[] {
+  const ordered = stripOrder(rows);
+  let shown = ordered;
+  let overflow = false;
+  if (ordered.length > Math.max(1, opts.cap)) {
+    shown = ordered.slice(ordered.length - (Math.max(1, opts.cap) - 1));
+    overflow = true;
+  }
+  const cells: { glyph: string; color: StripColor }[] = overflow ? [{ glyph: "⋮", color: "dim" }] : [];
+  for (const row of shown) cells.push(stripGlyph(row, opts.frame));
+  return cells;
+}
+
+/** Startup mode for the tasks overlay; CX_TASKS_STRIP=0 keeps the panel. */
+export function initialStripMode(env: NodeJS.ProcessEnv = process.env): "strip" | "panel" {
+  return env.CX_TASKS_STRIP === "0" ? "panel" : "strip";
 }
 
 interface JsonItem {
@@ -65,18 +119,52 @@ export function run(
 export class ItemsPane implements Component {
   rows: ItemRow[] = [];
   error: string | null = null;
+  /** strip = 1-column status rail; panel = the full sidebar. */
+  mode: "strip" | "panel" = "strip";
   private theme: Theme | null = null;
   private tui: TUI | null = null;
   private cacheKey = "";
   private lines: string[] | null = null;
+  /** Spinner animation state; only ticks while a spinner is visible. */
+  private frame = 0;
+  private spinnerTimer: ReturnType<typeof setInterval> | null = null;
 
   attach(tui: TUI, theme: Theme): void {
     this.tui = tui;
     this.theme = theme;
+    this.syncSpinner();
   }
 
   invalidate(): void {
     this.lines = null;
+  }
+
+  /** Release the spinner timer — the controller calls this on close. */
+  dispose(): void {
+    if (this.spinnerTimer) {
+      clearInterval(this.spinnerTimer);
+      this.spinnerTimer = null;
+    }
+  }
+
+  /**
+   * Run the spinner timer only while the strip shows at least one
+   * in-progress (unblocked) task; otherwise no idle re-renders.
+   */
+  private syncSpinner(): void {
+    const spinning =
+      this.mode === "strip" &&
+      this.rows.some((r) => r.status === "in_progress" && !(r.blocked_by.length > 0));
+    if (spinning && !this.spinnerTimer) {
+      this.spinnerTimer = setInterval(() => {
+        this.frame = (this.frame + 1) % SPINNER_FRAMES.length;
+        this.invalidate();
+        this.tui?.requestRender();
+      }, 120);
+    } else if (!spinning && this.spinnerTimer) {
+      clearInterval(this.spinnerTimer);
+      this.spinnerTimer = null;
+    }
   }
 
   hasContent(): boolean {
@@ -145,6 +233,7 @@ export class ItemsPane implements Component {
         ? f.item.blocked_by.map(String)
         : [],
       depth: f.depth,
+      created: Number(f.item.created ?? 0),
     }));
     const scope = (items[0] as { scope?: string } | undefined)?.scope ?? "";
     const key = JSON.stringify(rows.slice(0, MAX_ROWS)) + scope;
@@ -152,12 +241,14 @@ export class ItemsPane implements Component {
     if (key === this.cacheKey) return false;
     this.cacheKey = key;
     this.rows = rows;
+    this.syncSpinner();
     this.invalidate();
     this.tui?.requestRender();
     return true;
   }
 
   render(width: number): string[] {
+    if (this.mode === "strip") return this.renderStrip();
     const theme = this.theme;
     if (!theme || width < 12) return [];
     if (this.lines && this.cacheWidth === width) return this.lines;
@@ -227,6 +318,19 @@ export class ItemsPane implements Component {
     return lines;
   }
 
+  /**
+   * Strip mode: one glyph per task, no frame. Capped at terminal height
+   * (minus margin); overflow drops from the top (past) with ⋮ marking
+   * the hidden items.
+   */
+  private renderStrip(): string[] {
+    const theme = this.theme;
+    if (!theme) return [];
+    if (this.error) return [theme.fg("warning", "⚠")];
+    const cap = Math.max(1, (process.stdout.rows ?? 40) - 4);
+    return stripLines(this.rows, { frame: this.frame, cap }).map((c) => theme.fg(c.color, c.glyph));
+  }
+
   private cacheWidth = -1;
 }
 
@@ -249,6 +353,8 @@ export class ItemsPaneController {
   private handle: OverlayHandle | null = null;
   private done: ((result: undefined) => void) | null = null;
   private opening = false;
+  /** strip = 1-column status rail; panel = full sidebar. */
+  private mode: "strip" | "panel" = initialStripMode();
 
   get active(): boolean {
     return this.pane !== null;
@@ -262,10 +368,29 @@ export class ItemsPaneController {
     await this.open(ctx);
   }
 
+  /**
+   * ctrl+q: toggle between the strip and the anchored full panel.
+   * Inactive → opens in the current mode; active → switches mode
+   * (the overlay is rebuilt, since the two modes need different
+   * widths). With CX_TASKS_STRIP=0 there is no strip, so this is a
+   * no-op and /tasks behaves exactly as before.
+   */
+  async toggleMode(ctx: ExtensionContext): Promise<void> {
+    if (this.mode === "panel" && process.env.CX_TASKS_STRIP === "0") return;
+    if (!this.active) {
+      await this.open(ctx);
+      return;
+    }
+    this.mode = this.mode === "strip" ? "panel" : "strip";
+    this.close();
+    await this.open(ctx);
+  }
+
   async open(ctx: ExtensionContext): Promise<void> {
     if (this.active || this.opening || ctx.mode !== "tui" || !ctx.hasUI) return;
     this.opening = true;
     const pane = new ItemsPane();
+    pane.mode = this.mode;
     try {
       await pane.refresh();
     } catch {
@@ -281,15 +406,27 @@ export class ItemsPaneController {
         },
         {
           overlay: true,
-          overlayOptions: () => ({
-            width: 46,
-            minWidth: 32,
-            maxHeight: "96%",
-            anchor: "top-right",
-            margin: { top: 2, right: 1 },
-            nonCapturing: true,
-            visible: (termWidth: number) => termWidth >= 100,
-          }),
+          overlayOptions: () => {
+            const base = {
+              maxHeight: "96%" as const,
+              anchor: "top-right" as const,
+              margin: { top: 2, right: 1 },
+              nonCapturing: true as const,
+            };
+            return this.mode === "strip"
+              ? {
+                  ...base,
+                  width: 1,
+                  minWidth: 1,
+                  visible: (termWidth: number) => termWidth >= 60,
+                }
+              : {
+                  ...base,
+                  width: 46,
+                  minWidth: 32,
+                  visible: (termWidth: number) => termWidth >= 100,
+                };
+          },
           onHandle: (handle) => {
             this.handle = handle;
             this.syncVisibility();
@@ -305,6 +442,7 @@ export class ItemsPaneController {
   }
 
   close(): void {
+    this.pane?.dispose();
     const done = this.done;
     this.done = null;
     this.handle = null;

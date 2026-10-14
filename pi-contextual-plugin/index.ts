@@ -684,8 +684,16 @@ export default function (pi: ExtensionAPI) {
     itemsPane.close();
   });
 
+  // ctrl+q → toggle the tasks strip (1-column status rail) ↔ anchored
+  // panel. The strip is the default; CX_TASKS_STRIP=0 keeps the panel
+  // and makes this a no-op.
+  pi.registerShortcut(Key.ctrl("q"), {
+    description: "Toggle the tasks strip / panel",
+    handler: (ctx) => itemsPane.toggleMode(ctx),
+  });
+
   pi.registerCommand("tasks", {
-    description: "Toggle the tasks sidebar; 'refresh' refetches now",
+    description: "Toggle the tasks sidebar (ctrl+q switches strip/panel); 'refresh' refetches now",
     handler: async (args: string, ctx: ExtensionCommandContext) => {
       const sub = args.trim().split(/\s+/)[0] ?? "";
       if (sub === "off") {
