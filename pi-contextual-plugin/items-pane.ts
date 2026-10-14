@@ -1,17 +1,10 @@
-// items-pane.ts — the tasks sidebar: persistent work-items surfaces.
+// items-pane.ts — the tasks sidebar: persistent right-side work items.
 //
-// Two surfaces:
-//
-// - The strip: a one-line horizontal glyph row in pi's in-layout widget
-//   slot above the editor. It is part of the layout, not an overlay, so
-//   it never covers the chat — the chat just gets one row shorter.
-// - The panel: a non-capturing overlay (never takes keyboard focus)
-//   anchored top-right, a la Claude Code's task panel, toggled with
-//   ctrl+q / /tasks.
-//
-// Refreshed on session start, after each agent run, and via
-// `/tasks refresh`. The strip hides itself while the repo has no items;
-// `/tasks` toggles the panel (/items is an alias).
+// A non-capturing overlay (never takes keyboard focus) anchored top-right,
+// a la Claude Code's task panel. Refreshed on session start, after each
+// agent run, and via `/tasks refresh`. Hidden automatically while the
+// repo has no items or the terminal is too narrow; `/tasks` toggles
+// (/items is an alias).
 //
 // Data comes from the `cx` CLI (`cx item list --json`), which scopes to the
 // session's repo identity by itself.
@@ -106,9 +99,11 @@ const STATUS_ICON: Record<string, { icon: string; color: "muted" | "accent" | "s
 };
 
 /**
- * Task rows the full panel may show on a terminal of `rows` lines:
- * enough headroom that the overlay never reaches the bottom of the
- * screen — the rule is to leave 2 lines of space at the bottom.
+ * Task rows a surface may show on a terminal of `rows` lines: enough
+ * headroom that neither the strip nor the panel reaches the chat — the
+ * rule is to leave 2 lines of space at the bottom. Both surfaces share
+ * this cap so the panel is always the same height as the strip (its
+ * extra title/rule chrome consumes the remaining headroom).
  */
 export function taskRowCap(rows: number | undefined): number {
   return Math.max(1, (rows ?? 40) - 6);
@@ -262,7 +257,7 @@ export class ItemsPane implements Component {
   }
 
   render(width: number): string[] {
-    if (this.mode === "strip") return this.renderStrip(width);
+    if (this.mode === "strip") return this.renderStrip();
     const theme = this.theme;
     if (!theme || width < 12) return [];
     if (this.lines && this.cacheWidth === width) return this.lines;
@@ -337,23 +332,34 @@ export class ItemsPane implements Component {
   }
 
   /**
-   * Strip mode: a single horizontal glyph row for the widget slot above
-   * the editor. In-layout, so it never covers the chat. Empty when there
-   * is nothing to show (the controller then removes the widget entirely,
-   * so no blank line is reserved). Capped to the terminal width;
-   * overflow drops from the top (past) with ⋮ marking the hidden items.
+   * Strip mode: a 5-column bordered rail — a 3-cell content slot per
+   * task with the glyph centered, so glyphs that some terminals render
+   * two cells wide still fit inside the borders and the rail reads
+   * symmetric. One row per task; always visible (a quiet · when there
+   * are no tasks). Capped at terminal height; overflow drops from the
+   * top (past) with ⋮ marking the hidden items.
    */
-  private renderStrip(width: number): string[] {
+  private renderStrip(): string[] {
     const theme = this.theme;
     if (!theme) return [];
-    if (this.error) return [theme.fg("warning", "⚠")];
-    if (this.rows.length === 0) return [];
-    // Roughly one 2-cell slot per task (glyph + space); stripLines caps
-    // the timeline the same way it did for the vertical rail.
-    const cap = Math.max(1, Math.floor((width + 1) / 2));
-    const cells = stripLines(this.rows, { frame: this.frame, cap });
-    const line = cells.map((c) => theme.fg(c.color, c.glyph)).join(" ");
-    return [truncateToWidth(line, width)];
+    const border = (s: string) => theme.fg("borderMuted", s);
+    const cells = this.error
+      ? [{ glyph: "⚠", color: "warning" as StripColor }]
+      : this.rows.length === 0
+        ? [{ glyph: "·", color: "dim" as StripColor }]
+        : stripLines(this.rows, { frame: this.frame, cap: taskRowCap(process.stdout.rows) });
+    const lines = [border("╭───╮")];
+    for (const c of cells) {
+      const vw = Math.min(3, visibleWidth(c.glyph));
+      const left = Math.floor((3 - vw) / 2);
+      lines.push(
+        border("│") +
+          " ".repeat(left) + theme.fg(c.color, c.glyph) + " ".repeat(3 - vw - left) +
+          border("│"),
+      );
+    }
+    lines.push(border("╰───╯"));
+    return lines;
   }
 
   private cacheWidth = -1;
@@ -369,23 +375,19 @@ function padStyled(styled: string, width: number): string {
 
 
 /**
- * Owns both surfaces. The panel is an overlay whose `ctx.ui.custom`
- * promise stays pending for the whole session (it never completes on
- * its own); `/items off` completes it. The strip is an in-layout
- * widget above the editor, registered with `ctx.ui.setWidget`.
+ * Owns the overlay lifecycle. The `ctx.ui.custom` promise stays pending
+ * for the whole session (the pane never completes on its own); `/items off`
+ * completes it.
  */
 export class ItemsPaneController {
-  private static readonly STRIP_KEY = "tasks-strip";
   private pane: ItemsPane | null = null; // the full panel
   private handle: OverlayHandle | null = null;
   private done: ((result: undefined) => void) | null = null;
-  private stripPane: ItemsPane | null = null; // the always-on strip
-  /** Last context the strip widget was registered with. */
-  private stripCtx: ExtensionContext | null = null;
-  /** Whether the strip widget is currently registered with pi. */
-  private stripShown = false;
+  private stripPane: ItemsPane | null = null; // the always-on rail
+  private stripHandle: OverlayHandle | null = null;
+  private stripDone: ((result: undefined) => void) | null = null;
   private opening = false;
-  /** Whether the strip runs at all (CX_TASKS_STRIP=0 disables). */
+  /** Whether the 1-column strip runs at all (CX_TASKS_STRIP=0 disables). */
   private readonly stripOn = initialStripMode() === "strip";
 
   /** True while the full panel is open. */
@@ -408,10 +410,8 @@ export class ItemsPaneController {
   }
 
   /**
-   * Open the full panel. The strip keeps running underneath — it sits
-   * in the widget slot at the bottom, the panel is an overlay at the
-   * top-right; when they meet on a short terminal the panel simply
-   * draws over the strip and the strip is back when the panel closes.
+   * Open the full panel. It covers the strip's corner, so the strip
+   * hides while the panel is up and returns when the panel closes.
    */
   async open(ctx: ExtensionContext): Promise<void> {
     if (this.active || this.opening || ctx.mode !== "tui" || !ctx.hasUI) return;
@@ -430,6 +430,7 @@ export class ItemsPaneController {
           this.done = done;
           this.pane = pane;
           this.opening = false;
+          this.stripHandle?.setHidden(true);
           return pane;
         },
         {
@@ -456,10 +457,11 @@ export class ItemsPaneController {
       this.handle = null;
       this.done = null;
       this.opening = false;
+      this.stripHandle?.setHidden(false);
     }
   }
 
-  /** Close the panel; the strip was never hidden, nothing to restore. */
+  /** Close the panel; the strip returns. */
   close(): void {
     this.pane?.dispose();
     const done = this.done;
@@ -468,25 +470,22 @@ export class ItemsPaneController {
     this.pane = null;
     this.opening = false;
     done?.(undefined);
+    this.stripHandle?.setHidden(false);
   }
 
   /** Full teardown on session shutdown. */
   shutdown(): void {
     this.close();
     this.stripPane?.dispose();
-    if (this.stripShown) {
-      this.stripCtx?.ui.setWidget(ItemsPaneController.STRIP_KEY, undefined, { placement: "aboveEditor" });
-    }
-    this.stripCtx = null;
-    this.stripShown = false;
+    const done = this.stripDone;
+    this.stripDone = null;
+    this.stripHandle = null;
     this.stripPane = null;
+    done?.(undefined);
   }
 
   async refresh(): Promise<void> {
-    if (this.stripPane) {
-      await this.stripPane.refresh();
-      this.syncStripWidget();
-    }
+    if (this.stripPane) await this.stripPane.refresh();
     if (this.pane) {
       await this.pane.refresh();
       this.syncVisibility();
@@ -503,41 +502,38 @@ export class ItemsPaneController {
     } catch {
       // refresh already records errors on the pane itself
     }
-    this.opening = false;
-    this.stripPane = pane;
-    this.stripCtx = ctx;
-    this.syncStripWidget();
-  }
-
-  /**
-   * Register or remove the strip widget. The widget slot is in-layout
-   * (it sits between the status area and the editor inside pi's dock),
-   * so showing it costs one row of chat height but never covers chat
-   * text. Hidden entirely when there is nothing to show, so no blank
-   * line is reserved while the repo has no items.
-   */
-  private syncStripWidget(): void {
-    const pane = this.stripPane;
-    if (!this.stripCtx || !pane) return;
-    const show = pane.hasContent() || pane.error !== null;
-    if (show === this.stripShown) return;
-    this.stripShown = show;
-    this.stripCtx.ui.setWidget(
-      ItemsPaneController.STRIP_KEY,
-      show
-        ? (tui, theme) => {
-            pane.attach(tui, theme);
-            // Stateless wrapper around the persistent pane: re-registering
-            // the widget creates a fresh component but the pane (rows,
-            // spinner frame, theme) survives.
-            return {
-              render: (width: number) => pane.render(width),
-              invalidate: () => {},
-            };
-          }
-        : undefined,
-      { placement: "aboveEditor" },
-    );
+    try {
+      await ctx.ui.custom(
+        (tui, theme, _keybindings, done) => {
+          pane.attach(tui, theme);
+          this.stripDone = done;
+          this.stripPane = pane;
+          this.opening = false;
+          return pane;
+        },
+        {
+          overlay: true,
+          overlayOptions: () => ({
+            width: 5,
+            minWidth: 5,
+            maxHeight: "96%",
+            anchor: "top-right",
+            margin: { top: 2, right: 1 },
+            nonCapturing: true,
+            visible: (termWidth: number) => termWidth >= 60,
+          }),
+          onHandle: (handle) => {
+            this.stripHandle = handle;
+          },
+        },
+      );
+    } finally {
+      pane.dispose();
+      this.stripPane = null;
+      this.stripHandle = null;
+      this.stripDone = null;
+      this.opening = false;
+    }
   }
 
   /** Auto-hide the panel while there is nothing to show. */
