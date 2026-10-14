@@ -551,14 +551,20 @@ impl AutomergeStore {
             )
             .into());
         }
-        self.item_edit(
+        let closed = self.item_edit(
             scope,
             &full,
             ItemEdit {
                 status: Some(Status::Closed),
                 ..Default::default()
             },
-        )
+        )?;
+        // Closed items leave the pinned set: the guard/story rides only
+        // while open, so release/finalize lifts it automatically.
+        if self.item_pinned_ids(scope)?.contains(&full) {
+            self.item_pin(scope, &full, false)?;
+        }
+        Ok(closed)
     }
 
     /// W4 gate: set the gate description and/or mark it met/unmet.
@@ -749,7 +755,8 @@ impl AutomergeStore {
         Ok(out)
     }
 
-    /// Just the pinned ids, for marking lists.
+    /// Just the pinned ids, for marking lists. Includes closed items
+    /// still in the set (close unpins, but old data may linger).
     pub fn item_pinned_ids(&self, scope: &str) -> Result<BTreeSet<String>> {
         let mut out = BTreeSet::new();
         if let Some(pinned) = self.pinned_opt() {
@@ -758,6 +765,106 @@ impl AutomergeStore {
             }
         }
         Ok(out)
+    }
+
+    // ---- park / claim work guard ----
+
+    /// Label marking claim items (one open claim per scope).
+    pub const CLAIM_LABEL: &str = "claim";
+
+    /// The open claim item in a scope, if any.
+    pub fn open_claim(&self, scope: &str) -> Result<Option<WorkItem>> {
+        Ok(self
+            .item_list(scope)?
+            .into_iter()
+            .find(|it| it.labels.contains(Self::CLAIM_LABEL) && it.is_open()))
+    }
+
+    /// Claim the scope for active work: creates a pinned claim item in
+    /// progress. Every later session in this repo sees it via resolve.
+    /// Refuses while a claim is open — a parked claim may be stale
+    /// (context syncs lazily), so verify and `release` first.
+    pub fn claim_repo(&mut self, scope: &str, note: &str) -> Result<WorkItem> {
+        if let Some(existing) = self.open_claim(scope)? {
+            let state = if existing.status == Status::InProgress {
+                "CLAIMED (active work in progress)"
+            } else {
+                "PARKED — verify context freshness first; `release` if stale"
+            };
+            return Err(format!(
+                "claim: scope already {} — item {} ({})",
+                state, existing.id, existing.title
+            )
+            .into());
+        }
+        let note = note.trim();
+        let title = format!(
+            "🔒 claim: {}",
+            if note.is_empty() {
+                "working in this repo"
+            } else {
+                note
+            }
+        );
+        let it = self.item_add(
+            scope,
+            NewItem {
+                title,
+                labels: vec![Self::CLAIM_LABEL.to_string()],
+                ..Default::default()
+            },
+        )?;
+        let it = self.item_claim(scope, &it.id)?;
+        self.item_pin(scope, &it.id, true)
+    }
+
+    /// Park: suspend but keep the guard up. The claim item stays pinned
+    /// and open; a note records when and why. Anyone encountering a
+    /// parked claim should check for newer context (it may have been
+    /// released elsewhere) before respecting it.
+    pub fn park_repo(&mut self, scope: &str, note: &str) -> Result<WorkItem> {
+        let claim = self
+            .open_claim(scope)?
+            .ok_or_else(|| "park: no open claim in this scope".to_string())?;
+        self.item_edit(
+            scope,
+            &claim.id,
+            ItemEdit {
+                status: Some(Status::Open),
+                ..Default::default()
+            },
+        )?;
+        let msg = format!(
+            "parked at {} — {}",
+            created_millis().max(0) as u64,
+            if note.trim().is_empty() {
+                "paused"
+            } else {
+                note.trim()
+            }
+        );
+        self.item_note(scope, &claim.id, &msg)?;
+        Ok(self.item_get(scope, &claim.id)?.expect("claim exists"))
+    }
+
+    /// Release the guard: work is done, or a parked claim was verified
+    /// stale. Closing unpins automatically.
+    pub fn release_repo(&mut self, scope: &str, note: &str) -> Result<WorkItem> {
+        let claim = self
+            .open_claim(scope)?
+            .ok_or_else(|| "release: no open claim in this scope".to_string())?;
+        if !note.trim().is_empty() {
+            self.item_note(
+                scope,
+                &claim.id,
+                &format!(
+                    "released at {} — {}",
+                    created_millis().max(0) as u64,
+                    note.trim()
+                ),
+            )?;
+        }
+        self.item_close(scope, &claim.id)
     }
 
     /// W4 scheduler: score every ready (open, unblocked) item.
@@ -1354,5 +1461,35 @@ mod tests {
         assert_eq!(reopened.closed_at, None);
         let reclosed = s.item_close("sc", &a.id).unwrap();
         assert!(reclosed.closed_at.unwrap() >= closed.closed_at.unwrap());
+    }
+
+    #[test]
+    fn guard_claim_park_release_cycle() {
+        let mut s = AutomergeStore::in_memory().unwrap();
+        let c = s.claim_repo("sc", "upgrading X").unwrap();
+        assert_eq!(c.status, Status::InProgress);
+        assert!(s.item_pinned_ids("sc").unwrap().contains(&c.id));
+        // second claim refused while one is open
+        assert!(s.claim_repo("sc", "again").is_err());
+        // park: guard stays up, suspended, note records the time
+        let p = s.park_repo("sc", "stepping away").unwrap();
+        assert_eq!(p.status, Status::Open);
+        assert!(p.notes.values().any(|t| t.contains("parked at")));
+        assert!(s.item_pinned_ids("sc").unwrap().contains(&c.id));
+        assert!(s.claim_repo("sc", "again").is_err());
+        // release: closes => unpins, scope free again
+        let r = s.release_repo("sc", "done").unwrap();
+        assert_eq!(r.status, Status::Closed);
+        assert!(!s.item_pinned_ids("sc").unwrap().contains(&c.id));
+        assert!(s.claim_repo("sc", "new session").is_ok());
+    }
+
+    #[test]
+    fn guard_isolated_per_scope() {
+        let mut s = AutomergeStore::in_memory().unwrap();
+        s.claim_repo("a", "x").unwrap();
+        s.claim_repo("b", "y").unwrap();
+        assert!(s.open_claim("a").unwrap().is_some());
+        assert!(s.open_claim("b").unwrap().is_some());
     }
 }

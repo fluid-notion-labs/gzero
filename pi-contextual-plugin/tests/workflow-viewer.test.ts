@@ -81,26 +81,28 @@ test("left/right arrows also switch tabs", () => {
   assert.ok(plain(v.render(60)).join("\n").includes("row-a"));
 });
 
-test("per-tab scroll resets on switch; window re-centers (sliding window)", () => {
-  // Zero-padded 3-digit names: `line-3` is a substring of `line-30`,
-  // which made these assertions collide with whatever else was on screen.
-  // The body is long enough that the scrolled position and the re-centered
-  // window don't overlap.
+// Zero-padded 3-digit names so `line-3` can't substring-match `line-30`
+// (the same collision was fixed independently on another machine).
+test("window centers on load; scrolling slides it; switching re-centers", () => {
   const body = Array.from({ length: 100 }, (_, i) => `line-${String(i).padStart(3, "0")}`);
   const v = new WorkflowViewer(
     [page("a", body), page("b", body.slice())],
     theme as never,
     () => {},
   );
-  v.render(60); // open: cache built, window centered
-  for (let i = 0; i < 30; i++) v.handleInput("\x1b[B"); // slide well past center
+  v.handleInput("\x1b[B"); // scrolled before first render...
+  v.handleInput("\x1b[B");
+  v.handleInput("\x1b[B");
+  // ...but the first render still centers: window opens in the middle
   let out = plain(v.render(60)).join("\n");
-  assert.ok(out.includes("line-070"));
+  assert.ok(out.includes("line-050"), "window opens centered, not at the scrolled offset");
+  v.handleInput("\x1b[B"); // after render, scrolling slides the window
+  out = plain(v.render(60)).join("\n");
+  assert.ok(out.includes("line-051"), "scrolling slides the window");
   v.handleInput("\t"); // switch: window re-centers on the new tab
   out = plain(v.render(60)).join("\n");
-  assert.ok(!out.includes("line-000"), "not pinned to the top");
-  assert.ok(!out.includes("line-070"), "not the previously scrolled position");
-  assert.ok(/line-\d+/.test(out), "window shows middle content");
+  assert.ok(out.includes("line-050"), "window re-centers on tab switch");
+  assert.ok(!out.includes("line-003"), "not the previously scrolled position");
 });
 
 test("done fires on escape and q", () => {

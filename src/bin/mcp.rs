@@ -218,6 +218,7 @@ fn call_tool(
         "remove" => tool_remove(&args, store)?,
         "tags" => tool_tags(store)?,
         "harvest" => tool_harvest(&args, store)?,
+        "park_claim" => tool_park_claim(&args)?,
         "ws_put" | "ws_get" | "ws_list" | "ws_delete" => {
             let mut ws = ws_store()?;
             match name {
@@ -451,6 +452,37 @@ fn parse_ops(args: &serde_json::Value) -> Result<Vec<Op>, String> {
             .map(str::to_string),
         tags: arg_tags(args),
     }])
+}
+
+/// The work guard over MCP: claim / park / release the current repo.
+/// Same semantics as the CLI; the agent guards itself the same way the
+/// user does. A parked claim must be verified against fresh context
+/// before being treated as active.
+fn tool_park_claim(args: &serde_json::Value) -> Result<String, String> {
+    let action = args
+        .get("action")
+        .and_then(|a| a.as_str())
+        .unwrap_or("claim");
+    let note = args.get("note").and_then(|n| n.as_str()).unwrap_or("");
+    let mut ws = ws_store()?;
+    let scope = contextual::repo_identity().unwrap_or_else(|| "global".to_string());
+    let it = match action {
+        "claim" => ws.claim_repo(&scope, note).map_err(|e| e.to_string())?,
+        "park" => ws.park_repo(&scope, note).map_err(|e| e.to_string())?,
+        "release" => ws.release_repo(&scope, note).map_err(|e| e.to_string())?,
+        other => {
+            return Err(format!(
+                "park_claim: unknown action {other:?} (claim|park|release)"
+            ))
+        }
+    };
+    Ok(format!(
+        "{}: {} [{}] {}\nPinned item rides in resolve for every session in this scope.",
+        action,
+        it.id,
+        it.status.as_str(),
+        it.title
+    ))
 }
 
 fn tool_harvest(args: &serde_json::Value, store: &mut SqliteStore) -> Result<String, String> {
@@ -1146,6 +1178,17 @@ const TOOLS: &str = r#"[
         "text": { "type": "string", "description": "Short unique substring identifying the atom to remove." }
       },
       "required": ["text"]
+    }
+  },
+  {
+    "name": "park_claim",
+    "description": "The work guard: claim the current repo while working on it, park when stepping away (claimed for now — but verify context freshness before treating a parked claim as active), release when done or verified stale. The pinned claim item rides in resolve for every session in this scope, so forgetful sessions cannot clobber in-flight work unnoticed.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": { "type": "string", "enum": ["claim", "park", "release"], "description": "Default claim." },
+        "note": { "type": "string", "description": "Optional: what you're working on / why parked / why released." }
+      }
     }
   },
   {

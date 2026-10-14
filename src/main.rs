@@ -390,6 +390,7 @@ fn main() {
         }
         "ws" => ws_command(&args[1..]),
         "item" => item_command(&args[1..]),
+        "claim" | "park" | "release" => guard_command(&args),
         "recommend" => {
             eprintln!("cx: recommend is gone — packs were dissolved (tagged atoms replace them; see plan.md M4)");
             eprintln!("pull build/workflow conventions via: cx '#rust' / cx '#npm'");
@@ -694,6 +695,33 @@ fn ws_scope(arg: Option<&String>) -> String {
     arg.cloned()
         .or_else(contextual::repo_identity)
         .unwrap_or_else(|| "global".to_string())
+}
+
+/// `cx claim|park|release [note]` — the work guard: one pinned claim
+/// item per scope. Claim = actively working (every session sees it via
+/// resolve); park = suspend but keep the guard (may be stale — verify
+/// context freshness before obeying); release = done or verified stale.
+fn guard_command(args: &[String]) {
+    if args.is_empty() {
+        eprintln!("cx: usage: cx claim|park|release [note]");
+        exit(2);
+    }
+    let sub = args[0].as_str();
+    let note = args[1..].join(" ");
+    let mut store = open_ws();
+    let scope = ws_scope(None);
+    let result = match sub {
+        "claim" => store.claim_repo(&scope, &note),
+        "park" => store.park_repo(&scope, &note),
+        _ => store.release_repo(&scope, &note),
+    };
+    match result {
+        Ok(it) => println!("{} {} [{}] {}", sub, it.id, it.status.as_str(), it.title),
+        Err(e) => {
+            eprintln!("cx {sub}: {e}");
+            exit(1);
+        }
+    }
 }
 
 fn ws_json(s: &Section) -> serde_json::Value {

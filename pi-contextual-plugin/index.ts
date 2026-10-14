@@ -704,6 +704,41 @@ export default function (pi: ExtensionAPI) {
     handler: (ctx) => openWorkflow(ctx, itemsPane),
   });
 
+  // Work guard: claim / park / release the repo so later sessions see
+  // in-flight work via the injected context instead of clobbering it.
+  for (const [cmd, action] of [
+    ["claim", "claim"],
+    ["park", "park"],
+    ["release", "release"],
+  ] as const) {
+    pi.registerCommand(cmd, {
+      description:
+        cmd === "claim"
+          ? "Claim this repo for active work (guard for future sessions)"
+          : cmd === "park"
+            ? "Park the claim (suspended; guard stays up — verify freshness before obeying)"
+            : "Release the claim (done, or verified stale)",
+      handler: async (args: string, ctx: ExtensionCommandContext) => {
+        if (ctx.mode !== "tui") {
+          ctx.ui.notify("The guard needs TUI mode", "warning");
+          return;
+        }
+        const cxMcp = await findCxMcp();
+        if (!cxMcp) {
+          ctx.ui.notify("No cx-mcp available — run `cx " + cmd + "` in a shell", "warning");
+          return;
+        }
+        try {
+          const out = await mcpCall(cxMcp, "park_claim", { action, note: args.trim() });
+          ctx.ui.notify(out.replace(/\n/g, " — "), "info");
+          await itemsPane.refresh();
+        } catch (e) {
+          ctx.ui.notify(e instanceof Error ? e.message : String(e), "warning");
+        }
+      },
+    });
+  }
+
   pi.on("before_agent_start", async (event, ctx) => {
     // Workstyle directives enter a turn via ##workstyle.key codes in the
     // prompt; the parenthetical (extra info for this repo/message) stays in
