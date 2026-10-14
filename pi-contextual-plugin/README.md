@@ -6,15 +6,17 @@ contextual only via MCP — no direct SQLite or hub access.
 - registers `cx-mcp` so the model gets the `mcp__context__*` tools
 - injects the resolved default context (global + project tiers) into the
   system prompt on every turn
-- `/context` shows ground truth — exactly what is injected into the
-  system prompt this session: the `<context>` block (global + project
-  tier defaults) and the `<skills>` block (session-loaded skills).
+- `Ctrl+B` or `/context` toggles the context bag viewer (opens when
+  closed, closes when open; esc still works). It shows ground truth —
+  exactly what is injected into the system prompt this session: the
+  `<context>` block (global + project tier defaults) and the
+  `<skills>` block (session-loaded skills).
   It renders as a tabbed document: top-level tier menu bar (global /
   local / skills), and below
   it a flat scrollable document where each section opens with a
   horizontal divider carrying its title. Keys: ←→ switch tiers, ↑↓
   scroll line-wise, pgup/pgdn page-wise, ctrl+↓/ctrl+↑ jump
-  sections, esc/q close. Note the skillbag is *not* sent to the model —
+  sections, esc/q close, ctrl+b closes it too. Note the skillbag is *not* sent to the model —
   its atoms load only when a tag is pulled or a skill is
   referenced/loaded. The injection refreshes itself: the cache is
   stamped with the bag file's mtime, so any change — the model's

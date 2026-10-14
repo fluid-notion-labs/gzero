@@ -234,7 +234,8 @@ export function bucketTiers(rendered: string): TierSection[] {
  * tiers, and below it a flat document of that tier's sections, each
  * introduced by a horizontal divider with its title. Navigation: ←/→
  * switch tiers, ↑/↓ scroll line-wise, PgUp/PgDn page-wise,
- * ctrl+↓/ctrl+↑ jump to the next/previous section, esc/q closes.
+ * ctrl+↓/ctrl+↑ jump to the next/previous section, esc/q closes;
+ * ctrl+b closes too (the shortcut that opens the viewer toggles it).
  * Fixed-size body like the context panel (renderFixed + indicator slot).
  */
 class TierViewer implements Component, Focusable {
@@ -314,7 +315,10 @@ class TierViewer implements Component, Focusable {
   }
 
   handleInput(data: string): void {
-    if (this.nav.cancel(data) || matchesKey(data, "q")) {
+    // esc / q close; ctrl+b toggles — the overlay owns input while
+    // active, so the extension shortcut can't see it (same as ctrl+w
+    // on the context panel).
+    if (this.nav.cancel(data) || matchesKey(data, "q") || matchesKey(data, "ctrl+b")) {
       this.done();
     } else if (matchesKey(data, "left") || matchesKey(data, "shift+tab")) {
       this.switchTo((this.tab + this.sections.length - 1) % this.sections.length);
@@ -361,7 +365,7 @@ class TierViewer implements Component, Focusable {
     const hints =
       `←→ tier · ${keyHint(this.kb, "tui.select.up", "↑")}${keyHint(this.kb, "tui.select.down", "↓")} line ` +
       `· ${keyHint(this.kb, "tui.select.pageUp", "pgup")}/${keyHint(this.kb, "tui.select.pageDown", "pgdn")} page ` +
-      `· ctrl+↓↑ section · ${keyHint(this.kb, "tui.select.cancel", "esc")}/q close`;
+      `· ctrl+↓↑ section · ${keyHint(this.kb, "tui.select.cancel", "esc")}/q close · ctrl+b toggle`;
     const body = this.note ? `${hints} · ${this.note}` : hints;
     // Fixed-size: the body area renders exactly viewport rows, so the
     // box height doesn't jump as content changes. Indicator outside the
@@ -597,6 +601,52 @@ export default function (pi: ExtensionAPI) {
     return resolvedBody;
   };
 
+  // The tiered bag overlay (global / local / skills), shared by
+  // /context and ctrl+b. Shows ground truth: exactly what is injected
+  // into the system prompt this session — the <context> block (global
+  // + project tier defaults) and the <skills> block (session-loaded
+  // skills). Returns when there is nothing to show.
+  const openContextBag = async (ctx: ExtensionContext): Promise<void> => {
+    if (ctx.mode !== "tui") {
+      ctx.ui.notify("The context bag viewer needs TUI mode", "warning");
+      return;
+    }
+    const cxMcp = await findCxMcp();
+    if (!cxMcp) {
+      ctx.ui.notify(`cx-mcp not found. Install with: ${INSTALL_CMD}`, "error");
+      return;
+    }
+    try {
+      resolvedBody = await cachedResolved(cxMcp);
+    } catch {
+      ctx.ui.notify("Could not resolve context", "error");
+      return;
+    }
+    if (resolvedBody === null) {
+      ctx.ui.notify("Nothing resolved for this project — /context add or tagged pulls", "info");
+      return;
+    }
+    const sections = bucketTiers(resolvedBody).filter((s) => s.nodes.length > 0);
+    const loaded = getLoadedSkills();
+    if (loaded.length > 0) {
+      sections.push({
+        label: "skills (loaded)",
+        nodes: loaded.map((s) => ({ label: s.name, text: skillBody(s.file) })),
+      });
+    }
+    const note =
+      loaded.length > 0
+        ? `${loaded.length} skill${loaded.length === 1 ? "" : "s"}`
+        : undefined;
+    await ctx.ui.custom(
+      (_tui, theme, keybindings, done) => new TierViewer(sections, theme, done, note, keybindings),
+      {
+        overlay: true,
+        overlayOptions: { width: "100%", maxHeight: "100%", anchor: "center" },
+      },
+    );
+  };
+
   // The model's MCP tools. Registered in the factory; pi connects the
   // server when the session starts. A user mcp.json entry named "context"
   // wins — that is the escape hatch for custom flags.
@@ -737,6 +787,15 @@ export default function (pi: ExtensionAPI) {
   pi.registerShortcut(Key.ctrl("w"), {
     description: "Toggle the context panel (tasks / sections)",
     handler: (ctx) => openWorkflow(ctx, itemsPane),
+  });
+
+  // Ctrl+B → the context bag viewer: the /context tier overlay
+  // (global / local / skills). Same toggle pattern as ctrl+w — while
+  // the overlay is open it owns input and closes on the same ctrl+b
+  // (TierViewer.handleInput); /context is the discoverable path.
+  pi.registerShortcut(Key.ctrl("b"), {
+    description: "Toggle the context bag (global / local / skills)",
+    handler: (ctx) => openContextBag(ctx),
   });
 
   // Work guard: claim / park / release the repo so later sessions see
@@ -964,9 +1023,14 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
-      // Plain /context: show what the model is injected. In TUI mode a
-      // scrollable overlay; elsewhere a notification. Uses the same cache
-      // as injection, so this shows exactly what the model gets.
+      // Plain /context: show what the model is injected. In TUI mode the
+      // tiered overlay (shared with ctrl+b); elsewhere a notification.
+      // Uses the same cache as injection, so this shows exactly what the
+      // model gets.
+      if (ctx.mode === "tui") {
+        await openContextBag(ctx);
+        return;
+      }
       try {
         resolvedBody = await cachedResolved(cxMcp);
       } catch {
@@ -977,37 +1041,8 @@ export default function (pi: ExtensionAPI) {
         ctx.ui.notify("Nothing resolved for this project — /context add or tagged pulls", "info");
         return;
       }
-      // /context shows ground truth: exactly what is injected into the
-      // system prompt this session — the <context> block (global + project
-      // tier defaults) and the <skills> block (session-loaded skills).
-      if (ctx.mode === "tui") {
-        if (resolvedBody === null) {
-          ctx.ui.notify("Nothing resolved for this project — /context add or tagged pulls", "info");
-          return;
-        }
-        const sections = bucketTiers(resolvedBody).filter((s) => s.nodes.length > 0);
-        const loaded = getLoadedSkills();
-        if (loaded.length > 0) {
-          sections.push({
-            label: "skills (loaded)",
-            nodes: loaded.map((s) => ({ label: s.name, text: skillBody(s.file) })),
-          });
-        }
-        const note =
-          loaded.length > 0
-            ? `${loaded.length} skill${loaded.length === 1 ? "" : "s"}`
-            : undefined;
-        await ctx.ui.custom(
-          (_tui, theme, keybindings, done) => new TierViewer(sections, theme, done, note, keybindings),
-          {
-            overlay: true,
-            overlayOptions: { width: "100%", maxHeight: "100%", anchor: "center" },
-          },
-        );
-      } else {
-        const full = `<context>\n${PREAMBLE}\n\n${resolvedBody}\n</context>`;
-        ctx.ui.notify(full.length > 400 ? `${full.slice(0, 400)}…` : full, "info");
-      }
+      const full = `<context>\n${PREAMBLE}\n\n${resolvedBody}\n</context>`;
+      ctx.ui.notify(full.length > 400 ? `${full.slice(0, 400)}…` : full, "info");
     },
   });
 
