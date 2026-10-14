@@ -99,6 +99,15 @@ const STATUS_ICON: Record<string, { icon: string; color: "muted" | "accent" | "s
 };
 
 const MAX_ROWS = 28;
+
+/**
+ * Task rows a surface may show on a terminal of `rows` lines: enough
+ * headroom that neither the strip nor the panel reaches the chat — the
+ * rule is to leave 2 lines of space at the bottom.
+ */
+export function taskRowCap(rows: number | undefined): number {
+  return Math.max(1, (rows ?? 40) - 6);
+}
 /** How many recently finished items float at the top of the pane. */
 const RECENT_FINISHED = 3;
 
@@ -255,6 +264,8 @@ export class ItemsPane implements Component {
     const w = Math.min(width, 60);
     const inner = w - 4; // │ + space + content + space + │
     const lines: string[] = [];
+    // Same height as the strip: task rows capped by terminal height.
+    const maxRows = Math.min(MAX_ROWS, taskRowCap(process.stdout.rows));
 
     const title = truncateToWidth(" tasks ", inner);
     lines.push(
@@ -281,7 +292,7 @@ export class ItemsPane implements Component {
           theme.fg("borderMuted", " │"),
       );
     } else {
-      for (const row of this.rows.slice(0, MAX_ROWS)) {
+      for (const row of this.rows.slice(0, maxRows)) {
         const icon = STATUS_ICON[row.status] ?? STATUS_ICON.open;
         const blocked = row.blocked_by.length > 0 && row.status !== "closed";
         const glyph = blocked ? "⊘" : icon.icon;
@@ -302,8 +313,8 @@ export class ItemsPane implements Component {
             theme.fg("borderMuted", " │"),
         );
       }
-      if (this.rows.length > MAX_ROWS) {
-        const more = truncateToWidth(`… +${this.rows.length - MAX_ROWS} more`, inner);
+      if (this.rows.length > maxRows) {
+        const more = truncateToWidth(`… +${this.rows.length - maxRows} more`, inner);
         lines.push(
           theme.fg("borderMuted", "│ ") +
             theme.fg("dim", more.padEnd(inner)) +
@@ -334,7 +345,7 @@ export class ItemsPane implements Component {
       ? [{ glyph: "⚠", color: "warning" as StripColor }]
       : this.rows.length === 0
         ? [{ glyph: "·", color: "dim" as StripColor }]
-        : stripLines(this.rows, { frame: this.frame, cap: Math.max(1, (process.stdout.rows ?? 40) - 6) });
+        : stripLines(this.rows, { frame: this.frame, cap: taskRowCap(process.stdout.rows) });
     const lines = [border("╭───╮")];
     for (const c of cells) {
       const vw = Math.min(3, visibleWidth(c.glyph));
@@ -425,7 +436,8 @@ export class ItemsPaneController {
           overlayOptions: () => ({
             width: 46,
             minWidth: 32,
-            maxHeight: "96%",
+            // Never reach the chat: leave 2 lines at the bottom.
+            maxHeight: Math.max(1, (process.stdout.rows ?? 40) - 2),
             anchor: "top-right",
             margin: { top: 2, right: 1 },
             nonCapturing: true,

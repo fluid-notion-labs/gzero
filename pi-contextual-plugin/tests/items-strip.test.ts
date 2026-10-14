@@ -2,7 +2,7 @@
 // states, spinner frames, and the terminal-height overflow cap.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ItemsPane, initialStripMode, stripGlyph, stripLines, stripOrder, SPINNER_FRAMES, type ItemRow } from "../items-pane.ts";
+import { ItemsPane, initialStripMode, stripGlyph, stripLines, stripOrder, taskRowCap, SPINNER_FRAMES, type ItemRow } from "../items-pane.ts";
 
 const row = (over: Partial<ItemRow>): ItemRow => ({
   id: "0000",
@@ -97,4 +97,35 @@ test("empty strip stays visible: bordered rail with a quiet placeholder", () => 
   (pane as unknown as { theme: unknown }).theme = theme;
   const lines = pane.render(40);
   assert.deepEqual(lines, ["╭───╮", "│ · │", "╰───╯"]);
+});
+
+test("panel and strip cap task rows to leave 2+ lines of chat", () => {
+  // taskRowCap: terminal rows minus headroom, floored at 1.
+  assert.equal(taskRowCap(20), 14);
+  assert.equal(taskRowCap(undefined), 34);
+  assert.equal(taskRowCap(3), 1);
+
+  // Panel render: many rows are cut to the cap, with a +N more line.
+  const origRows = process.stdout.rows;
+  Object.defineProperty(process.stdout, "rows", { value: 20, configurable: true });
+  try {
+    const pane = new ItemsPane();
+    pane.mode = "panel";
+    pane.rows = Array.from({ length: 30 }, (_, i) =>
+      row({ id: String(i), status: "open", created: i }),
+    );
+    const theme = { fg: (_c: string, s: string) => s } as never;
+    (pane as unknown as { theme: unknown }).theme = theme;
+    const lines = pane.render(60);
+    const taskLines = lines.filter((l) => l.includes("○"));
+    assert.equal(taskLines.length, 14);
+    assert.ok(lines.some((l) => l.includes("+16 more")));
+
+    // Strip on the same terminal: same row count as the panel's tasks.
+    pane.mode = "strip";
+    const strip = pane.render(40);
+    assert.equal(strip.length, 14 + 2); // cells + borders
+  } finally {
+    Object.defineProperty(process.stdout, "rows", { value: origRows, configurable: true });
+  }
 });
