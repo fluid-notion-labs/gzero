@@ -14,10 +14,11 @@ import {
   Input,
   SelectList,
   Text,
-  matchesKey,
   type Component,
+  type KeybindingsManager,
   type SelectItem,
 } from "@earendil-works/pi-tui";
+import { keyHint, viewerNav, type ViewerNav } from "./keymap.ts";
 import { boxFrame } from "./window.ts";
 
 export interface WorkstyleEntry {
@@ -120,10 +121,17 @@ class WorkstylePicker implements Component {
     private entries: WorkstyleEntry[],
     private theme: Theme,
     private done: (result?: WorkstyleEntry) => void,
+    /** Injected by ctx.ui.custom; optional for tests. */
+    keybindings?: KeybindingsManager,
   ) {
+    this.nav = viewerNav(keybindings);
+    this.kb = keybindings;
     this.input.focused = true;
     this.list = this.rebuildList("");
   }
+
+  private nav: ViewerNav;
+  private kb: KeybindingsManager | undefined;
 
   private listTheme() {
     const t = this.theme;
@@ -158,20 +166,20 @@ class WorkstylePicker implements Component {
   }
 
   handleInput(data: string): void {
-    if (matchesKey(data, "escape")) {
+    if (this.nav.cancel(data)) {
       this.done();
       return;
     }
     if (
-      matchesKey(data, "up") ||
-      matchesKey(data, "down") ||
-      matchesKey(data, "pageUp") ||
-      matchesKey(data, "pageDown")
+      this.nav.up(data) ||
+      this.nav.down(data) ||
+      this.nav.pageUp(data) ||
+      this.nav.pageDown(data)
     ) {
       this.list.handleInput(data);
       return;
     }
-    if (matchesKey(data, "return")) {
+    if (this.nav.confirm(data)) {
       const sel = this.list.getSelectedItem();
       const entry = sel ? this.byValue.get(sel.value) : undefined;
       if (entry) this.done(entry);
@@ -193,7 +201,13 @@ class WorkstylePicker implements Component {
       ...new Text(t.fg("dim", "pick a directive — inserts ##workstyle.key (parenthesize for extra info)"), 1).render(inner),
       ...this.input.render(Math.max(inner - 2, 20)).map((line) => ` ${line}`),
       ...this.list.render(inner),
-      ...new Text(t.fg("dim", "type to filter · ↑↓ select · enter insert · esc close"), 1).render(inner),
+      ...new Text(
+        t.fg(
+          "dim",
+          `type to filter · ${keyHint(this.kb, "tui.select.up", "↑")}${keyHint(this.kb, "tui.select.down", "↓")} select · ${keyHint(this.kb, "tui.select.confirm", "enter")} insert · ${keyHint(this.kb, "tui.select.cancel", "esc")} close`,
+        ),
+        1,
+      ).render(inner),
     ], (s: string) => t.fg("borderMuted", s));
   }
 }
@@ -222,7 +236,7 @@ async function openPicker(
     return;
   }
   const picked = await ctx.ui.custom<WorkstyleEntry | undefined>(
-    (_tui, theme, _keybindings, done) => new WorkstylePicker(entries, theme, done),
+    (_tui, theme, keybindings, done) => new WorkstylePicker(entries, theme, done, keybindings),
     {
       overlay: true,
       overlayOptions: { width: "75%", minWidth: 70, maxHeight: "85%", anchor: "center" },

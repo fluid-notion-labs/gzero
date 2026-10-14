@@ -10,8 +10,9 @@
 // overlay invisible (the "ctrl+w freezes pi" report).
 
 import { Text, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
-import type { Component, Focusable } from "@earendil-works/pi-tui";
+import type { Component, Focusable, KeybindingsManager } from "@earendil-works/pi-tui";
 import type { Theme } from "@earendil-works/pi-coding-agent";
+import { keyHint, viewerNav, type ViewerNav } from "./keymap.ts";
 import { type FlatRow } from "./items-tree.ts";
 import { boxFrame, LineWindow, modalViewport, wrapPlain } from "./window.ts";
 
@@ -205,17 +206,23 @@ export class WorkflowViewer implements Component, Focusable {
   private tab: number;
   private window = new LineWindow(modalViewport());
   private cache: { tab: number; inner: number; lines: string[] } | null = null;
+  private nav: ViewerNav;
+  private kb: KeybindingsManager | undefined;
 
   constructor(
     pages: WorkflowPage[],
     theme: Theme,
     done: (result?: unknown) => void,
     startTab = 0,
+    /** Injected by ctx.ui.custom; optional for tests. */
+    keybindings?: KeybindingsManager,
   ) {
     this.pages = pages;
     this.theme = theme;
     this.done = done;
     this.tab = Math.max(0, Math.min(startTab, pages.length - 1));
+    this.nav = viewerNav(keybindings);
+    this.kb = keybindings;
   }
 
   invalidate(): void {
@@ -256,7 +263,10 @@ export class WorkflowViewer implements Component, Focusable {
       })
       .join(t.fg("dim", "│"));
     const page = this.pages[this.tab];
-    const hints = `tab/shift+tab tab · ↑↓ line · pgup/pgdn page · home/end · esc/q close`;
+    const hints =
+      `tab/shift+tab tab · ${keyHint(this.kb, "tui.select.up", "↑")}${keyHint(this.kb, "tui.select.down", "↓")} line ` +
+      `· ${keyHint(this.kb, "tui.select.pageUp", "pgup")}/${keyHint(this.kb, "tui.select.pageDown", "pgdn")} page ` +
+      `· home/end · ${keyHint(this.kb, "tui.select.cancel", "esc")}/q close`;
     const footer = page?.note ? `${hints} · ${page.note}` : hints;
     return boxFrame(width, [
       ...new Text(tabs, 1).render(inner),
@@ -268,23 +278,23 @@ export class WorkflowViewer implements Component, Focusable {
   }
 
   handleInput(data: string): void {
-    if (matchesKey(data, "escape") || matchesKey(data, "q")) {
+    if (this.nav.cancel(data) || matchesKey(data, "q")) {
       this.done();
-    } else if (matchesKey(data, "tab") || matchesKey(data, "ctrl+tab") || matchesKey(data, "right")) {
+    } else if (matchesKey(data, "tab") || matchesKey(data, "right")) {
       this.switchTo(this.tab + 1);
     } else if (matchesKey(data, "shift+tab") || matchesKey(data, "left")) {
       this.switchTo(this.tab - 1);
-    } else if (matchesKey(data, "up") || matchesKey(data, "k")) {
+    } else if (this.nav.up(data) || matchesKey(data, "k")) {
       this.window.scrollBy(-1);
-    } else if (matchesKey(data, "down") || matchesKey(data, "j")) {
+    } else if (this.nav.down(data) || matchesKey(data, "j")) {
       this.window.scrollBy(1);
-    } else if (matchesKey(data, "pageUp")) {
+    } else if (this.nav.pageUp(data)) {
       this.window.scrollBy(-this.window.viewport + 2);
-    } else if (matchesKey(data, "pageDown")) {
+    } else if (this.nav.pageDown(data)) {
       this.window.scrollBy(this.window.viewport - 2);
     } else if (matchesKey(data, "home")) {
       this.window.scrollToStart();
-    } else if (matchesKey(data, "end") || data === "G") {
+    } else if (matchesKey(data, "end") || matchesKey(data, "shift+g")) {
       this.window.scrollToEnd();
     }
   }

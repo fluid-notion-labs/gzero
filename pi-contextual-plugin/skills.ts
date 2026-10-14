@@ -19,8 +19,10 @@ import {
   type AutocompleteProvider,
   type AutocompleteSuggestions,
   type Component,
+  type KeybindingsManager,
   type SelectItem,
 } from "@earendil-works/pi-tui";
+import { keyHint, viewerNav, type ViewerNav } from "./keymap.ts";
 import { boxFrame, LineWindow, modalViewport, wrapPlain } from "./window.ts";
 
 export interface SkillEntry {
@@ -375,10 +377,17 @@ class SkillsPicker implements Component {
     private entries: SkillEntry[],
     private theme: Theme,
     private done: (result?: SkillEntry) => void,
+    /** Injected by ctx.ui.custom; optional for tests. */
+    keybindings?: KeybindingsManager,
   ) {
+    this.nav = viewerNav(keybindings);
+    this.kb = keybindings;
     this.input.focused = true;
     this.list = this.rebuildList("");
   }
+
+  private nav: ViewerNav;
+  private kb: KeybindingsManager | undefined;
 
   private listTheme() {
     const t = this.theme;
@@ -437,11 +446,11 @@ class SkillsPicker implements Component {
       }
     }
     if (this.mode === "detail") {
-      if (matchesKey(data, "escape") || matchesKey(data, "q")) {
+      if (this.nav.cancel(data) || matchesKey(data, "q")) {
         this.backToList();
         return;
       }
-      if (matchesKey(data, "return") || matchesKey(data, "enter")) {
+      if (this.nav.confirm(data)) {
         // Enter loads the skill for the session. It had no other use in the
         // detail view, and terminals that send plain CR for ctrl+enter are
         // physically indistinguishable from enter anyway.
@@ -449,29 +458,29 @@ class SkillsPicker implements Component {
         return;
       }
       const s = this.window;
-      if (matchesKey(data, "up") || matchesKey(data, "k")) s.scrollBy(-3);
-      else if (matchesKey(data, "down") || matchesKey(data, "j")) s.scrollBy(3);
-      else if (matchesKey(data, "pageUp") || matchesKey(data, "b")) s.scrollBy(-20);
-      else if (matchesKey(data, "pageDown") || matchesKey(data, "space")) s.scrollBy(20);
+      if (this.nav.up(data) || matchesKey(data, "k")) s.scrollBy(-3);
+      else if (this.nav.down(data) || matchesKey(data, "j")) s.scrollBy(3);
+      else if (this.nav.pageUp(data) || matchesKey(data, "b")) s.scrollBy(-20);
+      else if (this.nav.pageDown(data) || matchesKey(data, "space")) s.scrollBy(20);
       else if (matchesKey(data, "home")) s.scrollToStart();
-      else if (matchesKey(data, "end") || data === "G") s.scrollToEnd();
+      else if (matchesKey(data, "end") || matchesKey(data, "shift+g")) s.scrollToEnd();
       else if (matchesKey(data, "g")) s.scrollToStart();
       return;
     }
-    if (matchesKey(data, "escape")) {
+    if (this.nav.cancel(data)) {
       this.done();
       return;
     }
     if (
-      matchesKey(data, "up") ||
-      matchesKey(data, "down") ||
-      matchesKey(data, "pageUp") ||
-      matchesKey(data, "pageDown")
+      this.nav.up(data) ||
+      this.nav.down(data) ||
+      this.nav.pageUp(data) ||
+      this.nav.pageDown(data)
     ) {
       this.list.handleInput(data);
       return;
     }
-    if (matchesKey(data, "return")) {
+    if (this.nav.confirm(data)) {
       const sel = this.list.getSelectedItem();
       const entry = sel ? this.byValue.get(sel.value) : undefined;
       if (entry) this.openDetail(entry);
@@ -505,7 +514,13 @@ class SkillsPicker implements Component {
         ...new Text(t.fg("dim", `${this.current.vendor} · ${this.current.file}`), 1).render(inner),
         "",
         ...this.window.render().map((line) => ` ${line}`),
-        ...new Text(t.fg("dim", `esc/q back · enter loads for session · j/k scroll · g/G top/end${pos}`), 1).render(inner),
+        ...new Text(
+          t.fg(
+            "dim",
+            `${keyHint(this.kb, "tui.select.cancel", "esc")}/q back · ${keyHint(this.kb, "tui.select.confirm", "enter")} loads for session · j/k scroll · g/G top/end${pos}`,
+          ),
+          1,
+        ).render(inner),
       ], rail);
     }
     return boxFrame(width, [
@@ -513,7 +528,13 @@ class SkillsPicker implements Component {
       ...new Text(t.fg("dim", "vendored agent skills — search title & description, enter to read"), 1).render(inner),
       ...this.input.render(Math.max(inner - 2, 20)).map((line) => ` ${line}`),
       ...this.list.render(inner),
-      ...new Text(t.fg("dim", "type to filter · ↑↓ select · enter read · esc close"), 1).render(inner),
+      ...new Text(
+        t.fg(
+          "dim",
+          `type to filter · ${keyHint(this.kb, "tui.select.up", "↑")}${keyHint(this.kb, "tui.select.down", "↓")} select · ${keyHint(this.kb, "tui.select.confirm", "enter")} read · ${keyHint(this.kb, "tui.select.cancel", "esc")} close`,
+        ),
+        1,
+      ).render(inner),
     ], rail);
   }
 }
@@ -532,7 +553,7 @@ async function openPicker(ctx: ExtensionContext): Promise<void> {
     return;
   }
   const loaded = await ctx.ui.custom<SkillEntry | undefined>(
-    (_tui, theme, _keybindings, done) => new SkillsPicker(skills, theme, done),
+    (_tui, theme, keybindings, done) => new SkillsPicker(skills, theme, done, keybindings),
     {
       overlay: true,
       overlayOptions: { width: "75%", minWidth: 70, maxHeight: "85%", anchor: "center" },

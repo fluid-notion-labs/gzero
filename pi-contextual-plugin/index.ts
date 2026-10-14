@@ -11,6 +11,7 @@ import type {
   ExtensionAPI,
   ExtensionCommandContext,
   ExtensionContext,
+  KeybindingsManager,
   Theme,
 } from "@earendil-works/pi-coding-agent";
 import {
@@ -22,6 +23,7 @@ import {
   type Focusable,
 } from "@earendil-works/pi-tui";
 import { boxFrame, LineWindow, modalViewport, wrapPlain } from "./window.ts";
+import { keyHint, viewerNav, type ViewerNav } from "./keymap.ts";
 import {
   distillSkill,
   extractSkillRefs,
@@ -241,6 +243,8 @@ class TierViewer implements Component, Focusable {
   /** Active tier's document (titled dividers + wrapped content). */
   private docCache: { tab: number; width: number; lines: string[]; sectionStarts: number[] } | null = null;
   private lastStarts: number[] = [];
+  private nav: ViewerNav;
+  private kb: KeybindingsManager | undefined;
 
   constructor(
     private sections: TierSection[],
@@ -248,7 +252,12 @@ class TierViewer implements Component, Focusable {
     private done: (result?: unknown) => void,
     /** Extra footer note, e.g. "2 skills". */
     private note?: string,
-  ) {}
+    /** Injected by ctx.ui.custom; optional for tests. */
+    keybindings?: KeybindingsManager,
+  ) {
+    this.nav = viewerNav(keybindings);
+    this.kb = keybindings;
+  }
 
   invalidate(): void {}
 
@@ -304,9 +313,9 @@ class TierViewer implements Component, Focusable {
   }
 
   handleInput(data: string): void {
-    if (matchesKey(data, "escape") || matchesKey(data, "q")) {
+    if (this.nav.cancel(data) || matchesKey(data, "q")) {
       this.done();
-    } else if (matchesKey(data, "left")) {
+    } else if (matchesKey(data, "left") || matchesKey(data, "shift+tab")) {
       this.switchTo((this.tab + this.sections.length - 1) % this.sections.length);
     } else if (matchesKey(data, "right") || matchesKey(data, "tab")) {
       this.switchTo((this.tab + 1) % this.sections.length);
@@ -318,17 +327,17 @@ class TierViewer implements Component, Focusable {
       const cur = this.currentSection(this.lastStarts);
       const prev = this.lastStarts[Math.max(0, cur - 1)];
       this.window.scrollTo(prev);
-    } else if (matchesKey(data, "up")) {
+    } else if (this.nav.up(data)) {
       this.window.scrollBy(-1);
-    } else if (matchesKey(data, "down")) {
+    } else if (this.nav.down(data)) {
       this.window.scrollBy(1);
-    } else if (matchesKey(data, "pageUp")) {
+    } else if (this.nav.pageUp(data)) {
       this.window.scrollBy(-this.window.viewport + 2);
-    } else if (matchesKey(data, "pageDown")) {
+    } else if (this.nav.pageDown(data)) {
       this.window.scrollBy(this.window.viewport - 2);
     } else if (matchesKey(data, "home")) {
       this.window.scrollToStart();
-    } else if (matchesKey(data, "end") || data === "G") {
+    } else if (matchesKey(data, "end") || matchesKey(data, "shift+g")) {
       this.window.scrollToEnd();
     } else if (matchesKey(data, "j")) {
       this.window.scrollBy(1);
@@ -348,7 +357,10 @@ class TierViewer implements Component, Focusable {
       })
       .join(t.fg("dim", "│"));
     const divider = t.fg("borderMuted", "─".repeat(inner));
-    const hints = `←→ tier · ↑↓ line · pgup/pgdn page · ctrl+↓↑ section · esc/q close`;
+    const hints =
+      `←→ tier · ${keyHint(this.kb, "tui.select.up", "↑")}${keyHint(this.kb, "tui.select.down", "↓")} line ` +
+      `· ${keyHint(this.kb, "tui.select.pageUp", "pgup")}/${keyHint(this.kb, "tui.select.pageDown", "pgdn")} page ` +
+      `· ctrl+↓↑ section · ${keyHint(this.kb, "tui.select.cancel", "esc")}/q close`;
     const footer = this.note ? `${hints} · ${this.note}` : hints;
     return boxFrame(width, [
       ...new Text(tabs, 1).render(inner),
@@ -473,7 +485,7 @@ async function openWorkflow(
   }
   try {
     await ctx.ui.custom(
-      (_tui, theme, _keybindings, done) => new WorkflowViewer(pages, theme, done),
+      (_tui, theme, keybindings, done) => new WorkflowViewer(pages, theme, done, 0, keybindings),
       {
         overlay: true,
         overlayOptions: { width: "100%", maxHeight: "100%", anchor: "center" },
@@ -916,7 +928,7 @@ export default function (pi: ExtensionAPI) {
             ? `${loaded.length} skill${loaded.length === 1 ? "" : "s"}`
             : undefined;
         await ctx.ui.custom(
-          (_tui, theme, _keybindings, done) => new TierViewer(sections, theme, done, note),
+          (_tui, theme, keybindings, done) => new TierViewer(sections, theme, done, note, keybindings),
           {
             overlay: true,
             overlayOptions: { width: "100%", maxHeight: "100%", anchor: "center" },
