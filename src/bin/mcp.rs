@@ -300,10 +300,67 @@ fn tool_resolve(args: &serde_json::Value, store: &SqliteStore) -> Result<String,
     let project = contextual::repo_identity();
     let items = resolve_tiers(store, project.as_deref(), &refs).map_err(|e| e.to_string())?;
     let mut out = render(items);
+    // Presence (S1): resolve doubles as the heartbeat — it runs every
+    // turn, so no timer. Sweeping expired rows rides along.
+    if let Some(block) = presence_block(store) {
+        out.push_str(&block);
+    }
     if let Some(block) = pinned_block() {
         out.push_str(&block);
     }
     Ok(out)
+}
+
+/// Heartbeat this session, sweep expired rows, and return an "also
+/// here" block when other live sessions share this scope. Presence is
+/// best-effort: failures never break resolve.
+fn presence_block(store: &SqliteStore) -> Option<String> {
+    let project = contextual::repo_identity()?;
+    let (session_id, machine) = contextual::sessions::session_identity();
+    let cwd = std::env::current_dir()
+        .map(|p| p.display().to_string())
+        .unwrap_or_default();
+    let beat = contextual::sessions::SessionInfo {
+        session_id: session_id.clone(),
+        machine,
+        scope: project.clone(),
+        cwd,
+        pid: std::process::id() as i64,
+        label: String::new(),
+        started_at: 0, // ignored by the upsert on conflict
+        last_seen: contextual::sessions::now(),
+    };
+    store.heartbeat(&beat).ok()?;
+    store.sweep_sessions(contextual::PRESENCE_TTL_SECS).ok()?;
+    let peers = store
+        .active_peers(&project, &session_id, contextual::PRESENCE_TTL_SECS)
+        .ok()?;
+    if peers.is_empty() {
+        return None;
+    }
+    let ago = |seen: i64| {
+        let m = (contextual::sessions::now() - seen) / 60;
+        if m < 1 {
+            "<1m".to_string()
+        } else {
+            format!("{m}m")
+        }
+    };
+    let mut out = format!(
+        "\n\n## also here\n{} other session{} active in this scope:\n",
+        peers.len(),
+        if peers.len() == 1 { "" } else { "s" }
+    );
+    for p in peers.iter().take(5) {
+        out.push_str(&format!(
+            "- `{}` — {} on {}, last seen {} ago\n",
+            &p.session_id[..p.session_id.len().min(8)],
+            p.cwd,
+            p.machine,
+            ago(p.last_seen)
+        ));
+    }
+    Some(out)
 }
 
 /// Pinned open items ride in resolve output (W3): the user's explicit
