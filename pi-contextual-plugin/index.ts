@@ -672,7 +672,7 @@ export default function (pi: ExtensionAPI) {
     // The pane's custom interaction stays pending by design, so nothing
     // may await it. It opens fire-and-forget.
     if (ctx.mode === "tui") {
-      void itemsPane.open(ctx);
+      void itemsPane.start(ctx);
     }
   });
 
@@ -681,19 +681,19 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("session_shutdown", () => {
-    itemsPane.close();
+    itemsPane.shutdown();
   });
 
-  // ctrl+q → toggle the tasks strip (1-column status rail) ↔ anchored
-  // panel. The strip is the default; CX_TASKS_STRIP=0 keeps the panel
-  // and makes this a no-op.
+  // ctrl+q → toggle the full task panel; the 1-column strip on the
+  // right edge is always visible underneath. CX_TASKS_STRIP=0 removes
+  // the strip and restores the old panel-only behavior.
   pi.registerShortcut(Key.ctrl("q"), {
-    description: "Toggle the tasks strip / panel",
-    handler: (ctx) => itemsPane.toggleMode(ctx),
+    description: "Toggle the task panel (strip stays)",
+    handler: (ctx) => itemsPane.toggle(ctx),
   });
 
   pi.registerCommand("tasks", {
-    description: "Toggle the tasks sidebar (ctrl+q switches strip/panel); 'refresh' refetches now",
+    description: "Toggle the task panel (same as ctrl+q); 'refresh' refetches now",
     handler: async (args: string, ctx: ExtensionCommandContext) => {
       const sub = args.trim().split(/\s+/)[0] ?? "";
       if (sub === "off") {

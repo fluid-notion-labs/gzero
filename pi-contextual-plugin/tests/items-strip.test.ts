@@ -83,3 +83,12 @@ test("CX_TASKS_STRIP=0 forces panel mode", () => {
   assert.equal(initialStripMode({ CX_TASKS_STRIP: "0" }), "panel");
   assert.equal(initialStripMode({ CX_TASKS_STRIP: "1" }), "strip");
 });
+
+test("empty strip stays visible with a quiet placeholder", () => {
+  const pane = new ItemsPane();
+  pane.mode = "strip";
+  const theme = { fg: (_c: string, s: string) => s } as never;
+  (pane as unknown as { theme: unknown }).theme = theme;
+  const lines = pane.render(40);
+  assert.deepEqual(lines, ["·"]);
+});

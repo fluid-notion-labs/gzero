@@ -56,17 +56,18 @@ contextual only via MCP — no direct SQLite or hub access.
   esc/q (or ctrl+c) closes. When the strip doesn't fit the width it
   slides — a window of tabs centered on the active one, `‹`/`›` marking
   hidden tabs
-- `/tasks` toggles the tasks sidebar (alias `/items`); `ctrl+q`
-  switches between its two shapes. Default is the **strip**: a
-  1-column status rail on the right edge, one glyph per task in
-  timeline order — ✓ closed at top (past), ● in-progress, ○ open — so
-  new tasks appear at the bottom and work flows upward as it completes.
-  In-progress tasks spin (braille frames; the animation timer only runs
-  while a spinner is visible). Blocked tasks show ⊘, overflow shows ⋮
-  after dropping the oldest rows. `ctrl+q` again pops out the full
-  **panel**: a non-capturing overlay anchored top-right listing work
-  items with status glyphs and priority, auto-hidden when empty, with a
-  rule under its title. `CX_TASKS_STRIP=0` keeps the panel always
+- The **tasks strip** is always visible: a 1-column status rail on the
+  right edge, one glyph per task in timeline order — ✓ closed at top
+  (past), ● in-progress, ○ open — so new tasks appear at the bottom and
+  work flows upward as it completes. In-progress tasks spin (braille
+  frames; the animation timer only runs while a spinner is visible).
+  Blocked tasks show ⊘, overflow shows ⋮ after dropping the oldest
+  rows, and an empty strip shows a quiet `·`. `ctrl+q` (or `/tasks`,
+  alias `/items`) toggles the full **panel**: a non-capturing overlay
+  anchored top-right listing work items with status glyphs and
+  priority, auto-hidden when empty, with a rule under its title — the
+  strip hides while the panel covers its corner. `CX_TASKS_STRIP=0`
+  removes the strip and restores panel-only behavior
 - warns on a stale `cx-mcp` (missing tools via `tools/list`)
 - offers to install contextual on first run if `cx-mcp` is missing
 

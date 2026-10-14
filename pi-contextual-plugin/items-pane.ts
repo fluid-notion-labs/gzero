@@ -327,6 +327,9 @@ export class ItemsPane implements Component {
     const theme = this.theme;
     if (!theme) return [];
     if (this.error) return [theme.fg("warning", "⚠")];
+    // The strip is always visible — with no tasks it shows a quiet
+    // placeholder so the rail still marks the corner.
+    if (this.rows.length === 0) return [theme.fg("dim", "·")];
     const cap = Math.max(1, (process.stdout.rows ?? 40) - 4);
     return stripLines(this.rows, { frame: this.frame, cap }).map((c) => theme.fg(c.color, c.glyph));
   }
@@ -349,17 +352,22 @@ function padStyled(styled: string, width: number): string {
  * completes it.
  */
 export class ItemsPaneController {
-  private pane: ItemsPane | null = null;
+  private pane: ItemsPane | null = null; // the full panel
   private handle: OverlayHandle | null = null;
   private done: ((result: undefined) => void) | null = null;
+  private stripPane: ItemsPane | null = null; // the always-on rail
+  private stripHandle: OverlayHandle | null = null;
+  private stripDone: ((result: undefined) => void) | null = null;
   private opening = false;
-  /** strip = 1-column status rail; panel = full sidebar. */
-  private mode: "strip" | "panel" = initialStripMode();
+  /** Whether the 1-column strip runs at all (CX_TASKS_STRIP=0 disables). */
+  private readonly stripOn = initialStripMode() === "strip";
 
+  /** True while the full panel is open. */
   get active(): boolean {
     return this.pane !== null;
   }
 
+  /** ctrl+q / /tasks: toggle the full panel. The strip always runs. */
   async toggle(ctx: ExtensionContext): Promise<void> {
     if (this.active) {
       this.close();
@@ -368,29 +376,20 @@ export class ItemsPaneController {
     await this.open(ctx);
   }
 
-  /**
-   * ctrl+q: toggle between the strip and the anchored full panel.
-   * Inactive → opens in the current mode; active → switches mode
-   * (the overlay is rebuilt, since the two modes need different
-   * widths). With CX_TASKS_STRIP=0 there is no strip, so this is a
-   * no-op and /tasks behaves exactly as before.
-   */
-  async toggleMode(ctx: ExtensionContext): Promise<void> {
-    if (this.mode === "panel" && process.env.CX_TASKS_STRIP === "0") return;
-    if (!this.active) {
-      await this.open(ctx);
-      return;
-    }
-    this.mode = this.mode === "strip" ? "panel" : "strip";
-    this.close();
-    await this.open(ctx);
+  /** Session start: start the always-on strip (panel stays closed). */
+  async start(ctx: ExtensionContext): Promise<void> {
+    await this.ensureStrip(ctx);
   }
 
+  /**
+   * Open the full panel. It covers the strip's corner, so the strip
+   * hides while the panel is up and returns when the panel closes.
+   */
   async open(ctx: ExtensionContext): Promise<void> {
     if (this.active || this.opening || ctx.mode !== "tui" || !ctx.hasUI) return;
     this.opening = true;
     const pane = new ItemsPane();
-    pane.mode = this.mode;
+    pane.mode = "panel";
     try {
       await pane.refresh();
     } catch {
@@ -402,31 +401,21 @@ export class ItemsPaneController {
           pane.attach(tui, theme);
           this.done = done;
           this.pane = pane;
+          this.opening = false;
+          this.stripHandle?.setHidden(true);
           return pane;
         },
         {
           overlay: true,
-          overlayOptions: () => {
-            const base = {
-              maxHeight: "96%" as const,
-              anchor: "top-right" as const,
-              margin: { top: 2, right: 1 },
-              nonCapturing: true as const,
-            };
-            return this.mode === "strip"
-              ? {
-                  ...base,
-                  width: 1,
-                  minWidth: 1,
-                  visible: (termWidth: number) => termWidth >= 60,
-                }
-              : {
-                  ...base,
-                  width: 46,
-                  minWidth: 32,
-                  visible: (termWidth: number) => termWidth >= 100,
-                };
-          },
+          overlayOptions: () => ({
+            width: 46,
+            minWidth: 32,
+            maxHeight: "96%",
+            anchor: "top-right",
+            margin: { top: 2, right: 1 },
+            nonCapturing: true,
+            visible: (termWidth: number) => termWidth >= 100,
+          }),
           onHandle: (handle) => {
             this.handle = handle;
             this.syncVisibility();
@@ -434,29 +423,91 @@ export class ItemsPaneController {
         },
       );
     } finally {
-      this.opening = false;
+      this.pane?.dispose();
       this.pane = null;
       this.handle = null;
       this.done = null;
+      this.opening = false;
+      this.stripHandle?.setHidden(false);
     }
   }
 
+  /** Close the panel; the strip returns. */
   close(): void {
     this.pane?.dispose();
     const done = this.done;
     this.done = null;
     this.handle = null;
     this.pane = null;
+    this.opening = false;
+    done?.(undefined);
+    this.stripHandle?.setHidden(false);
+  }
+
+  /** Full teardown on session shutdown. */
+  shutdown(): void {
+    this.close();
+    this.stripPane?.dispose();
+    const done = this.stripDone;
+    this.stripDone = null;
+    this.stripHandle = null;
+    this.stripPane = null;
     done?.(undefined);
   }
 
   async refresh(): Promise<void> {
-    if (!this.pane) return;
-    await this.pane.refresh();
-    this.syncVisibility();
+    if (this.stripPane) await this.stripPane.refresh();
+    if (this.pane) {
+      await this.pane.refresh();
+      this.syncVisibility();
+    }
   }
 
-  /** Auto-hide while there is nothing to show. */
+  private async ensureStrip(ctx: ExtensionContext): Promise<void> {
+    if (!this.stripOn || this.stripPane || this.opening || ctx.mode !== "tui" || !ctx.hasUI) return;
+    this.opening = true;
+    const pane = new ItemsPane();
+    pane.mode = "strip";
+    try {
+      await pane.refresh();
+    } catch {
+      // refresh already records errors on the pane itself
+    }
+    try {
+      await ctx.ui.custom(
+        (tui, theme, _keybindings, done) => {
+          pane.attach(tui, theme);
+          this.stripDone = done;
+          this.stripPane = pane;
+          this.opening = false;
+          return pane;
+        },
+        {
+          overlay: true,
+          overlayOptions: () => ({
+            width: 1,
+            minWidth: 1,
+            maxHeight: "96%",
+            anchor: "top-right",
+            margin: { top: 2, right: 1 },
+            nonCapturing: true,
+            visible: (termWidth: number) => termWidth >= 60,
+          }),
+          onHandle: (handle) => {
+            this.stripHandle = handle;
+          },
+        },
+      );
+    } finally {
+      pane.dispose();
+      this.stripPane = null;
+      this.stripHandle = null;
+      this.stripDone = null;
+      this.opening = false;
+    }
+  }
+
+  /** Auto-hide the panel while there is nothing to show. */
   private syncVisibility(): void {
     if (!this.handle || !this.pane) return;
     this.handle.setHidden(!this.pane.hasContent() && this.pane.error === null);
