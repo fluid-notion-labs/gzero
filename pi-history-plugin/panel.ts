@@ -39,19 +39,29 @@ export interface HistoryPanelOptions {
 
 export class HistoryPanel {
   private scroll = 0;
+  private selected = 0;
+  // Explicit fields, not constructor parameter properties: node's
+  // strip-only TS mode rejects parameter properties, and panel.ts is
+  // test-reachable.
+  private readonly entries: PromptEntry[];
+  private readonly theme: Theme;
+  private readonly kb: KeybindingsManager | undefined;
+  private readonly opts: HistoryPanelOptions;
 
   constructor(
     // chronological, oldest first (as loadHistory now returns)
-    private readonly entries: PromptEntry[],
-    private readonly theme: Theme,
-    private readonly kb: KeybindingsManager | undefined,
-    private readonly opts: HistoryPanelOptions,
+    entries: PromptEntry[],
+    theme: Theme,
+    kb: KeybindingsManager | undefined,
+    opts: HistoryPanelOptions,
   ) {
+    this.entries = entries;
+    this.theme = theme;
+    this.kb = kb;
+    this.opts = opts;
     // start on the newest prompt (bottom row, by the editor)
     this.selected = Math.max(0, entries.length - 1);
   }
-
-  private selected = 0;
 
   invalidate(): void {}
 
@@ -96,29 +106,58 @@ export class HistoryPanel {
 
   render(width: number): string[] {
     const total = this.entries.length;
-    const lines: string[] = [];
-    lines.push(this.theme.fg("dim", ` prompt history — ${total} prompt${total === 1 ? "" : "s"}, filler filtered`));
+    this.keepVisible();
 
+    // Box spans width-1 columns; the trailing column stays empty so no row
+    // reaches the terminal's wrap column (the margin the unbordered panel
+    // kept). Inside the frame, a one-space gutter separates the walls from
+    // the content; title and footer hints sit in the top/bottom border.
+    const outer = Math.max(9, width - 1);
+    const content = outer - 4; // │ + gutter space on each side
+
+    const title = `prompt history — ${total} prompt${total === 1 ? "" : "s"}, filler filtered`;
+    const footer =
+      "↑ older · ↓ newer · enter insert · esc/f1 close" +
+      (total > WINDOW ? ` · ${this.scroll + 1}-${Math.min(total, this.scroll + WINDOW)} of ${total}` : "");
+
+    // Border row: `${open}─ ${text} ${dashes}${close}`, sized so the total
+    // is always exactly `outer` columns — text yields room to the fill.
+    const edge = (open: string, close: string, text: string): string => {
+      const vis = Math.min(visibleLen(text), outer - 5);
+      const dashes = outer - 5 - vis;
+      return (
+        this.theme.fg("dim", `${open}─ ${clip(text, vis)} `) +
+        this.theme.fg("dim", "─".repeat(dashes) + close)
+      );
+    };
+
+    const lines: string[] = [];
+    lines.push(edge("┌", "┐", title));
     if (total === 0) {
-      lines.push(this.theme.fg("dim", " no prompts yet"));
+      lines.push(`│ ${this.theme.fg("dim", " no prompts yet".padEnd(content))} │`);
     } else {
-      this.keepVisible();
       for (let i = this.scroll; i < Math.min(total, this.scroll + WINDOW); i++) {
         const marker = i === this.selected ? "▸ " : "  ";
-        const body = ` ${marker}${truncate(this.label(this.entries[i]), width - 4)}`;
-        // full-width blue block, like a chat user message
-        lines.push(this.theme.bg("userMessageBg", body.padEnd(width - 1)));
+        const body = ` ${marker}${truncate(this.label(this.entries[i]), content - 3)}`;
+        // full-width blue block inside the gutter, like a chat user message
+        lines.push(`│ ${this.theme.bg("userMessageBg", body.padEnd(content))} │`);
       }
     }
-    lines.push(
-      this.theme.fg(
-        "dim",
-        "  ↑ older · ↓ newer · enter insert · esc/f1 close" +
-          (total > WINDOW ? ` · ${this.scroll + 1}-${Math.min(total, this.scroll + WINDOW)} of ${total}` : ""),
-      ),
-    );
+    lines.push(edge("└", "┘", footer));
     return lines;
   }
+}
+
+const ANSI = /\x1b\[[0-9;]*m/g;
+
+/** Rendered column count, ignoring SGR escapes. */
+function visibleLen(text: string): number {
+  return text.replace(ANSI, "").length;
+}
+
+/** Hard-truncate plain text to `max` visible columns with an ellipsis. */
+function clip(text: string, max: number): string {
+  return text.length <= max ? text : text.slice(0, Math.max(0, max - 1)) + "…";
 }
 
 function truncate(text: string, max: number): string {
