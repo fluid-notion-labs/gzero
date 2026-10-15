@@ -228,6 +228,10 @@ fn call_tool(
                 _ => tool_ws_delete(&args, &mut ws)?,
             }
         }
+        "session_handoff" => {
+            let mut ws = ws_store()?;
+            tool_session_handoff(&args, &mut ws)?
+        }
         "item_add" | "item_list" | "item_ready" | "item_get" | "item_edit" | "item_note"
         | "item_delete" | "item_pin" | "item_gate" => {
             let mut ws = ws_store()?;
@@ -305,10 +309,38 @@ fn tool_resolve(args: &serde_json::Value, store: &SqliteStore) -> Result<String,
     if let Some(block) = presence_block(store) {
         out.push_str(&block);
     }
+    // Handoff slot (S2): the newest open handoff in this scope, unless
+    // this session authored it. A pointer, not the full text — the
+    // model pulls details with item_get.
+    if let Some(block) = handoff_block() {
+        out.push_str(&block);
+    }
     if let Some(block) = pinned_block() {
         out.push_str(&block);
     }
     Ok(out)
+}
+
+/// The dedicated resolve slot for the newest open session handoff in
+/// this scope (S2). Best-effort: failures never break resolve.
+fn handoff_block() -> Option<String> {
+    let path = contextual::sections::default_ws_path();
+    if !path.exists() {
+        return None;
+    }
+    let ws = AutomergeStore::open(Some(&path)).ok()?;
+    let project = contextual::repo_identity()?;
+    let (me, _) = contextual::sessions::session_identity();
+    let it = ws.open_handoff(&project).ok()??;
+    if it.assignee == me {
+        return None; // own handoff: the author doesn't need reminding
+    }
+    let first = it.design.lines().next().unwrap_or("").to_string();
+    Some(format!(
+        "\n\n## last session left a handoff\n- `{}` by session `{}`: {} — item_get for details; \
+         close it once picked up",
+        it.id, it.assignee, first
+    ))
 }
 
 /// Heartbeat this session, sweep expired rows, and return an "also
@@ -833,6 +865,31 @@ fn item_lines(scope: &str, items: &[WorkItem], all: &[WorkItem]) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// Session handoff (S2): record what this session leaves for the next
+/// one as a durable item, superseding any prior open handoff in the
+/// scope. Author = this session's id.
+fn tool_session_handoff(
+    args: &serde_json::Value,
+    store: &mut AutomergeStore,
+) -> Result<String, String> {
+    let scope = ws_scope_arg(args);
+    let text = args
+        .get("text")
+        .and_then(|t| t.as_str())
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .ok_or("session_handoff: text is required")?;
+    let (author, _) = contextual::sessions::session_identity();
+    let it = store
+        .create_handoff(&scope, &author, text)
+        .map_err(|e| e.to_string())?;
+    Ok(format!(
+        "handoff recorded: {} [{}] — the next session in this scope sees it in resolve; \
+         superseded any prior open handoff",
+        it.id, scope
+    ))
 }
 
 fn tool_item_list(args: &serde_json::Value, store: &AutomergeStore) -> Result<String, String> {
@@ -1368,6 +1425,21 @@ const TOOLS: &str = r#"[
     }
   },
   {
+    "name": "session_handoff",
+    "description": "Record a session handoff (S2): what this session leaves for the next one in this repo — summary, open threads, next steps. Creates a durable item the next session sees in resolve; supersedes any prior open handoff (history stays append-only). Call at session end or when handing work to a sibling session; the next session acknowledges by closing the handoff once picked up.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "The handoff: what was done, what's open, what's next."
+        },
+        "scope": { "type": "string", "description": "Omit for the current project." }
+      },
+      "required": ["text"]
+    }
+  },
+    {
     "name": "item_gate",
     "description": "Set or satisfy an item's gate (W4): 'gate' is what must pass before the item can close; 'met' true/false records that it passed. Closing is refused while a gate is set and unmet.",
     "inputSchema": {

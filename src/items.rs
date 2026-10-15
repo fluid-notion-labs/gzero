@@ -767,6 +767,57 @@ impl AutomergeStore {
         Ok(out)
     }
 
+    // ---- session handoff (S2) ----
+
+    /// Label marking handoff items.
+    pub const HANDOFF_LABEL: &str = "handoff";
+
+    /// The newest open handoff in a scope (by created), if any.
+    pub fn open_handoff(&self, scope: &str) -> Result<Option<WorkItem>> {
+        Ok(self
+            .item_list(scope)?
+            .into_iter()
+            .filter(|it| it.labels.contains(Self::HANDOFF_LABEL) && it.is_open())
+            .max_by_key(|it| it.created))
+    }
+
+    /// Record a session handoff: a durable item (label `handoff`,
+    /// assignee = author session id, content in design) that the next
+    /// session sees in resolve. Supersede, never delete: any prior
+    /// open handoff in the scope is closed with a note pointing here,
+    /// so history stays append-only.
+    pub fn create_handoff(&mut self, scope: &str, author: &str, text: &str) -> Result<WorkItem> {
+        let text = text.trim();
+        if text.is_empty() {
+            return Err("handoff: text is required".into());
+        }
+        // Supersede priors first (their scan must see them open).
+        let priors: Vec<WorkItem> = self
+            .item_list(scope)?
+            .into_iter()
+            .filter(|it| it.labels.contains(Self::HANDOFF_LABEL) && it.is_open())
+            .collect();
+        let it = self.item_add(
+            scope,
+            NewItem {
+                title: "handoff: next session, start here".to_string(),
+                labels: vec![Self::HANDOFF_LABEL.to_string()],
+                assignee: author.to_string(),
+                design: text.to_string(),
+                ..Default::default()
+            },
+        )?;
+        for prior in &priors {
+            self.item_close(scope, &prior.id)?;
+            self.item_note(
+                scope,
+                &prior.id,
+                &format!("superseded by {} — the latest open handoff wins", it.id),
+            )?;
+        }
+        Ok(it)
+    }
+
     // ---- park / claim work guard ----
 
     /// Label marking claim items (one open claim per scope).
@@ -1491,5 +1542,43 @@ mod tests {
         s.claim_repo("b", "y").unwrap();
         assert!(s.open_claim("a").unwrap().is_some());
         assert!(s.open_claim("b").unwrap().is_some());
+    }
+}
+
+#[cfg(test)]
+mod handoff_tests {
+    use super::*;
+    use crate::automerge_store::AutomergeStore;
+
+    #[test]
+    fn handoff_supersedes_priors() {
+        let mut s = AutomergeStore::in_memory().unwrap();
+        let a = s
+            .create_handoff("sc", "sess-a", "W1: left the build broken")
+            .unwrap();
+        assert!(a.labels.contains(AutomergeStore::HANDOFF_LABEL));
+        assert_eq!(a.assignee, "sess-a");
+        assert_eq!(a.status, Status::Open);
+        assert_eq!(a.design, "W1: left the build broken");
+        // second handoff supersedes: prior closed with a note, history kept
+        let b = s
+            .create_handoff("sc", "sess-b", "W2: fixed; tests pass")
+            .unwrap();
+        assert_ne!(a.id, b.id);
+        let a_now = s.item_get("sc", &a.id).unwrap().unwrap();
+        assert_eq!(a_now.status, Status::Closed);
+        assert!(a_now.notes.values().any(|t| t.contains("superseded by")));
+        // open_handoff returns the newest
+        let open = s.open_handoff("sc").unwrap().unwrap();
+        assert_eq!(open.id, b.id);
+        // empty text refused
+        assert!(s.create_handoff("sc", "sess-c", "   ").is_err());
+    }
+
+    #[test]
+    fn handoff_scoped_per_project() {
+        let mut s = AutomergeStore::in_memory().unwrap();
+        s.create_handoff("a", "sess-a", "repo A notes").unwrap();
+        assert!(s.open_handoff("b").unwrap().is_none());
     }
 }
