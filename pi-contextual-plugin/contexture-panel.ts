@@ -210,17 +210,35 @@ function itemDetail(row: FlatRow) {
 /** Context tiers (global / local / skills-of-the-bag) → PanelNodes.
  * Each tier's sections become children; a section's text is its detail. */
 export function tiersToNodes(tiers: TierLike[]): PanelNode[] {
-  return tiers.map((tier) => ({
-    id: `tier-${tier.label}`,
-    label: tier.label,
-    children: tier.nodes.map((node) => ({
-      id: `tier-${tier.label}/${node.label}`,
-      label: node.label,
-      detail: textDetail(node.text),
-      // The full atom text is searchable: terms match on content.
-      searchText: node.text,
-    })),
-  }));
+  return tiers.map((tier) => {
+    // Children show only the section NAME — the tier node already says
+    // where each section lives, and local headers carry the full scope
+    // (repo identity) which would repeat under every entry.
+    const short = (label: string): string => {
+      const i = label.lastIndexOf("/");
+      return i >= 0 ? label.slice(i + 1) : label;
+    };
+    // The local tier's scope (its header prefix, e.g. the repo identity
+    // "fluid-notion-labs/contexture") is useful context — show it
+    // beside "local" instead of under every child.
+    let label = tier.label;
+    if (tier.label === "local") {
+      const first = tier.nodes[0]?.label ?? "";
+      const i = first.lastIndexOf("/");
+      if (i > 0) label = `${tier.label} — ${first.slice(0, i)}`;
+    }
+    return {
+      id: `tier-${tier.label}`,
+      label,
+      children: tier.nodes.map((node) => ({
+        id: `tier-${tier.label}/${node.label}`,
+        label: short(node.label),
+        detail: textDetail(node.text),
+        // The full atom text is searchable: terms match on content.
+        searchText: node.text,
+      })),
+    };
+  });
 }
 
 /** Loaded skills → PanelNodes (flat list; the tier node holds it). */

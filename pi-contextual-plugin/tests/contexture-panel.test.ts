@@ -256,10 +256,31 @@ test("tiersToNodes maps tier sections to children with text detail", () => {
   ]);
   assert.equal(nodes[0].label, "global");
   const child = nodes[0].children![0];
-  assert.equal(child.label, "global/notes");
+  assert.equal(child.label, "notes", "child shows only the section name");
+  assert.equal(child.id, "tier-global/global/notes", "id keeps the full header");
   const detail = child.detail!(40, theme as never);
   assert.ok(detail.some((l) => l.includes("line one")));
   assert.ok(detail.some((l) => l.includes("line two")));
+});
+
+test("tiersToNodes: local tier shows the scope URL beside it; children stay bare", () => {
+  const nodes = tiersToNodes([
+    {
+      label: "local",
+      nodes: [
+        { label: "fluid-notion-labs/contexture/notes", text: "a" },
+        { label: "fluid-notion-labs/contexture/skills-pipeline", text: "b" },
+      ],
+    },
+  ]);
+  assert.equal(nodes[0].label, "local — fluid-notion-labs/contexture");
+  assert.deepEqual(nodes[0].children!.map((c) => c.label), ["notes", "skills-pipeline"]);
+});
+
+test("tiersToNodes: local without scoped headers keeps the plain label", () => {
+  const nodes = tiersToNodes([{ label: "local", nodes: [{ label: "notes", text: "a" }] }]);
+  assert.equal(nodes[0].label, "local");
+  assert.equal(nodes[0].children![0].label, "notes");
 });
 
 test("skillsToNodes lists the catalog with description detail", () => {
