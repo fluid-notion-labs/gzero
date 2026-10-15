@@ -51,6 +51,10 @@ export interface RouterConfig {
     directRouteMaxTokens: number;
     /** Tools the headless subagent gets. */
     subagentTools: string[];
+    /** pi binary the subagent runs through. */
+    piCommand: string;
+    /** Hard wall-clock limit for one dispatch. */
+    dispatchTimeoutMs: number;
   };
 }
 
@@ -72,6 +76,8 @@ export const DEFAULT_CONFIG: RouterConfig = {
   delegation: {
     directRouteMaxTokens: 24_000,
     subagentTools: ["read", "grep", "find", "ls", "edit", "write"],
+    piCommand: "pi",
+    dispatchTimeoutMs: 600_000,
   },
 };
 
@@ -165,7 +171,7 @@ export function parseConfig(text: string, where: string): PartialConfig {
     if (!isPlainObject(raw.delegation)) throw new Error(`${where}: delegation: expected an object`);
     const d = raw.delegation as Record<string, unknown>;
     for (const key of Object.keys(d)) {
-      if (!["directRouteMaxTokens", "subagentTools"].includes(key)) {
+      if (!["directRouteMaxTokens", "subagentTools", "piCommand", "dispatchTimeoutMs"].includes(key)) {
         throw new Error(`${where}: delegation: unknown key "${key}"`);
       }
     }
@@ -181,6 +187,16 @@ export function parseConfig(text: string, where: string): PartialConfig {
         throw new Error(`${where}: delegation.subagentTools must be an array of non-empty strings`);
       }
       entry.subagentTools = d.subagentTools as string[];
+    }
+    if (d.piCommand !== undefined) {
+      if (typeof d.piCommand !== "string" || d.piCommand.length === 0) throw new Error(`${where}: delegation.piCommand must be a non-empty string`);
+      entry.piCommand = d.piCommand;
+    }
+    if (d.dispatchTimeoutMs !== undefined) {
+      if (typeof d.dispatchTimeoutMs !== "number" || !Number.isFinite(d.dispatchTimeoutMs) || d.dispatchTimeoutMs <= 0) {
+        throw new Error(`${where}: delegation.dispatchTimeoutMs must be a positive number`);
+      }
+      entry.dispatchTimeoutMs = d.dispatchTimeoutMs;
     }
     out.delegation = entry;
   }
