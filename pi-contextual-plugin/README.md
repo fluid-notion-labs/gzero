@@ -10,7 +10,7 @@ contextual only via MCP — no direct SQLite or hub access.
   `/contexture` is the panel. Note the skillbag is *not* sent to the
   model — its atoms load only when a tag is pulled or a skill is
   referenced/loaded. The injection refreshes itself: the cache is
-  stamped with the bag file's mtime, so any change — the model's
+  stamped with the store file's mtime, so any change — the model's
   `add`/`remove` calls, `/context add`, `cx` in a shell, another
   session — is picked up on the next turn. `/context reload` forces a
   re-resolve without waiting; `/context add <text>` saves an atom with
@@ -31,11 +31,11 @@ contextual only via MCP — no direct SQLite or hub access.
   files: type `#` then part of a name, pick one, and the referenced
   skill's full text is injected into the turn's system prompt
   (`<skills>` section) as `#skill:<name>`. Referencing also feeds the
-  skillbag: a skill not yet in the bag is distilled (summary + section
+  skillbag: a skill not yet in the store is distilled (summary + section
   highlights, same style as `tools/skills/pull.py`) and added via
   `cx-mcp add` with `skills/<vendor>` scope, tagged `#<name>` and
   `#<vendor>`, so its terse atoms persist across sessions. Re-adding is
-  idempotent (bag dedupes by text); explicitly removed atoms stay
+  idempotent (store dedupes by text); explicitly removed atoms stay
   removed (tombstones). Plain hashtags still type normally — just keep
   typing past the popup. Skill discovery is precached on session start
 - `Ctrl+Q` or `/contexture` toggles the **contexture panel**
@@ -80,7 +80,7 @@ contextual only via MCP — no direct SQLite or hub access.
 
 - post-turn review: every turn is captured; when `CX_REVIEW_BATCH`
   (default 5) turns are pending, one forked model call — the session's
-  model — reviews the batch and saves durable facts to the bag (scope
+  model — reviews the batch and saves durable facts to contexture (scope
   global for user/environment, project for repo conventions, hashtags
   for on-demand task knowledge). "Nothing to save." is the usual reply;
   saved atoms are announced via notification. Fire-and-forget in

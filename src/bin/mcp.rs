@@ -16,13 +16,13 @@
 //! per project scope — the workflow system's long-form content
 //! (vision, plan, checklists, user stories; plan3 W1). Stored in the
 //! automerge doc at `CX_WS_DB` (default ~/.pi/agent/context.ws),
-//! separate from the atom bag.
+//! separate from the atom store.
 //!
 //! Curation policy in the tool descriptions follows hermes' memory tool
 //! (see `research/context/curation.md`): WHEN/SKIP routing, declarative
 //! phrasing, swap-don't-skip via batched remove+add.
 //!
-//! `CX_DB` selects the bag (default `~/.pi/agent/context.db`, same as `cx`).
+//! `CX_DB` selects the atom store (default `~/.pi/agent/context.db`, same as `cx`).
 //! Logging goes to stderr only; stdout is protocol.
 
 use std::collections::BTreeSet;
@@ -66,7 +66,7 @@ fn open_store() -> SqliteStore {
             std::env::var("HOME").expect("cx-mcp: no HOME")
         )
     });
-    SqliteStore::open(&path).expect("cx-mcp: cannot open bag")
+    SqliteStore::open(&path).expect("cx-mcp: cannot open atom store")
 }
 
 /// Best-effort: absorb the hub's merged snapshot so this session sees
@@ -88,7 +88,7 @@ fn pull_from_hub(store: &mut SqliteStore) {
 }
 
 /// Best-effort: sync the built-in seeds so the global tier always has its
-/// floor content, even in a freshly wiped bag. Never fatal.
+/// floor content, even in a freshly wiped store. Never fatal.
 fn seed_on_startup(store: &mut SqliteStore) {
     if let Err(e) = contextual::reconcile_seeds(store) {
         eprintln!("cx-mcp: seed sync failed: {e}");
@@ -945,7 +945,7 @@ fn tool_session_handoff(
 
 /// msg_send (S3): one-to-one conversation between sessions. Sender =
 /// this session's id. Ephemeral: expires by TTL, never stored in the
-/// bag.
+/// store.
 fn tool_msg_send(args: &serde_json::Value, store: &SqliteStore) -> Result<String, String> {
     let to = args
         .get("to")
@@ -1349,7 +1349,7 @@ const TOOLS: &str = r#"[
         },
         "scope_prefix": {
           "type": "string",
-          "description": "Browse instead of resolve: return ALL atoms whose scope starts with this prefix, ignoring tier defaults (empty string = the whole bag). For inspection UIs, not for pulling task context."
+          "description": "Browse instead of resolve: return ALL atoms whose scope starts with this prefix, ignoring tier defaults (empty string = the whole store). For inspection UIs, not for pulling task context."
         }
       }
     }
@@ -1418,7 +1418,7 @@ const TOOLS: &str = r#"[
   },
   {
     "name": "harvest",
-    "description": "Import agent-instruction files from the repo into the bag as project context — instructions written for ANY agent (AGENTS.md, CLAUDE.md, GEMINI.md, .cursorrules, .windsurfrules, .github/copilot-instructions.md) become one shared store, injected automatically in that repo from then on. NOTE: this runs automatically at server startup — changes to those files are detected by content hash and mirrored without anyone calling this. Call it only to pick up mid-session edits immediately. Files with no bullets are skipped (pointer stubs are protected). Optional 'path' defaults to the current directory.",
+    "description": "Import agent-instruction files from the repo into contexture as project context — instructions written for ANY agent (AGENTS.md, CLAUDE.md, GEMINI.md, .cursorrules, .windsurfrules, .github/copilot-instructions.md) become one shared store, injected automatically in that repo from then on. NOTE: this runs automatically at server startup — changes to those files are detected by content hash and mirrored without anyone calling this. Call it only to pick up mid-session edits immediately. Files with no bullets are skipped (pointer stubs are protected). Optional 'path' defaults to the current directory.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1537,7 +1537,7 @@ const TOOLS: &str = r#"[
   },
   {
     "name": "msg_send",
-    "description": "Send a short message to another session in this repo (S3): conversation, not memory — ephemeral, expires in 7 days, never stored in the durable bag. 'to' is the recipient session id (see the 'also here' presence block for who is active; sibling sessions show their session id). Their next resolve shows it; msg_read drains.",
+    "description": "Send a short message to another session in this repo (S3): conversation, not memory — ephemeral, expires in 7 days, never stored in the durable store. 'to' is the recipient session id (see the 'also here' presence block for who is active; sibling sessions show their session id). Their next resolve shows it; msg_read drains.",
     "inputSchema": {
       "type": "object",
       "properties": {

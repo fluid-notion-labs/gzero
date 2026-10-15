@@ -1,7 +1,7 @@
-//! Automerge-backed storage for the context bag (plan2 L1).
+//! Automerge-backed storage for contexture (plan2 L1).
 //!
 //! Design: `research/memory-plane.md` §L1 design. One automerge
-//! document is the bag; atom identity = text (map keys). We never
+//! document is the store; atom identity = text (map keys). We never
 //! delete an `atoms` or `tombs` key — only `sources` keys are
 //! deletable — so every op is a pure add-or-edit: adds commute,
 //! tombstones are permanent by construction, and no concurrent re-add
@@ -533,7 +533,7 @@ mod tests {
     #[test]
     fn persistence_roundtrip() {
         let dir = std::env::temp_dir();
-        let path = dir.join(format!("cx-automerge-test-{}.bag", std::process::id()));
+        let path = dir.join(format!("cx-automerge-test-{}.doc", std::process::id()));
         let _ = std::fs::remove_file(&path);
         {
             let mut store = AutomergeStore::open(Some(&path)).unwrap();

@@ -1,6 +1,6 @@
 // Skills picker: alt-s (or /skills) browses the installed agent skills —
 // search by title/description, enter to read the full SKILL.md, esc to
-// close. The bag holds distilled atoms; this is the window onto the depth
+// close. The store holds distilled atoms; this is the window onto the depth
 // they point at. Source of truth: the canonical dir
 // ~/.pi/pi-contexture/skills, populated by tools/skills/install.py from
 // the vendor/ clones (CX_SKILLS_DIRS overrides, colon-separated). One
@@ -305,7 +305,7 @@ export function extractSkillRefs(prompt: string): string[] {
 
 // Mirrors tools/skills/pull.py's distiller: terse atoms — summary line plus
 // one highlight per ## heading. Exact wording only needs to be
-// self-consistent: bag atoms dedupe by text, and skills that pull.py already
+// self-consistent: store atoms dedupe by text, and skills that pull.py already
 // imported are skipped by node-header check before we ever add.
 
 const SUMMARY_CAP = 160;

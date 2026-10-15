@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Pull agent skills from vendored repos into the context bag.
+"""Pull agent skills from vendored repos into contexture.
 
 Reads skills.yaml. For each repo: shallow-clone to
 ../vendor/skills/<name> if missing (or use it as-is when `local: true` —
 fn-skills has no public GitHub home yet), locate listed skills, distill each SKILL.md into terse atoms
 (summary + section highlights), write a markdown pack, and import it via
 `cx add` (per-source sync: idempotent, and posts hub events if
-configured). The bag stays in SQLite via the normal path.
+configured). The store stays in SQLite via the normal path.
 """
 
 from __future__ import annotations

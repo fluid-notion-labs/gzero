@@ -1,8 +1,8 @@
-//! `cx` — the context bag CLI.
+//! `cx` — the contexture CLI.
 //!
 //! `cx`                 print default context (untagged atoms)
 //! `cx #tag ...`        default plus tagged atoms
-//! `cx add file.md ...` import markdown into the bag (per-source sync)
+//! `cx add file.md ...` import markdown into the store (per-source sync)
 //! `cx harvest [dir]`   import agent-instruction files (AGENTS.md, CLAUDE.md, …)
 //! `cx sources`         per-source assertion counts
 //! `cx rm <needle>`     remove atoms whose text contains needle
@@ -49,16 +49,16 @@ fn matched_atoms(store: &dyn Storage, needle: &str) -> Vec<Atom> {
     }
 }
 
-const USAGE: &str = "cx — context bag
+const USAGE: &str = "cx — contexture
 cx                default context (untagged atoms)
 cx #tag ...       default plus tagged atoms
 cx add file.md    import context markdown (per-source sync; re-run after edits)
 cx harvest [dir]  import agent-instruction files (AGENTS.md, CLAUDE.md, GEMINI.md,
                   .cursorrules, .windsurfrules, copilot-instructions) as project context
 cx export file    write this machine's snapshot (merge unit)
-cx absorb file... merge other machines' snapshots into this bag
+cx absorb file... merge other machines' snapshots into the local store
 cx pull           fetch merged snapshot from the hub (CX_HUB_URL) and absorb
-cx push           post this bag's atoms + tombstones to the hub as events
+cx push           post this store's atoms + tombstones to the hub as events
 cx sources        per-source assertion counts
 cx rm <needle>    remove matching atoms (records tombstones)
 cx rm-source <s>  remove one whole source (tombstoned; substring must match exactly one)
@@ -88,13 +88,13 @@ cx item rm <id>   delete an item
 cx watch          stream ws-doc change events (items/sections) as JSON lines
                   until the reader hangs up; polls the doc file (3cd4)
 cx sessions       session presence rows (stale marked; S1 inspection)
-env: CX_DB        bag location (default ~/.pi/agent/context.db)
+env: CX_DB        atom store location (default ~/.pi/agent/context.db)
 env: CX_WS_DB     workflow doc: sections + items (default ~/.pi/agent/context.ws)";
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.is_empty() || args.iter().any(|a| a == "-h" || a == "--help") {
-        if args.is_empty() && bag_path().exists() {
+        if args.is_empty() && store_path().exists() {
             show(&BTreeSet::new());
             return;
         }
@@ -496,11 +496,11 @@ fn show(tags: &BTreeSet<String>) {
 }
 
 fn open_store() -> SqliteStore {
-    SqliteStore::open(bag_path().to_str().unwrap_or("context.db"))
-        .unwrap_or_else(|e| panic!("cx: open bag: {e}"))
+    SqliteStore::open(store_path().to_str().unwrap_or("context.db"))
+        .unwrap_or_else(|e| panic!("cx: open store: {e}"))
 }
 
-fn bag_path() -> PathBuf {
+fn store_path() -> PathBuf {
     if let Ok(p) = std::env::var("CX_DB") {
         return PathBuf::from(p);
     }

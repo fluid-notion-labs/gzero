@@ -163,15 +163,15 @@ async function mcpTools(cxMcp: string): Promise<string[]> {
 const PREAMBLE = `The context below is persistent memory: carried across sessions and machines, present in every session. Tagged knowledge is not shown here — when the user names technologies or domains, pull it via mcp__context__resolve with tags; discover hashtags with search. Facts that belong here apply to every session; task-specific learnings get tags instead. When saving: declarative facts, never imperatives to yourself; batch changes; consolidate rather than skip.`;
 
 /**
- * Newest mtime across the bag's SQLite files (db + WAL): WAL mode means a
+ * Newest mtime across the store's SQLite files (db + WAL): WAL mode means a
  * write may touch only the -wal file, and a checkpoint moves content back
  * into the db. -shm is deliberately excluded — readers update its wal-index,
- * so its mtime is not a write signal. This is the "bag changed on disk"
+ * so its mtime is not a write signal. This is the "store changed on disk"
  * signal that lets the injected context pick up any writer — the model's
  * MCP add/remove, /context add, cx in a shell, another session, hub sync —
  * without needing hooks per writer. 0 when nothing exists yet.
  */
-async function bagStamp(): Promise<number> {
+async function storeStamp(): Promise<number> {
   const db = process.env.CX_DB || path.join(os.homedir(), ".pi", "agent", "context.db");
   let newest = 0;
   for (const suffix of ["", "-wal"]) {
@@ -514,19 +514,19 @@ export default function (pi: ExtensionAPI) {
   let cxMcpPath: string | null | undefined;
   /** Resolved default context for this session; injected every turn. */
   let resolvedBody: string | null = null;
-  /** Newest bag-file mtime when resolvedBody was produced (see bagStamp). */
-  let bagStampAtResolve = 0;
+  /** Newest store-file mtime when resolvedBody was produced (see storeStamp). */
+  let storeStampAtResolve = 0;
   /** The #skill autocomplete stacks once per process; sessions may start more than once. */
   let autocompleteInstalled = false;
   /** Set once the tap editor is installed; holds the session context
    * the TapEditor callback needs to open the panel. */
   let editorInstalled = false;
   let uiCtx: ExtensionContext | null = null;
-  /** Skill references already distilled into the bag this session. */
+  /** Skill references already distilled into the store this session. */
   const addedToBag = new Set<string>();
 
-  /** Distill any of the given skills not yet in the bag into the skillbag.
-   * Bag atoms dedupe by text; already-imported skills are skipped by node check. */
+  /** Distill any of the given skills not yet in the store into the skillbag.
+   * Store atoms dedupe by text; already-imported skills are skipped by node check. */
   const ensureInBag = async (
     cxMcp: string,
     entries: SkillEntry[],
@@ -538,7 +538,7 @@ export default function (pi: ExtensionAPI) {
     try {
       inBag = await mcpCall(cxMcp, "resolve", { scope_prefix: "skills/" });
     } catch {
-      // bag check failed; adding is still safe (dedupe by text)
+      // store check failed; adding is still safe (dedupe by text)
     }
     for (const entry of pending) {
       const key = `${entry.vendor}/${entry.name.toLowerCase()}`;
@@ -583,22 +583,22 @@ export default function (pi: ExtensionAPI) {
   };
 
   /** Resolve once and cache; returns null when nothing usable came back.
-   * Stamps the cache after resolving so our own resolve's bag writes
+   * Stamps the cache after resolving so our own resolve's store writes
    * (a fresh cx-mcp pulls from the hub at startup) don't count as changes. */
   const resolveContext = async (cxMcp: string): Promise<string | null> => {
     const text = await mcpCall(cxMcp, "resolve", {});
     const body = text.trim();
-    bagStampAtResolve = await bagStamp();
+    storeStampAtResolve = await storeStamp();
     if (!body || body === "(no matching context)") return null;
     return body;
   };
 
-  /** Cached resolution, invalidated when the bag changed on disk since it
+  /** Cached resolution, invalidated when the store changed on disk since it
    * was resolved. Returns null when nothing is resolved for this project
    * (an empty resolution is not cached; the next turn re-resolves so newly
    * added atoms appear without a manual reload). */
   const cachedResolved = async (cxMcp: string): Promise<string | null> => {
-    if (resolvedBody !== null && (await bagStamp()) > bagStampAtResolve) resolvedBody = null;
+    if (resolvedBody !== null && (await storeStamp()) > storeStampAtResolve) resolvedBody = null;
     if (resolvedBody === null) resolvedBody = await resolveContext(cxMcp);
     return resolvedBody;
   };
@@ -936,7 +936,7 @@ export default function (pi: ExtensionAPI) {
           return;
         }
         const query =
-          `Rewrite the note below as a single terse, durable instruction atom for a context bag. Rules:\n` +
+          `Rewrite the note below as a single terse, durable instruction atom for contexture. Rules:\n` +
           `- one sentence, plain declarative, addressed to a coding agent\n` +
           `- keep concrete details (names, commands, paths); drop filler\n` +
           `- no markdown, no quotes, no hashtags, under 25 words\n` +

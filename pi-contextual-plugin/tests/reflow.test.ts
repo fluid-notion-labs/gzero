@@ -8,9 +8,9 @@ import { textDetail } from "../contexture-panel.ts";
 import { wrapPlain } from "../window.ts";
 
 test("hard-wrapped prose joins into one paragraph and re-wraps", () => {
-  const md = "The umbrella architecture: the whole\nsystem, of which contextual (the\nbag) is one subsystem.";
+  const md = "The umbrella architecture: the whole\nsystem, of which contexture is\none subsystem.";
   const out = reflowMarkdown(md);
-  assert.equal(out, "The umbrella architecture: the whole system, of which contextual (the bag) is one subsystem.");
+  assert.equal(out, "The umbrella architecture: the whole system, of which contexture is one subsystem.");
   // at width 40 it re-wraps to multiple lines
   assert.equal(wrapPlain(out, 40).length, 3);
 });

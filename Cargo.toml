@@ -2,7 +2,7 @@
 name = "contextual"
 version = "0.1.0"
 edition = "2021"
-description = "Context bag: multiset of tagged agent instructions, pluggable storage"
+description = "Contexture: multiset of tagged agent instructions, pluggable storage"
 license = "MIT"
 readme = "README.md"
 

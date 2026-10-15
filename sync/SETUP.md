@@ -29,7 +29,7 @@ ln -s ~/projects/explorations/nursery/contextual/pi-contextual-plugin \
 # ```
 # (no node_modules in git; npm install is NOT needed)
 
-## 4. Context (the bag)
+## 4. Context (the store)
 ```sh
 cx absorb sync/atoms.json            # atoms + tombstones (merge, idempotent)
 cp sync/context.ws ~/.pi/agent/context.ws   # workflow doc (sections+items), fresh machine only

@@ -1,6 +1,6 @@
 //! Session presence (S1, Track S): who else is working in this scope.
 //!
-//! Ephemeral by design — rows live in the bag sqlite but are not atoms:
+//! Ephemeral by design — rows live in the sqlite atom store but are not atoms:
 //! they never sync, never enter snapshots, and expire by TTL rather than
 //! being edited. Resolve doubles as the heartbeat (it already runs every
 //! turn), so presence needs no timer; stale entries are swept on the

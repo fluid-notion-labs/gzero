@@ -1,6 +1,6 @@
 // Post-turn review hook — the pi version of hermes' background review
 // (research/context/curation.md §3). A forked model call reviews batches of
-// turns and saves durable facts to the bag, never touching the main
+// turns and saves durable facts to the store, never touching the main
 // conversation or its prompt cache: the call is fire-and-forget network I/O
 // from a turn_end handler, so it runs concurrently with the next prompt.
 //
@@ -42,9 +42,9 @@ function summarize(userText: string, assistantText: string, turnIndex: number): 
 }
 
 function buildPrompt(known: string, turns: string[]): string {
-  return `You are a background reviewer for a persistent memory system: a "context bag" of terse, tagged instruction atoms. Review the conversation turns below and decide whether any durable facts should be saved.
+  return `You are a background reviewer for a persistent memory system (contexture): a store of terse, tagged instruction atoms. Review the conversation turns below and decide whether any durable facts should be saved.
 
-A fact belongs in the bag only if it applies beyond this task:
+A fact belongs in the store only if it applies beyond this task:
 - WHO the user is or how they work → output scope "global"
 - stable environment facts (tools, machines, setup) → scope "global"
 - standing conventions of the current project → scope "project"
@@ -155,6 +155,6 @@ async function review(turns: string[], ctx: ExtensionContext, deps: ReviewDeps):
     });
   }
   if (ctx.hasUI) {
-    ctx.ui.notify(`review: saved ${saves.length} fact${saves.length === 1 ? "" : "s"} to the bag`, "info");
+    ctx.ui.notify(`review: saved ${saves.length} fact${saves.length === 1 ? "" : "s"} to contexture`, "info");
   }
 }

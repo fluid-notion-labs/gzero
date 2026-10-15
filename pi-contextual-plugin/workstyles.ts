@@ -1,5 +1,5 @@
 // Workstyles: named sets of directives — how we get things done — stored in
-// the bag under scope `workstyle/<name>`, one atom per directive, node =
+// the store under scope `workstyle/<name>`, one atom per directive, node =
 // directive key. Referenced from chat as `##workstyle.key(extra)`: the code
 // expands to the directive text before the turn goes out, and the
 // parenthetical stays inline as extra info for this repo/message.
@@ -92,7 +92,7 @@ export async function ensureWorkstyles(
   return entries;
 }
 
-/** The directive for a code, or undefined when the bag has no such entry. */
+/** The directive for a code, or undefined when the store has no such entry. */
 export function findEntry(
   entries: WorkstyleEntry[],
   ref: { workstyle: string; key: string },
@@ -230,7 +230,7 @@ async function openPicker(
   }
   if (entries.length === 0) {
     ctx.ui.notify(
-      "No workstyles in the bag. Add one: /context add, with scope workstyle/<name> and node <key>.",
+      "No workstyles in the store. Add one: /context add, with scope workstyle/<name> and node <key>",
       "info",
     );
     return;
@@ -257,7 +257,7 @@ export function registerWorkstyles(
   const open = async (ctx: ExtensionContext) => {
     const cxMcp = await deps.findCxMcp();
     if (!cxMcp) {
-      ctx.ui.notify("cx-mcp not found; workstyles live in the bag", "warning");
+      ctx.ui.notify("cx-mcp not found; workstyles live in contexture", "warning");
       return;
     }
     await openPicker(ctx, cxMcp, deps.mcpCall);

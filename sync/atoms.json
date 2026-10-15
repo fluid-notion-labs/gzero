@@ -1683,194 +1683,6 @@
       ]
     },
     {
-      "text": "Guides Claude on using Jujutsu (jj) version control system. #jj #vcs",
-      "scope": "skills/jj-skills",
-      "node": "jj-workflow",
-      "tags": [
-        "jj",
-        "vcs"
-      ]
-    },
-    {
-      "text": "minimal-output: Every read command MUST be bounded and summary-level. #jj #vcs",
-      "scope": "skills/jj-skills",
-      "node": "jj-workflow",
-      "tags": [
-        "jj",
-        "vcs"
-      ]
-    },
-    {
-      "text": "sandbox: Jujutsu can be configured to sign commits (can be checked with jj config list --include-overridden | grep -i sign). #jj #vcs",
-      "scope": "skills/jj-skills",
-      "node": "jj-workflow",
-      "tags": [
-        "jj",
-        "vcs"
-      ]
-    },
-    {
-      "text": "Guides Claude on jj workspaces — multiple working directories backed by one repository, without branch locking (git calls the same idea worktrees). #jj #vcs",
-      "scope": "skills/jj-skills",
-      "node": "jj-workspaces",
-      "tags": [
-        "jj",
-        "vcs"
-      ]
-    },
-    {
-      "text": "minimal-output: jj workspace list is small; print it whole when asked.; Inspect a workspace's state through its log line in jj log, not by cd-ing around. #jj #vcs",
-      "scope": "skills/jj-skills",
-      "node": "jj-workspaces",
-      "tags": [
-        "jj",
-        "vcs"
-      ]
-    },
-    {
-      "text": "naming: The name defaults to the destination directory's basename: ../feature becomes workspace feature. #jj #vcs",
-      "scope": "skills/jj-skills",
-      "node": "jj-workspaces",
-      "tags": [
-        "jj",
-        "vcs"
-      ]
-    },
-    {
-      "text": "Removes the local jj bookmarks, revisions, and workspaces left behind by merged or closed GitHub pull requests #jj #vcs",
-      "scope": "skills/jj-skills",
-      "node": "jj-cleanup",
-      "tags": [
-        "jj",
-        "vcs"
-      ]
-    },
-    {
-      "text": "prerequisite-binary-plus-aliases: If jj cleanup or jj cl report an unknown alias, or jj-cleanup is not on PATH, the tool is not installed. #jj #vcs",
-      "scope": "skills/jj-skills",
-      "node": "jj-cleanup",
-      "tags": [
-        "jj",
-        "vcs"
-      ]
-    },
-    {
-      "text": "workflow: jj cleanup runs a fetch before planning unless --no-fetch is passed. #jj #vcs",
-      "scope": "skills/jj-skills",
-      "node": "jj-cleanup",
-      "tags": [
-        "jj",
-        "vcs"
-      ]
-    },
-    {
-      "text": "why-a-bookmark-is-kept: A bookmark is a candidate only when it has at least one associated pull request, none of those pull requests is open #jj #vcs",
-      "scope": "skills/jj-skills",
-      "node": "jj-cleanup",
-      "tags": [
-        "jj",
-        "vcs"
-      ]
-    },
-    {
-      "text": "locks: jj cleanup lock <bookmark>... #jj #vcs",
-      "scope": "skills/jj-skills",
-      "node": "jj-cleanup",
-      "tags": [
-        "jj",
-        "vcs"
-      ]
-    },
-    {
-      "text": "workspaces: Workspaces participate by default. #jj #vcs",
-      "scope": "skills/jj-skills",
-      "node": "jj-cleanup",
-      "tags": [
-        "jj",
-        "vcs"
-      ]
-    },
-    {
-      "text": "Creates GitHub pull requests from Jujutsu changes with AI-generated descriptions. #jj #vcs #github",
-      "scope": "skills/jj-skills",
-      "node": "jj-create-pr",
-      "tags": [
-        "github",
-        "jj",
-        "vcs"
-      ]
-    },
-    {
-      "text": "complete-example: User: \"Create a PR for @-\" #jj #vcs #github",
-      "scope": "skills/jj-skills",
-      "node": "jj-create-pr",
-      "tags": [
-        "github",
-        "jj",
-        "vcs"
-      ]
-    },
-    {
-      "text": "Updates existing GitHub pull request descriptions with AI-generated content based on the current diff. #jj #vcs #github",
-      "scope": "skills/jj-skills",
-      "node": "jj-update-pr",
-      "tags": [
-        "github",
-        "jj",
-        "vcs"
-      ]
-    },
-    {
-      "text": "permission-requirements: CRITICAL: This workflow requires jj and gh CLI access with authentication. #jj #vcs #github",
-      "scope": "skills/jj-skills",
-      "node": "jj-update-pr",
-      "tags": [
-        "github",
-        "jj",
-        "vcs"
-      ]
-    },
-    {
-      "text": "complete-example: User: \"Update the PR for @-\" #jj #vcs #github",
-      "scope": "skills/jj-skills",
-      "node": "jj-update-pr",
-      "tags": [
-        "github",
-        "jj",
-        "vcs"
-      ]
-    },
-    {
-      "text": "Manages GitHub stacked PRs from a Jujutsu (jj) repository with the gh stack CLI. #jj #vcs #github",
-      "scope": "skills/jj-skills",
-      "node": "jj-gh-stack",
-      "tags": [
-        "github",
-        "jj",
-        "vcs"
-      ]
-    },
-    {
-      "text": "model: One layer = one mutable jj commit on top of trunk plus one bookmark per layer #jj #vcs #github",
-      "scope": "skills/jj-skills",
-      "node": "jj-gh-stack",
-      "tags": [
-        "github",
-        "jj",
-        "vcs"
-      ]
-    },
-    {
-      "text": "bookmark-list-in-stack-order: link needs bottom-to-top. #jj #vcs #github",
-      "scope": "skills/jj-skills",
-      "node": "jj-gh-stack",
-      "tags": [
-        "github",
-        "jj",
-        "vcs"
-      ]
-    },
-    {
       "text": "Build and edit 3D scenes, architectural models, and diagrams through the scene-mcp MCP server — parametric primitives with real dimensions, part metadata #scene #mcp #3d",
       "scope": "skills/scene-mcp-skill",
       "node": "scene-mcp",
@@ -2691,21 +2503,9 @@
       "tags": []
     },
     {
-      "text": "When work is done, `jj workspace list` decides: only the default workspace means this is the only session — merge the feature commit to main; any other workspace means other sessions may be live, so prompt the user before merging.",
-      "scope": "fluid-notion-labs/contextual",
-      "node": "notes",
-      "tags": []
-    },
-    {
       "text": "Workstyle: a named set of directives — how we get things done. Chat code `##workstyle.key(extra)` expands to the directive; the parenthetical is extra info for this repo. Stored at scope workstyle/<name>, node = key. Pick via ctrl-space.",
       "scope": "explorations",
       "node": "workstyle",
-      "tags": []
-    },
-    {
-      "text": "context refresh test atom: if this appears in the injected <context> block, bag changes are picked up live",
-      "scope": "fluid-notion-labs/contextual",
-      "node": "notes",
       "tags": []
     },
     {
@@ -2730,27 +2530,9 @@
       ]
     },
     {
-      "text": "When the architecture or plans change, update the context atoms and docs in the same work item - the bag must never describe a system that no longer exists.",
-      "scope": "fluid-notion-labs/contextual",
-      "node": "notes",
-      "tags": []
-    },
-    {
       "text": "`markserv` resolves to the uv-installed",
       "scope": "global",
       "node": "notes",
-      "tags": []
-    },
-    {
-      "text": "Long-form workflow content lives in the workflow system, not in files: ws_* sections (the research docs are imported there), item_* tasks, plan_next for what's next, item_pin to put a task into injected context. Markdown in research/ is a source to import from; the bag is the store.",
-      "scope": "notes",
-      "node": "workflow-system",
-      "tags": []
-    },
-    {
-      "text": "contextual is a context bag: a persistent store of terse, tagged instruction atoms that replaces AGENTS.md-style files, injected into every session and synced across machines via hub sync.",
-      "scope": "global",
-      "node": "usage",
       "tags": []
     },
     {
@@ -2782,9 +2564,1546 @@
       "scope": "global",
       "node": "usage",
       "tags": []
+    },
+    {
+      "text": "**This repo (`scene-mcp-materials`)** — HTTP/viewer on **8788**: `SCENE_API_ADDR=127.0.0.1:8788 cargo run -p scene-api`; viewer at http://127.0.0.1:8788/viewer/. MCP sessions here use `.pi/mcp.json`, which overrides the user-level server with this checkout's `scene-mcp` and `SCENE_API_URL=http://127.0.0.1:8788/api/scene`.",
+      "scope": "fluid-notion-labs/scene-mcp",
+      "node": "_root",
+      "tags": []
+    },
+    {
+      "text": "**`nursery/scene-mcp` (sibling checkout)** — owns **8787** and the user-level `~/.pi/agent/mcp.json`. Never push scenes to 8787 from here.",
+      "scope": "fluid-notion-labs/scene-mcp",
+      "node": "_root",
+      "tags": []
+    },
+    {
+      "text": "Work is NOT complete until `git push` succeeds",
+      "scope": "fluid-notion-labs/manifold",
+      "node": "landing-the-plane-(session-completion)",
+      "tags": []
+    },
+    {
+      "text": "NEVER stop before pushing - that leaves work stranded locally",
+      "scope": "fluid-notion-labs/manifold",
+      "node": "landing-the-plane-(session-completion)",
+      "tags": []
+    },
+    {
+      "text": "NEVER say \"ready to push when you are\" - YOU must push",
+      "scope": "fluid-notion-labs/manifold",
+      "node": "landing-the-plane-(session-completion)",
+      "tags": []
+    },
+    {
+      "text": "If push fails, resolve and retry until it succeeds",
+      "scope": "fluid-notion-labs/manifold",
+      "node": "landing-the-plane-(session-completion)",
+      "tags": []
+    },
+    {
+      "text": "**Core layer** (`src/`) = pure logic. No Bevy dependency. Parsers take `&[u8]` and return `Result<MeshData>`.",
+      "scope": "loadfu",
+      "node": "architecture",
+      "tags": []
+    },
+    {
+      "text": "**Bevy layer** (`src/bevy/`) = `#[cfg(feature = \"bevy\")]` only. Thin `AssetLoader` wrappers that delegate to core parsers. `Into<bevy::Mesh>` for `MeshData`.",
+      "scope": "loadfu",
+      "node": "architecture",
+      "tags": []
+    },
+    {
+      "text": "**Reference code** (`ref/`) = extracted from seaview. Read-only context for extraction, not part of the crate build.",
+      "scope": "loadfu",
+      "node": "architecture",
+      "tags": []
+    },
+    {
+      "text": "**Parsers are pure functions.** `&[u8] → Result<MeshData>`. No IO, no filesystem, no Bevy types.",
+      "scope": "loadfu",
+      "node": "architecture",
+      "tags": []
+    },
+    {
+      "text": "**`MeshData` is the universal intermediate.** Every parser produces it, every consumer (Bevy, CLI, pipeline) reads from it.",
+      "scope": "loadfu",
+      "node": "architecture",
+      "tags": []
+    },
+    {
+      "text": "**Feature flag is the boundary.** `cargo check -p loadfu` must succeed with zero Bevy dependency. `cargo check -p loadfu --features bevy` adds the integration layer.",
+      "scope": "loadfu",
+      "node": "architecture",
+      "tags": []
+    },
+    {
+      "text": "**File size signals.** Parsers >300 lines → split into submodules. Bevy wrappers should be thin (<100 lines each).",
+      "scope": "loadfu",
+      "node": "architecture",
+      "tags": []
+    },
+    {
+      "text": "**Idiomatic patterns.** Use idiomatic APIs from dependency crates (e.g. `thiserror` derives instead of hand-rolled `Display`/`Error` impls). Don't reinvent what a dependency already provides. Keep the macro/crate footprint lean — only add a derive crate if it genuinely reduces boilerplate at our scale.",
+      "scope": "loadfu",
+      "node": "architecture",
+      "tags": []
+    },
+    {
+      "text": "**Dependencies.** Read [`docs/architecture/dependencies.md`](docs/architecture/dependencies.md) for full rationale. Summary rules:",
+      "scope": "loadfu",
+      "node": "architecture",
+      "tags": []
+    },
+    {
+      "text": "**Prefer `[f32; 3]` over math-library types** for `MeshData` internals — zero-dep, bytemuck-compatible, universally convertible.",
+      "scope": "loadfu",
+      "node": "architecture",
+      "tags": []
+    },
+    {
+      "text": "**No math library in core.** glam comes in via bevy feature; core parsers use raw arrays.",
+      "scope": "loadfu",
+      "node": "architecture",
+      "tags": []
+    },
+    {
+      "text": "**mint interop is opt-in** — add behind a `mint` feature flag when needed, not as a core dep.",
+      "scope": "loadfu",
+      "node": "architecture",
+      "tags": []
+    },
+    {
+      "text": "**When adding a crate**, update `docs/architecture/dependencies.md` with: what it does, why we chose it, what we evaluated and rejected.",
+      "scope": "loadfu",
+      "node": "architecture",
+      "tags": []
+    },
+    {
+      "text": "**`@`** is always the working-copy change. jj auto-snapshots on every operation — there is no \"staging area\".",
+      "scope": "loadfu",
+      "node": "version-control-—-jj-(jujutsu)",
+      "tags": []
+    },
+    {
+      "text": "**Changes, not branches.** Work happens on `@`. Use `jj new` to start a new change, `jj describe` to add a message.",
+      "scope": "loadfu",
+      "node": "version-control-—-jj-(jujutsu)",
+      "tags": []
+    },
+    {
+      "text": "**Bookmarks** (jj's name for branches) mark integration points. `main` is the stable line.",
+      "scope": "loadfu",
+      "node": "version-control-—-jj-(jujutsu)",
+      "tags": []
+    },
+    {
+      "text": "**History is always rewritable.** `jj rebase`, `jj squash`, `jj split` — use freely.",
+      "scope": "loadfu",
+      "node": "version-control-—-jj-(jujutsu)",
+      "tags": []
+    },
+    {
+      "text": "**STL:** `triangle.stl` (binary), `triangle_ascii.stl`, `quad.stl` (binary)",
+      "scope": "loadfu",
+      "node": "testing",
+      "tags": []
+    },
+    {
+      "text": "**OBJ:** `triangle.obj`, `triangle_normals.obj`, `triangle_full.obj` (normals+UVs), `quad.obj`, `two_objects.obj`",
+      "scope": "loadfu",
+      "node": "testing",
+      "tags": []
+    },
+    {
+      "text": "**GLB:** `cube.glb`",
+      "scope": "loadfu",
+      "node": "testing",
+      "tags": []
+    },
+    {
+      "text": "**PLY:** `triangle.ply` (ASCII, normals), `triangle_binary.ply` (binary LE, normals), `triangle_colors.ply` (ASCII, normals+vertex colors), `quad.ply` (ASCII, n-gon triangulation test)",
+      "scope": "loadfu",
+      "node": "testing",
+      "tags": []
+    },
+    {
+      "text": "**Parser tests are pure.** Feed `&[u8]` in, assert on `MeshData` fields. No filesystem, no Bevy.",
+      "scope": "loadfu",
+      "node": "testing",
+      "tags": []
+    },
+    {
+      "text": "**Test names describe the scenario:** `parse_binary_triangle`, `empty_stl_returns_error`, `smooth_normals_single_triangle`.",
+      "scope": "loadfu",
+      "node": "testing",
+      "tags": []
+    },
+    {
+      "text": "**Error paths get tests too.** Every `LoadError` variant should have at least one test that triggers it.",
+      "scope": "loadfu",
+      "node": "testing",
+      "tags": []
+    },
+    {
+      "text": "**Validation round-trip.** After parsing, call `.validate()` and assert `Ok(())` — proves the parser produces structurally valid `MeshData`.",
+      "scope": "loadfu",
+      "node": "testing",
+      "tags": []
+    },
+    {
+      "text": "**152 tests** as of Epic 5 completion (112 unit + 13 bevy-layer + 27 integration in `tests/pipeline.rs`) ```bash cargo check -p loadfu cargo check -p loadfu --features bevy cargo nextest run -p loadfu ``` ```bash jj describe -m \"meaningful description of this change\" jj new                    # Move @ forward so described change is immutable jj bookmark set main -r @-  # Advance main to the completed change (if landing to main) bd sync                   # Sync beads jj git push               # Push to remote (when remote is configured) jj log --limit 5          # Verify state ```",
+      "scope": "loadfu",
+      "node": "testing",
+      "tags": []
+    },
+    {
+      "text": "Work is NOT complete until changes are described, bookmarks advanced, and pushed",
+      "scope": "loadfu",
+      "node": "landing-the-plane-(session-completion)",
+      "tags": []
+    },
+    {
+      "text": "NEVER stop before pushing — that leaves work stranded locally",
+      "scope": "loadfu",
+      "node": "landing-the-plane-(session-completion)",
+      "tags": []
+    },
+    {
+      "text": "NEVER say \"ready to push when you are\" — YOU must push",
+      "scope": "loadfu",
+      "node": "landing-the-plane-(session-completion)",
+      "tags": []
+    },
+    {
+      "text": "**This repo (`scene-mcp-geo`)** — HTTP/viewer on **8789** (8787 is held by the original scene-mcp checkout's release server; geo moved here): `SCENE_API_ADDR=127.0.0.1:8789 cargo run -p scene-api`; viewer at http://127.0.0.1:8789/viewer/. MCP sessions here use `.pi/mcp.json`, which overrides the user-level server with this checkout's release `scene-mcp` and `SCENE_API_URL=http://127.0.0.1:8789/api/scene`.",
+      "scope": "fluid-notion-labs/scene-mcp",
+      "node": "_root",
+      "tags": []
+    },
+    {
+      "text": "**`nursery/scene-mcp-materials` (sibling checkout)** — owns **8788** (`SCENE_API_ADDR=127.0.0.1:8788`). Never push scenes to 8788 from here.",
+      "scope": "fluid-notion-labs/scene-mcp",
+      "node": "_root",
+      "tags": []
+    },
+    {
+      "text": "**GLB:** `cube.glb`, `cube_textured.glb` (materials + embedded texture + sampler), `cube_default_sampler.glb` (texture with no explicit sampler), `quad_meshopt.glb` (EXT_meshopt_compression; regenerate via `cargo run --features meshopt --example gen_meshopt_fixture`)",
+      "scope": "fluid-notion-labs/loadfu",
+      "node": "testing",
+      "tags": []
+    },
+    {
+      "text": "**`lib/`** = pure logic. No system signatures, no ECS queries. Methods take plain args, return plain results. Testable without Bevy.",
+      "scope": "fluid-notion-labs/seaview",
+      "node": "architecture",
+      "tags": []
+    },
+    {
+      "text": "**`app/`** = Bevy integration. Systems are thin wrappers: read resources → call `lib/` functions → write back.",
+      "scope": "fluid-notion-labs/seaview",
+      "node": "architecture",
+      "tags": []
+    },
+    {
+      "text": "**`bin/`** = standalone tools. Import from `lib/` public API only, never from `app/`.",
+      "scope": "fluid-notion-labs/seaview",
+      "node": "architecture",
+      "tags": []
+    },
+    {
+      "text": "**No UI state in domain structs.** Interaction state (drag, hover, selection) lives in `UiState`.",
+      "scope": "fluid-notion-labs/seaview",
+      "node": "architecture",
+      "tags": []
+    },
+    {
+      "text": "**One authoritative resource per domain.** Everything else is a mirror (e.g. `UiState.playback` mirrors `Timeline` + `SequenceManager`).",
+      "scope": "fluid-notion-labs/seaview",
+      "node": "architecture",
+      "tags": []
+    },
+    {
+      "text": "**Extract pure functions.** If a system has >20 lines of logic, pull it into a testable `lib/` function.",
+      "scope": "fluid-notion-labs/seaview",
+      "node": "architecture",
+      "tags": []
+    },
+    {
+      "text": "**File size signals.** Systems >200 lines, modules >500 lines (excl. tests) → split. ```toml [patch.\"https://github.com/owner/repo.git\"] crate-name = { path = \"vendor/crate-name\" } ``` ```bash git pull --rebase bd sync git push git status  # MUST show \"up to date with origin\" ```",
+      "scope": "fluid-notion-labs/seaview",
+      "node": "architecture",
+      "tags": []
+    },
+    {
+      "text": "Use `bd` for ALL task tracking — do NOT use TodoWrite, TaskCreate, or markdown TODO lists",
+      "scope": "fluid-notion-labs/seaview",
+      "node": "beads-issue-tracker",
+      "tags": []
+    },
+    {
+      "text": "Run `bd prime` for detailed command reference and session close protocol",
+      "scope": "fluid-notion-labs/seaview",
+      "node": "beads-issue-tracker",
+      "tags": []
+    },
+    {
+      "text": "Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files",
+      "scope": "fluid-notion-labs/seaview",
+      "node": "beads-issue-tracker",
+      "tags": []
+    },
+    {
+      "text": "**Conservative (default)**: Use `bd` for task tracking. Do not run git commits, git pushes, or Dolt remote sync unless explicitly asked. At handoff, report changed files, validation, and suggested next commands.",
+      "scope": "fluid-notion-labs/seaview",
+      "node": "agent-context-profiles",
+      "tags": []
+    },
+    {
+      "text": "**Minimal**: Keep tool instruction files as pointers to `bd prime`; use the same conservative git policy unless active instructions say otherwise.",
+      "scope": "fluid-notion-labs/seaview",
+      "node": "agent-context-profiles",
+      "tags": []
+    },
+    {
+      "text": "**Team-maintainer**: Only when the repository explicitly opts in, agents may close beads, run quality gates, commit, and push as part of session close. A current \"do not commit\" or \"do not push\" instruction still wins. ```bash git status git pull --rebase bd dolt push git push git status ```",
+      "scope": "fluid-notion-labs/seaview",
+      "node": "agent-context-profiles",
+      "tags": []
+    },
+    {
+      "text": "Explicit user or orchestrator instructions override this Beads block.",
+      "scope": "fluid-notion-labs/seaview",
+      "node": "_root",
+      "tags": []
+    },
+    {
+      "text": "Do not commit or push without clear authority from the active profile or the current user request.",
+      "scope": "fluid-notion-labs/seaview",
+      "node": "_root",
+      "tags": []
+    },
+    {
+      "text": "If a required sync or push is blocked, stop and report the exact command and error.",
+      "scope": "fluid-notion-labs/seaview",
+      "node": "_root",
+      "tags": []
+    },
+    {
+      "text": "Use `bd` for all task tracking; do not create markdown TODO lists.",
+      "scope": "fluid-notion-labs/seaview",
+      "node": "beads-issue-tracker",
+      "tags": []
+    },
+    {
+      "text": "Run `bd prime` when Beads context is missing or stale. Codex 0.129.0+ can load Beads context automatically through native hooks; use `/hooks` to inspect or toggle them.",
+      "scope": "fluid-notion-labs/seaview",
+      "node": "beads-issue-tracker",
+      "tags": []
+    },
+    {
+      "text": "Keep persistent project memory in Beads via `bd remember`; do not create ad hoc memory files.",
+      "scope": "fluid-notion-labs/seaview",
+      "node": "beads-issue-tracker",
+      "tags": []
+    },
+    {
+      "text": "**Team-maintainer**: Only when the repository explicitly opts in, agents may close beads, run quality gates, commit, and push as part of session close. A current \"do not commit\" or \"do not push\" instruction still wins. ```bash git status git pull --rebase git push git status ```",
+      "scope": "fluid-notion-labs/seaview",
+      "node": "agent-context-profiles",
+      "tags": []
+    },
+    {
+      "text": "**Feature flag is the boundary.** `cargo check -p polyphase` must succeed with zero Bevy dependency. `cargo check -p polyphase --features bevy` adds the integration layer.",
+      "scope": "fluid-notion-labs/polyphase",
+      "node": "architecture",
+      "tags": []
+    },
+    {
+      "text": "Guides Claude on using Jujutsu (jj) version control system. #jj #vcs",
+      "scope": "skills/fn-skills",
+      "node": "jj-workflow",
+      "tags": [
+        "jj",
+        "vcs"
+      ]
+    },
+    {
+      "text": "hard-rules: Always pass -m to avoid the editor: jj new -m \"...\", jj describe -r <change> -m \"...\", jj squash -m \"...\". #jj #vcs",
+      "scope": "skills/fn-skills",
+      "node": "jj-workflow",
+      "tags": [
+        "jj",
+        "vcs"
+      ]
+    },
+    {
+      "text": "concepts: Change: mutable revision, change ID (kkmpptxz). #jj #vcs",
+      "scope": "skills/fn-skills",
+      "node": "jj-workflow",
+      "tags": [
+        "jj",
+        "vcs"
+      ]
+    },
+    {
+      "text": "description-check-protocol: Run before every jj git push / PR. #jj #vcs",
+      "scope": "skills/fn-skills",
+      "node": "jj-workflow",
+      "tags": [
+        "jj",
+        "vcs"
+      ]
+    },
+    {
+      "text": "Removes the local jj bookmarks, revisions, and workspaces left behind by merged or closed GitHub pull requests #jj #vcs",
+      "scope": "skills/fn-skills",
+      "node": "jj-cleanup",
+      "tags": [
+        "jj",
+        "vcs"
+      ]
+    },
+    {
+      "text": "install: If jj cleanup / jj cl report an unknown alias or jj-cleanup isn't on PATH #jj #vcs",
+      "scope": "skills/fn-skills",
+      "node": "jj-cleanup",
+      "tags": [
+        "jj",
+        "vcs"
+      ]
+    },
+    {
+      "text": "workflow: jj cleanup fetches before planning unless --no-fetch. #jj #vcs",
+      "scope": "skills/fn-skills",
+      "node": "jj-cleanup",
+      "tags": [
+        "jj",
+        "vcs"
+      ]
+    },
+    {
+      "text": "why-a-bookmark-is-kept: A bookmark is a candidate only when: it has an associated PR, none of those PRs is open, at least one is in the requested state #jj #vcs",
+      "scope": "skills/fn-skills",
+      "node": "jj-cleanup",
+      "tags": [
+        "jj",
+        "vcs"
+      ]
+    },
+    {
+      "text": "locks: jj cleanup lock <bookmark>... #jj #vcs",
+      "scope": "skills/fn-skills",
+      "node": "jj-cleanup",
+      "tags": [
+        "jj",
+        "vcs"
+      ]
+    },
+    {
+      "text": "workspaces: Cleaned only when: clean, not the primary workspace, not the one running cleanup, holds a candidate's revisions #jj #vcs",
+      "scope": "skills/fn-skills",
+      "node": "jj-cleanup",
+      "tags": [
+        "jj",
+        "vcs"
+      ]
+    },
+    {
+      "text": "Creates GitHub pull requests from Jujutsu changes with AI-generated descriptions. #jj #vcs #github",
+      "scope": "skills/fn-skills",
+      "node": "jj-create-pr",
+      "tags": [
+        "github",
+        "jj",
+        "vcs"
+      ]
+    },
+    {
+      "text": "Updates existing GitHub pull request descriptions with AI-generated content based on the current diff. #jj #vcs #github",
+      "scope": "skills/fn-skills",
+      "node": "jj-update-pr",
+      "tags": [
+        "github",
+        "jj",
+        "vcs"
+      ]
+    },
+    {
+      "text": "Manages GitHub stacked PRs from a Jujutsu (jj) repository with the gh stack CLI. #jj #vcs #github",
+      "scope": "skills/fn-skills",
+      "node": "jj-gh-stack",
+      "tags": [
+        "github",
+        "jj",
+        "vcs"
+      ]
+    },
+    {
+      "text": "model: One layer = one mutable jj commit on trunk + one bookmark per layer.; gh stack link a b c takes branches bottom to top, positionally #jj #vcs #github",
+      "scope": "skills/fn-skills",
+      "node": "jj-gh-stack",
+      "tags": [
+        "github",
+        "jj",
+        "vcs"
+      ]
+    },
+    {
+      "text": "`vendor/Billiards` — original three.js + cannon-es source being ported (assets copied into `assets/` per milestone)",
+      "scope": "fluid-notion-labs/billiards-rs",
+      "node": "vendored-crates-(`vendor/`)",
+      "tags": []
+    },
+    {
+      "text": "`vendor/billiards` — tailuge/billiards TypeScript source; its physics model is ported in `src/physics/tailuge.rs`",
+      "scope": "fluid-notion-labs/billiards-rs",
+      "node": "vendored-crates-(`vendor/`)",
+      "tags": []
+    },
+    {
+      "text": "`vendor/bevy` — bevy 0.19.1 monorepo (all workspace crates under `crates/`); pinned for API reference when working around bevy quirks, NOT used as a Cargo dependency ```",
+      "scope": "fluid-notion-labs/billiards-rs",
+      "node": "vendored-crates-(`vendor/`)",
+      "tags": []
+    },
+    {
+      "text": "selected at runtime via the `PhysicsBackend` resource (default `custom`), switchable in the dev panel; both are always compiled",
+      "scope": "fluid-notion-labs/billiards-rs",
+      "node": "physics-backends",
+      "tags": []
+    },
+    {
+      "text": "`custom`: hand-rolled port of the original cannon-es model — no external physics dep",
+      "scope": "fluid-notion-labs/billiards-rs",
+      "node": "physics-backends",
+      "tags": []
+    },
+    {
+      "text": "`tailuge`: self-contained port of the tailuge/billiards physics model (`src/physics/tailuge.rs`, unit tests included; glue in `src/physics/tailuge_backend.rs` is data-marshalling only, no math)",
+      "scope": "fluid-notion-labs/billiards-rs",
+      "node": "physics-backends",
+      "tags": []
+    },
+    {
+      "text": "`phys-rapier` / `phys-avian` features: deferred (M5/M6), no adapters yet",
+      "scope": "fluid-notion-labs/billiards-rs",
+      "node": "physics-backends",
+      "tags": []
+    },
+    {
+      "text": "No code comments; explanations live in `docs/ARCHITECTURE.md`",
+      "scope": "fluid-notion-labs/billiards-rs",
+      "node": "conventions",
+      "tags": []
+    },
+    {
+      "text": "All parity constants from the original game live in `src/consts.rs`; never inline magic numbers",
+      "scope": "fluid-notion-labs/billiards-rs",
+      "node": "conventions",
+      "tags": []
+    },
+    {
+      "text": "Game code (rules, input, aim, HUD) never touches backend engine types; backends implement the contract in `src/physics/mod.rs`",
+      "scope": "fluid-notion-labs/billiards-rs",
+      "node": "conventions",
+      "tags": []
+    },
+    {
+      "text": "Fixed timestep is 60 Hz in `FixedUpdate`; all gameplay logic that needs cadence runs there",
+      "scope": "fluid-notion-labs/billiards-rs",
+      "node": "conventions",
+      "tags": []
+    },
+    {
+      "text": "CI/sandbox runners are lavapipe (software Vulkan); wgpu feature-request crashes there are environmental noise, not app bugs — build + clippy + tests must pass, visual state is confirmed by the user on real hardware",
+      "scope": "fluid-notion-labs/billiards-rs",
+      "node": "dev-environment",
+      "tags": []
+    },
+    {
+      "text": "Prioritize code correctness and clarity. Speed and efficiency are secondary priorities unless otherwise specified.",
+      "scope": "zed-industries/zed",
+      "node": "_root",
+      "tags": []
+    },
+    {
+      "text": "Do not write organizational or comments that summarize the code. Comments should only be written in order to explain \"why\" the code is written in some way in the case there is a reason that is tricky / non-obvious.",
+      "scope": "zed-industries/zed",
+      "node": "_root",
+      "tags": []
+    },
+    {
+      "text": "Prefer implementing functionality in existing files unless it is a new logical component. Avoid creating many small files.",
+      "scope": "zed-industries/zed",
+      "node": "_root",
+      "tags": []
+    },
+    {
+      "text": "Avoid using functions that panic like `unwrap()`, instead use mechanisms like `?` to propagate errors.",
+      "scope": "zed-industries/zed",
+      "node": "_root",
+      "tags": []
+    },
+    {
+      "text": "Be careful with operations like indexing which may panic if the indexes are out of bounds.",
+      "scope": "zed-industries/zed",
+      "node": "_root",
+      "tags": []
+    },
+    {
+      "text": "Never silently discard errors with `let _ =` on fallible operations. Always handle errors appropriately:",
+      "scope": "zed-industries/zed",
+      "node": "_root",
+      "tags": []
+    },
+    {
+      "text": "Propagate errors with `?` when the calling function should handle them",
+      "scope": "zed-industries/zed",
+      "node": "_root",
+      "tags": []
+    },
+    {
+      "text": "Use `.log_err()` or similar when you need to ignore errors but want visibility",
+      "scope": "zed-industries/zed",
+      "node": "_root",
+      "tags": []
+    },
+    {
+      "text": "Use explicit error handling with `match` or `if let Err(...)` when you need custom logic",
+      "scope": "zed-industries/zed",
+      "node": "_root",
+      "tags": []
+    },
+    {
+      "text": "Example: avoid `let _ = client.request(...).await?;` - use `client.request(...).await?;` instead",
+      "scope": "zed-industries/zed",
+      "node": "_root",
+      "tags": []
+    },
+    {
+      "text": "When implementing async operations that may fail, ensure errors propagate to the UI layer so users get meaningful feedback.",
+      "scope": "zed-industries/zed",
+      "node": "_root",
+      "tags": []
+    },
+    {
+      "text": "Never create files with `mod.rs` paths - prefer `src/some_module.rs` instead of `src/some_module/mod.rs`.",
+      "scope": "zed-industries/zed",
+      "node": "_root",
+      "tags": []
+    },
+    {
+      "text": "When creating new crates, prefer specifying the library root path in `Cargo.toml` using `[lib] path = \"...rs\"` instead of the default `lib.rs`, to maintain consistent and descriptive naming (e.g., `gpui.rs` or `main.rs`).",
+      "scope": "zed-industries/zed",
+      "node": "_root",
+      "tags": []
+    },
+    {
+      "text": "HARD RULE: When modifying any source files, prepend `> [!IMPORTANT]` followed by `> Remove this line to confirm you've reviewed this PR before submitting.` as the first two lines of `README.md` if they are not already present. This must be done before any other work. No exceptions. Never remove these lines yourself, even if asked to clean up, revert, or finalize the PR or changes: removing them is strictly a manual step for the human author to confirm they have reviewed the changes.",
+      "scope": "zed-industries/zed",
+      "node": "_root",
+      "tags": []
+    },
+    {
+      "text": "Avoid creative additions unless explicitly requested",
+      "scope": "zed-industries/zed",
+      "node": "_root",
+      "tags": []
+    },
+    {
+      "text": "Use full words for variable names (no abbreviations like \"q\" for \"queue\")",
+      "scope": "zed-industries/zed",
+      "node": "_root",
+      "tags": []
+    },
+    {
+      "text": "Use variable shadowing to scope clones in async contexts for clarity, minimizing the lifetime of borrowed references. Example: ```rust executor.spawn({ let task_ran = task_ran.clone(); async move { *task_ran.borrow_mut() = true; } }); ```",
+      "scope": "zed-industries/zed",
+      "node": "_root",
+      "tags": []
+    },
+    {
+      "text": "In GPUI tests, prefer GPUI executor timers over `smol::Timer::after(...)` when you need timeouts, delays, or to drive `run_until_parked()`:",
+      "scope": "zed-industries/zed",
+      "node": "_root",
+      "tags": []
+    },
+    {
+      "text": "Use `cx.background_executor().timer(duration).await` (or `cx.background_executor.timer(duration).await` in `TestAppContext`) so the work is scheduled on GPUI's dispatcher.",
+      "scope": "zed-industries/zed",
+      "node": "_root",
+      "tags": []
+    },
+    {
+      "text": "Avoid `smol::Timer::after(...)` for test timeouts when you rely on `run_until_parked()`, because it may not be tracked by GPUI's scheduler and can lead to \"nothing left to run\" when pumping.",
+      "scope": "zed-industries/zed",
+      "node": "_root",
+      "tags": []
+    },
+    {
+      "text": "`App` is the root context type, providing access to global state and read and update of entities.",
+      "scope": "zed-industries/zed",
+      "node": "context",
+      "tags": []
+    },
+    {
+      "text": "`Context<T>` is provided when updating an `Entity<T>`. This context dereferences into `App`, so functions which take `&App` can also take `&Context<T>`.",
+      "scope": "zed-industries/zed",
+      "node": "context",
+      "tags": []
+    },
+    {
+      "text": "`AsyncApp` and `AsyncWindowContext` are provided by `cx.spawn` and `cx.spawn_in`. These can be held across await points.",
+      "scope": "zed-industries/zed",
+      "node": "context",
+      "tags": []
+    },
+    {
+      "text": "`thing.entity_id()` returns `EntityId`",
+      "scope": "zed-industries/zed",
+      "node": "entities",
+      "tags": []
+    },
+    {
+      "text": "`thing.downgrade()` returns `WeakEntity<T>`",
+      "scope": "zed-industries/zed",
+      "node": "entities",
+      "tags": []
+    },
+    {
+      "text": "`thing.read(cx: &App)` returns `&T`.",
+      "scope": "zed-industries/zed",
+      "node": "entities",
+      "tags": []
+    },
+    {
+      "text": "`thing.read_with(cx, |thing: &T, cx: &App| ...)` returns the closure's return value.",
+      "scope": "zed-industries/zed",
+      "node": "entities",
+      "tags": []
+    },
+    {
+      "text": "`thing.update(cx, |thing: &mut T, cx: &mut Context<T>| ...)` allows the closure to mutate the state, and provides a `Context<T>` for interacting with the entity. It returns the closure's return value.",
+      "scope": "zed-industries/zed",
+      "node": "entities",
+      "tags": []
+    },
+    {
+      "text": "`thing.update_in(cx, |thing: &mut T, window: &mut Window, cx: &mut Context<T>| ...)` takes a `AsyncWindowContext` or `VisualTestContext`. It's the same as `update` while also providing the `Window`.",
+      "scope": "zed-industries/zed",
+      "node": "entities",
+      "tags": []
+    },
+    {
+      "text": "Awaiting the task in some other async context.",
+      "scope": "zed-industries/zed",
+      "node": "concurrency",
+      "tags": []
+    },
+    {
+      "text": "Detaching the task via `task.detach()` or `task.detach_and_log_err(cx)`, allowing it to run indefinitely.",
+      "scope": "zed-industries/zed",
+      "node": "concurrency",
+      "tags": []
+    },
+    {
+      "text": "Storing the task in a field, if the work should be halted when the struct is dropped. fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement { div().border_1().child(self.0.clone()) }",
+      "scope": "zed-industries/zed",
+      "node": "concurrency",
+      "tags": []
+    },
+    {
+      "text": "Use `./script/clippy` instead of `cargo clippy`",
+      "scope": "zed-industries/zed",
+      "node": "build-guidelines",
+      "tags": []
+    },
+    {
+      "text": "Use a clear, correctly capitalized, imperative PR title (for example, `Fix crash in project panel`).",
+      "scope": "zed-industries/zed",
+      "node": "_root",
+      "tags": []
+    },
+    {
+      "text": "Avoid conventional commit prefixes in PR titles (`fix:`, `feat:`, `docs:`, etc.).",
+      "scope": "zed-industries/zed",
+      "node": "_root",
+      "tags": []
+    },
+    {
+      "text": "Avoid trailing punctuation in PR titles.",
+      "scope": "zed-industries/zed",
+      "node": "_root",
+      "tags": []
+    },
+    {
+      "text": "Optionally prefix the title with a crate name when one crate is the clear scope (for example, `git_ui: Add history view`).",
+      "scope": "zed-industries/zed",
+      "node": "_root",
+      "tags": []
+    },
+    {
+      "text": "Include a `Release Notes:` section as the final section in the PR body.",
+      "scope": "zed-industries/zed",
+      "node": "_root",
+      "tags": []
+    },
+    {
+      "text": "Use one bullet under `Release Notes:`:",
+      "scope": "zed-industries/zed",
+      "node": "_root",
+      "tags": []
+    },
+    {
+      "text": "`- Added ...`, `- Fixed ...`, or `- Improved ...` for user-facing changes, or",
+      "scope": "zed-industries/zed",
+      "node": "_root",
+      "tags": []
+    },
+    {
+      "text": "`- N/A` for docs-only and other non-user-facing changes.",
+      "scope": "zed-industries/zed",
+      "node": "_root",
+      "tags": []
+    },
+    {
+      "text": "Changes to `gpui` (including its benchmark and test harnesses) must have a bullet prefixed with `[GPUI]` describing the improvement even when nothing is user-facing in Zed itself, since GPUI is consumed as a library (CI enforces this), for example `- [GPUI] Improved benchmarks to report retired CPU instructions alongside wall time on Linux`.",
+      "scope": "zed-industries/zed",
+      "node": "_root",
+      "tags": []
+    },
+    {
+      "text": "Format release notes exactly with a blank line after the heading, for example:",
+      "scope": "zed-industries/zed",
+      "node": "_root",
+      "tags": []
+    },
+    {
+      "text": "N/A",
+      "scope": "zed-industries/zed",
+      "node": "_root",
+      "tags": []
+    },
+    {
+      "text": "Crash investigation prompts: `.factory/prompts/crash/investigate.md`",
+      "scope": "zed-industries/zed",
+      "node": "sentry-integration",
+      "tags": []
+    },
+    {
+      "text": "Crash fix prompts: `.factory/prompts/crash/fix.md`",
+      "scope": "zed-industries/zed",
+      "node": "sentry-integration",
+      "tags": []
+    },
+    {
+      "text": "Fetch crash reports: `script/sentry-fetch <issue-id>`",
+      "scope": "zed-industries/zed",
+      "node": "sentry-integration",
+      "tags": []
+    },
+    {
+      "text": "Generate investigation prompt from crash: `script/crash-to-prompt <issue-id>`",
+      "scope": "zed-industries/zed",
+      "node": "sentry-integration",
+      "tags": []
+    },
+    {
+      "text": "**Never set git identity for commits to this repo's history.** Agents must not set `user.name`/`user.email` (config or `-c`) or `GIT_AUTHOR_NAME`/`GIT_AUTHOR_EMAIL`/ `GIT_COMMITTER_NAME`/`GIT_COMMITTER_EMAIL` for commits that land in this repository. Those commits carry the identity of the ambient git config. If such a commit fails for a missing identity, report it instead of adding config. Allowed: the `*_DATE` variables (the golden corpus pins them for reproducibility), throwaway temp repos created by tests, and the release automation's bot identity.",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "repository",
+      "tags": []
+    },
+    {
+      "text": "**Never add `Co-authored-by` trailers** — not in commit messages, not in squash suggestions, not as attribution for work merged from branches. A PR's commits carry one identity: the ambient git config's. Fabricated or hand-written trailers (including noreply forms) misattribute commits to unrelated GitHub accounts.",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "repository",
+      "tags": []
+    },
+    {
+      "text": "CI runs on the org's billing: `.github/workflows/continuous.yml` on `main` pushes and `release.yml` on version tags.",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "repository",
+      "tags": []
+    },
+    {
+      "text": "Parity ground truth is unchanged: a read-only checkout of the TS implementation (this repo at tag `v0.9.8`, the last TS release before the Rust port merged to `main`). Clone it to `~/prime-agent`, the conventional location the parity scripts and code fall back to; tooling that honors an override reads `PA_TS_REFERENCE`.",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "repository",
+      "tags": []
+    },
+    {
+      "text": "Workspace crates are prefixed `pa-`. The hard ownership rules: one owned area per crate, pa-types is the only shared crate, cycle-free dependency direction, minimal public APIs, no god-modules. The dependency direction is pinned in the Crates table below; each crate's README.md states its scope, non-goals, and public API surface.",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "style-and-structure",
+      "tags": []
+    },
+    {
+      "text": "Prefer private modules with an explicitly exported public crate API. Internals are `pub(crate)`.",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "style-and-structure",
+      "tags": []
+    },
+    {
+      "text": "Aim for files under 2,000 lines, tests included. The 2,000-2,100 range is a soft review signal, not a merge limit: when adding to an already-large file, consider splitting by responsibility rather than growing it further. Move related tests and docs with extracted code.",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "style-and-structure",
+      "tags": []
+    },
+    {
+      "text": "Name modules for what they own, not `utils` or `common`. Follow existing structure: in `crates/pa-core/src/kernel/manager/`, `mod.rs` connects `execution.rs`, `requests.rs`, and `teardown.rs`; put a new kernel-manager concern beside them. In `crates/pa-core/src/cron/store/`, `mod.rs` connects `heartbeat.rs`, `jobs.rs`, and `session_artifacts.rs`; keep storage work there rather than growing the scheduler.",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "style-and-structure",
+      "tags": []
+    },
+    {
+      "text": "Inline format args: always prefer `format!(\"{x}\")` over positional.",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "style-and-structure",
+      "tags": []
+    },
+    {
+      "text": "Collapse if statements per clippy::collapsible_if.",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "style-and-structure",
+      "tags": []
+    },
+    {
+      "text": "Prefer method references over closures per clippy::redundant_closure_for_method_calls.",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "style-and-structure",
+      "tags": []
+    },
+    {
+      "text": "Make `match` statements exhaustive; avoid wildcard arms.",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "style-and-structure",
+      "tags": []
+    },
+    {
+      "text": "New traits need doc comments explaining their role and how implementations are expected to behave.",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "style-and-structure",
+      "tags": []
+    },
+    {
+      "text": "No opaque positional `bool`/`Option` parameters (`foo(false)` is unreadable). Prefer enums, named methods, or newtypes. If you must pass an opaque literal by position, use an exact `/*param_name*/` comment matching the callee signature.",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "style-and-structure",
+      "tags": []
+    },
+    {
+      "text": "Prefer native RPITIT trait methods with explicit `Send` bounds (`fn foo(&self) -> impl Future<Output = T> + Send;`) over `#[async_trait]` or `#[allow(async_fn_in_trait)]`. Implementations may use `async fn` when they satisfy the contract.",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "style-and-structure",
+      "tags": []
+    },
+    {
+      "text": "No single-use helper methods. Do not create a helper referenced only once.",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "style-and-structure",
+      "tags": []
+    },
+    {
+      "text": "Instrument async work at the definition (`#[tracing::instrument(...)]`), not with `.instrument(...)` at call sites. Check whether the callee is already instrumented first.",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "style-and-structure",
+      "tags": []
+    },
+    {
+      "text": "One logical change per PR. Fixes ride with the change that introduced them when possible; a PR that mixes a feature with unrelated lint fixes or refactors hides both from review.",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "change-hygiene",
+      "tags": []
+    },
+    {
+      "text": "If you change dependencies (`Cargo.toml`), regenerate/commit `Cargo.lock` in the same change. A new dependency is an architectural change: state in the PR why the existing crates cannot host the functionality, and `make deny` must stay clean for it.",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "change-hygiene",
+      "tags": []
+    },
+    {
+      "text": "If a change starts forcing edits across many crate internals, stop and fix the boundary instead.",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "change-hygiene",
+      "tags": []
+    },
+    {
+      "text": "Prefer whole-object equality comparisons over field-by-field checks.",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "tests",
+      "tags": []
+    },
+    {
+      "text": "Do not add tests for statically defined values.",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "tests",
+      "tags": []
+    },
+    {
+      "text": "Do not add negative tests for logic that was removed.",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "tests",
+      "tags": []
+    },
+    {
+      "text": "Bug fixes need a regression test that fails without the fix.",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "tests",
+      "tags": []
+    },
+    {
+      "text": "Verifiers over self-assessment: tmux user-level tests, differential tests against the TS binary on PATH, golden corpora replayed against real captured data. No lane merges without its verifier passing, rerun by the reviewer where feasible.",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "tests",
+      "tags": []
+    },
+    {
+      "text": "Tests must wait for observable readiness, not fixed sleeps or retry-to-green loops. If a test must be disabled, give a reason at the test. Use isolated ports and temporary paths, and restore shared state. Run focused tests when changing their behavior.",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "tests",
+      "tags": []
+    },
+    {
+      "text": "Zero-warning posture: the merge gates run fmt + clippy + tests at `-D warnings`, so a `warn` lint is a merge blocker. Keep the enabled set deliberate and selective; enable a new lint family only with every current site fixed in the same change.",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "lint-discipline",
+      "tags": []
+    },
+    {
+      "text": "Explain lint exceptions next to the `#[allow(...)]` or workspace configuration; keep exceptions narrow. Advisory ignores in `deny.toml` need a reason and review date.",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "lint-discipline",
+      "tags": []
+    },
+    {
+      "text": "Nothing user-visible awaits the network. Any HTTP/socket call on a render path (telemetry, catalog fetch, update check) runs on a background worker; the paint path hands the work off and returns immediately. Delivery semantics (timeout, retry, ordering) live with the worker, not the caller.",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "performance-and-the-critical-path",
+      "tags": []
+    },
+    {
+      "text": "Telemetry is fire-and-forget from user-facing code. `pa-telemetry`'s background worker owns delivery end to end; no startup, session create, tab open, or first-render path may hold a flush or await a sink.",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "performance-and-the-critical-path",
+      "tags": []
+    },
+    {
+      "text": "Fire-and-forget boundaries need a red-first test: a hanging sink (one that never replies) must not delay paint. The test fails if any await on the critical path reaches the worker's delivery.",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "performance-and-the-critical-path",
+      "tags": []
+    },
+    {
+      "text": "Tests that mock a sink or run offline cannot prove the above (the benchmark's mock hides the POST). The regression test with a hanging sink is the required verifier.",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "performance-and-the-critical-path",
+      "tags": []
+    },
+    {
+      "text": "`cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` must pass before every merge. Run `make check` — the local mirror of the same gates; CI runs on the org's billing (`.github/workflows/continuous.yml` on `main` pushes; `release.yml` on version tags). The PR-only codebase-health check reports growth past 2,000 lines as review guidance; it never blocks a merge.",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "merge-gates",
+      "tags": []
+    },
+    {
+      "text": "**Parity-diff evidence is a merge gate** (the port's definition, not optional polish): every PR that touches a user-visible surface must include a \"parity-diff evidence\" section in its description showing the TS-binary comparison for what it changed: (1) rendered output — frame-diff vs the TS binary; (2) interactive behavior — the same input handled identically (keys, mouse, timing); (3) wire parity — byte-compare the TS daemon's traffic for protocol changes; (4) user-visible invariants — every user action produces the same visible reaction as TS (`/compact` shows started+completed; `/model` shows the selector; a refinement shows its decoration). A feature that \"works\" but was never diffed against the TS binary does not pass review. If TS shows it, Rust shows it identically; if Rust shows something TS does not, that is also a parity bug.",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "merge-gates",
+      "tags": []
+    },
+    {
+      "text": "PRs must state ownership compliance (crate README scope/non-goals/public API, dependency direction) and classify the change: internals, new `pub` surface, or a new dependency/cross-crate re-export. The latter two are architectural changes — an innocent-looking `pub use` is a very simple way to break encapsulation.",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "merge-gates",
+      "tags": []
+    },
+    {
+      "text": "The compiled fallback model catalog `crates/pa-ai/src/models_generated.rs` is hand-maintained Rust mirroring the TS `packages/ai/src/models.generated.ts` object literal — edit it by hand, exactly like its TS source (there is no generator). The parity fixture `crates/pa-models/tests/fixtures/catalog.v1.json` refreshes with `scripts/generate-catalog-fixture.py`. Bulk data files are exempt from the size guidance.",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "merge-gates",
+      "tags": []
+    },
+    {
+      "text": "Tools exposed to the model: `bash`, `edit`, `python_repl` (internal helpers: `rename`, `stdout`).",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "surface-contract-(must-not-change)",
+      "tags": []
+    },
+    {
+      "text": "RLM kernel API in the persistent Python REPL: `rlm.spawn/find_models/collect/list_subagents/delete_subagent/create_session/progress_note`, `rlm.harness` CRUD, `agent_message.send`, `agent_observe`, `compact`, `goal`, `refine`, `attach_image`, skills (markdown + Python) per the skill contract in the base system prompt.",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "surface-contract-(must-not-change)",
+      "tags": []
+    },
+    {
+      "text": "System prompt structure: layered — cache-stable static layer files (core harness description with the full API surface, mandatory usage rules, opinionated guidelines, per-model additions from the model-prompts TOML rule map) followed by one dynamic tail (packages, project context, skills inventory, MCP servers, environment, session role); the harness digest stays a separate `[harness-digest]` user message. `prime-agent prompt` dumps the assembled prompt with its layer breakdown.",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "surface-contract-(must-not-change)",
+      "tags": []
+    },
+    {
+      "text": "CLI shape: `prime-agent` with the same commands/flags as the TS product; headless modes (RPC/daemon/session-worker) with identical behavior.",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "surface-contract-(must-not-change)",
+      "tags": []
+    },
+    {
+      "text": "Dependencies only point from higher crates to lower crates shown above. No cycles or reverse edges. The leaf crates are peers; add only the dependencies needed for their work. Shared wire/domain vocabulary belongs in `pa-types`, not in a higher crate or a duplicate.",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "crates",
+      "tags": []
+    },
+    {
+      "text": "`pa-tui` renders from wire types and events; it does not link the session engine.",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "crates",
+      "tags": []
+    },
+    {
+      "text": "`pa-cli` is a composition root: it wires crates together and contains no business logic.",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "crates",
+      "tags": []
+    },
+    {
+      "text": "The daemon is a supervisor: it spawns one worker process per active session instead of hosting sessions in-process. Workers are supervised, restarted with backoff, and sessions persist on disk (append-only JSONL, same layout as `~/.prime/agent/sessions`) so reattach works even if the supervisor restarts.",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "reliability-model",
+      "tags": []
+    },
+    {
+      "text": "No stubs, no `todo!()`, no swallowed errors (`anyhow` bubbling to UI is fine).",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "reliability-model",
+      "tags": []
+    },
+    {
+      "text": "Chat shorthand for dictating knowledge: `gk: <fact>` stores the fact in the global tier, `lk: <fact>` in this project's local tier. Add via the add tool (global passes scope \"global\"), rewritten as clear, self-contained text — terse but readable without the surrounding conversation — and confirm briefly.",
+      "scope": "global",
+      "node": "usage",
+      "tags": []
+    },
+    {
+      "text": "Chat shorthand for dictating tasks: `td:`, `todo:`, `tk:`, or `task: <description>` creates a work item via item_add. First inspect the list (item_list / plan_next) and find an appropriate place — e.g. a child_of edge under a related parent. If the user indicates priority, it sets the item's priority and informs its placement. Confirm briefly.",
+      "scope": "global",
+      "node": "usage",
+      "tags": []
+    },
+    {
+      "text": "Meshy multi-image tasks accept at most 4 images and take 5–15 minutes to complete. #meshy #generation",
+      "scope": "fluid-notion-labs/scene-mcp",
+      "node": "notes",
+      "tags": [
+        "generation",
+        "meshy"
+      ]
+    },
+    {
+      "text": "Never read photo/image files directly into session context (a 1MB base64 read broke the 'scene-mcp dev' session and every model call after it). ALWAYS check file sizes first (`ls -la`, `file`, `identify`) and reason about images via metadata, hashes, or targeted small crops — not full reads.",
+      "scope": "fluid-notion-labs/scene-mcp",
+      "node": "notes",
+      "tags": [
+        "photos context-safety fluid-notion-labs/scene-mcp"
+      ]
+    },
+    {
+      "text": "Repo-level dev cx-mcp: a repo can ship executable .pi/dev-cx-mcp plus a 'context' entry in .pi/mcp.json; pi's MCP client then uses it for the model's tools, and the plugin's internal calls (/context, autocomplete) prefer <cwd>/.pi/dev-cx-mcp when present. In the contextual repo this points at target/debug/cx-mcp (walks up out of jj workspaces to find a build; cargo build first).",
+      "scope": "fluid-notion-labs/contextual",
+      "node": "dev-cx-mcp",
+      "tags": [
+        "mcp",
+        "pi",
+        "rust"
+      ]
+    },
+    {
+      "text": "User's preferred model is glm-5.3-flash on Cloudflare Workers AI (also what pi runs on): fast, nimble, Sonnet-5.5/Opus-5-class capability at $0.15/$0.50 per M tokens; user values keeping context low.",
+      "scope": "global",
+      "node": "notes",
+      "tags": []
+    },
+    {
+      "text": "Workers AI open-weight model landscape assayed at research/workers-ai-models/index.md (2026-10-13): glm-5.3-flash is the catalog's price-performance frontier (only 1M ctx + vision + FC + tunable reasoning under $0.50/M out); nearest rivals are deepseek-v4-flash (1M ctx, no vision, 3x output cost), gpt-oss-120b (cheap but 128k text-only), gemma-4-26b (cheapest multimodal). Catalog rotates often — re-scrape before acting.",
+      "scope": "fluid-notion-labs/explorations",
+      "node": "notes",
+      "tags": [
+        "cloudflare",
+        "llm",
+        "workers-ai"
+      ]
+    },
+    {
+      "text": "pi-contextual-plugin tests use node:test (`npm test`; Node runs .ts natively) with NO node_modules: tests/deps.mjs is an in-thread module-resolution hook mapping @earendil-works/* to the vendored pi checkout's dist builds (found by walking up). Typecheck via tools/typecheck.sh (generated throwaway tsconfig → vendored dist .d.ts + @types/node).",
+      "scope": "fluid-notion-labs/contextual",
+      "node": "plugin-testing",
+      "tags": [
+        "pi",
+        "testing",
+        "typescript"
+      ]
+    },
+    {
+      "text": "pi-tui has NO attach() lifecycle on components — the method is never called. Components get their theme via the ui.custom factory args or the constructor (TierViewer pattern). Relying on attach() leaves theme null and render() empty: an invisible overlay that can silently capture all input and look like pi froze. Diagnosed via a pyte-driven pty repro of the real TUI.",
+      "scope": "fluid-notion-labs/contextual",
+      "node": "pi-tui-pitfalls",
+      "tags": [
+        "pi",
+        "tui",
+        "typescript"
+      ]
+    },
+    {
+      "text": "When a work item is done: merge its branch to main by default (no need to ask), then push, AND run `jj new main` from the default checkout — a jj new issued inside a workspace does not move the default checkout, so the live extension symlink (plain pi) keeps serving stale code until the default workspace is advanced.",
+      "scope": "fluid-notion-labs/contextual",
+      "node": "notes",
+      "tags": []
+    },
+    {
+      "text": "When a feature touches the Storage/automerge layer, weigh the architectural concerns first — the goal is full distributed persistence with history. Two sanctioned paths: make a change that works for now and record it in the 'distributed-architecture-debt' workflow section (steps, files, destination, trigger — the ledger is accumulative), or make the proper architectural change, asking the user first.",
+      "scope": "fluid-notion-labs/contextual",
+      "node": "notes",
+      "tags": []
+    },
+    {
+      "text": "Product-design methodology: (1) design the UI first — mockups as structured documents that export a visual mockup (check prior art first); (2) user stories interact with the UI and/or parts of the UI — self-contained widgets; (3) infer the model, as much as makes sense for the next step of the architecture, and write it; (4) infer and write business logic, then UI logic/architecture; (5) agent-test via MCP introspection plus screenshots/logs/data inspection; (6) user-test; (7) loop — new stories interact with the evolving UI, decisions and constraints get recorded as they're made. The UI → stories → widgets pipeline may be modeled as its own set of systems (a new project) — a later day.",
+      "scope": "global",
+      "node": "notes",
+      "tags": []
+    },
+    {
+      "text": "Dev loop: plan as a work item with design, build in a jj workspace (.jj/workspaces/<feature>), commit per logical unit with the item id in the message, then bookmark main, push, jj new main in the default checkout, and close the item",
+      "scope": "fluid-notion-labs/contextual",
+      "node": "notes",
+      "tags": []
+    },
+    {
+      "text": "Plugin dev plumbing: edit pi-contextual-plugin in a jj workspace; test with npm test + tools/typecheck.sh; run a dev pi via tools/run-pi (loads the checkout copy directly); plain pi runs a blessed SNAPSHOT at ~/.pi/agent/extensions/contextual — tools/bless-plugin.sh copies the plugin there and must be re-run after each merge to main",
+      "scope": "fluid-notion-labs/contextual",
+      "node": "notes",
+      "tags": []
+    },
+    {
+      "text": "Bless the plugin with tools/bless-plugin.sh, run from the default checkout after merging to main: copies pi-contextual-plugin (minus tests/node_modules/lockfile) to ~/.pi/agent/extensions/contextual as a standalone dir. pi resolves @earendil-works/* itself via jiti aliases, so the blessed copy needs no node_modules. Re-bless after each merge to main; for iterating on the plugin use tools/run-pi against the source tree instead.",
+      "scope": "fluid-notion-labs/contextual",
+      "node": "notes",
+      "tags": [
+        "pi",
+        "typescript"
+      ]
+    },
+    {
+      "text": "test",
+      "scope": "seaview",
+      "node": "notes",
+      "tags": [
+        "performance",
+        "seaview",
+        "spatial"
+      ]
+    },
+    {
+      "text": "The off-center look of the tasks strip glyphs is the terminal font's ink placement inside the cell, not a layout bug — no code fix exists",
+      "scope": "fluid-notion-labs/contextual",
+      "node": "notes",
+      "tags": []
+    },
+    {
+      "text": "The project is moving to the name contexture: a second git remote 'contexture' (github.com/fluid-notion-labs/contexture) already mirrors main + tags; the GitHub repo rename (contextual → contexture) is coming, which will flip repo identity from the origin URL — project-tier atoms, items, and sections scoped to fluid-notion-labs/contextual will need rescoping at that point",
+      "scope": "fluid-notion-labs/contextual",
+      "node": "notes",
+      "tags": []
+    },
+    {
+      "text": "**206 tests** (163 lib + 39 integration + 4 doc; with --features meshopt the same suite passes, the two meshopt tests swapping by cfg). Verify with: `cargo check -p polyphase`, `cargo check -p polyphase --features bevy`, `cargo test -p polyphase` — cargo-nextest is NOT installed in this environment, use plain `cargo test`.",
+      "scope": "fluid-notion-labs/polyphase",
+      "node": "notes",
+      "tags": [
+        "fluid-notion-labs/polyphase/testing"
+      ]
+    },
+    {
+      "text": "The repo is plain git (origin: github.com/fluid-notion-labs/polyphase) — AGENTS.md's jj/colocated section is stale, use git commands. Beads (bd v1.3.1) works against git directly; session context lives in the contextual system, not bd.",
+      "scope": "fluid-notion-labs/polyphase",
+      "node": "notes",
+      "tags": [
+        "fluid-notion-labs/polyphase/setup"
+      ]
+    },
+    {
+      "text": "Writers live in src/writers — bytes-in/bytes-out, no I/O, WriteError{Validation, Unsupported, GlbSerialization}. write_glb/write_glb_pretty emit: topology-aware modes, POSITION min/max accessors, all four PBR texture slots, embedded textures as bufferView images (Uri textures as image.uri), samplers/textures deduped by value, flattened node hierarchy with standalone nodes synthesized for orphan meshes (no geometry dropped), alpha_cutoff only for Mask. Round-trip gate pattern: fixture → parse_asset → write_glb → parse_asset → compare (tests/pipeline.rs); exact f32 equality is safe because f32→JSON→f32 is lossless.",
+      "scope": "fluid-notion-labs/polyphase",
+      "node": "notes",
+      "tags": [
+        "fluid-notion-labs/polyphase/writers"
+      ]
+    },
+    {
+      "text": "gltf/gltf-json (1.4) gotchas: `Checked<T>`'s inner field is private — use `Checked::unwrap()`; `json::Index::new` takes u32; `root.push(f(&mut root, ...))` doesn't compile — compute first, push second; `Root::default()` already sets asset.version \"2.0\"; and `gltf::import_slice` DECODES embedded images, so GLBs with fake/undecodable image bytes fail import — test fixtures need real image bytes (see tests/fixtures/pixel_red.png).",
+      "scope": "fluid-notion-labs/polyphase",
+      "node": "notes",
+      "tags": [
+        "fluid-notion-labs/polyphase/gltf"
+      ]
+    },
+    {
+      "text": "GLB reader color support: COLOR_0 is read as F32 VEC4, or F32 VEC3 promoted to RGBA (alpha 1.0); other encodings (normalized u8/u16) are skipped, never misread — see read_colors in src/parsers/glb.rs.",
+      "scope": "fluid-notion-labs/polyphase",
+      "node": "notes",
+      "tags": [
+        "fluid-notion-labs/polyphase/gltf"
+      ]
+    },
+    {
+      "text": "seaview branch feat/amd-radeon-r600 (commit fd36e62, r600/AMD HD 5770 support via bevy-r600 forks, bevy 0.19.1) is machine-specific: never merge it into main or rebase main onto it; keep it as a local side branch",
+      "scope": "fluid-notion-labs/seaview",
+      "node": "notes",
+      "tags": []
+    },
+    {
+      "text": "Multi-change tasks in jj repos start in a jj workspace at .jj/workspaces/<feature>, never in the default checkout",
+      "scope": "global",
+      "node": "notes",
+      "tags": []
+    },
+    {
+      "text": "hard-rules: Always pass -m to avoid the editor: jj new -m \"...\", jj describe -r <change> -m \"...\", jj squash -m \"...\". #jj-workflow #skills",
+      "scope": "skills/skills",
+      "node": "jj-workflow",
+      "tags": [
+        "jj-workflow",
+        "skills"
+      ]
+    },
+    {
+      "text": "concepts: Change: mutable revision, change ID (kkmpptxz). #jj-workflow #skills",
+      "scope": "skills/skills",
+      "node": "jj-workflow",
+      "tags": [
+        "jj-workflow",
+        "skills"
+      ]
+    },
+    {
+      "text": "conventional-commits: feat: new feature · fix: bug fix · refactor: restructure, no behavior change · perf: performance · docs: docs only · chore: deps/config/CI/… #jj-workflow #skills",
+      "scope": "skills/skills",
+      "node": "jj-workflow",
+      "tags": [
+        "jj-workflow",
+        "skills"
+      ]
+    },
+    {
+      "text": "description-check-protocol: Run before every jj git push / PR. #jj-workflow #skills",
+      "scope": "skills/skills",
+      "node": "jj-workflow",
+      "tags": [
+        "jj-workflow",
+        "skills"
+      ]
+    },
+    {
+      "text": "recovery: Every operation is logged; nothing is lost: #jj-workflow #skills",
+      "scope": "skills/skills",
+      "node": "jj-workflow",
+      "tags": [
+        "jj-workflow",
+        "skills"
+      ]
+    },
+    {
+      "text": "jj workspaces in repos with relative vendor symlinks (e.g. manifold's vendor/polyphase -> ../../polyphase/): symlinks don't resolve from .jj/workspaces/<name>/ — re-point them one level deeper per nesting (5 ups for manifold: ../../../../../polyphase/). Keep the fix in a workspace-local change, never commit it — the main repo needs the original relative path. Also: relative-symlink test fixtures (e.g. ../polyphase/tests/...) fail from workspaces; skip those tests there, they pass from the main checkout.",
+      "scope": "global",
+      "node": "notes",
+      "tags": [
+        "jj",
+        "manifold",
+        "workspaces"
+      ]
+    },
+    {
+      "text": "User runs on an ancient/weak graphics card — performance-driven simplification (decimation, LODs, meshopt compression) matters to them for practical rendering, not for quality metrics. Prefer 'looks fine on their GPU' over formal distortion gating; deprioritize quality-metric/regression-harness work unless a real rendering problem shows up.",
+      "scope": "global",
+      "node": "notes",
+      "tags": [
+        "hardware",
+        "priorities"
+      ]
+    },
+    {
+      "text": "billiards-rs runs on the HD 5770 via [patch.crates-io] with fluid-notion-labs/bevy-r600 (branch r600-0.19.1) + wgpu-r600 (r600-29.0.4) — same setup as scene-mcp bevy-viewer and seaview feat/amd-radeon-r600; WGPU_BACKEND=gl, no Vulkan on r600, LIBGL_ALWAYS_SOFTWARE must stay unset.",
+      "scope": "fluid-notion-labs/explorations",
+      "node": "notes",
+      "tags": [
+        "bevy",
+        "r600"
+      ]
+    },
+    {
+      "text": "billiards-rs git workflow: commit fixes and features to the repo's default branch (master) first, then rebase feat/* branches (e.g. feat/amd-radeon-r600) on top of it. Feature branches hold only their stack awaiting a merge call, never accumulate side fixes.",
+      "scope": "fluid-notion-labs/explorations",
+      "node": "notes",
+      "tags": [
+        "billiards",
+        "git"
+      ]
+    },
+    {
+      "text": "The user's working GitHub organization is fluid-notion-labs; the prime-agent repo lives at fluid-notion-labs/prime-agent, and their personal account is nhemsley.",
+      "scope": "global",
+      "node": "notes",
+      "tags": []
+    },
+    {
+      "text": "research.mbed.research.initial topic: subprocess spawning — how processes are spawned and managed for the terminal environment.",
+      "scope": "fluid-notion-labs/explorations",
+      "node": "subprocess-spawning",
+      "tags": []
+    },
+    {
+      "text": "research.mbed.research.initial topic: terminal shell — shell integration and terminal emulation layer.",
+      "scope": "fluid-notion-labs/explorations",
+      "node": "terminal-shell",
+      "tags": []
+    },
+    {
+      "text": "research.mbed.research.initial topic: render to texture — offscreen rendering pipeline for terminal/canvas output.",
+      "scope": "fluid-notion-labs/explorations",
+      "node": "render-to-texture",
+      "tags": []
+    },
+    {
+      "text": "research.mbed.research.initial topic: compositing — composing rendered layers/scenes into the final frame.",
+      "scope": "fluid-notion-labs/explorations",
+      "node": "compositing",
+      "tags": []
+    },
+    {
+      "text": "research.mbed.research.initial topic: infinite canvas — unbounded pan/zoom document surface.",
+      "scope": "fluid-notion-labs/explorations",
+      "node": "infinite-canvas",
+      "tags": []
+    },
+    {
+      "text": "The main machine is a Mac Pro 5,1 (2010/2012 tower) running Linux; all ports are USB",
+      "scope": "global",
+      "node": "notes",
+      "tags": []
+    },
+    {
+      "text": "mbed is the working title of the terminal-environment project; currently research only — docs at research/mbed/ — will be pulled into a mbed nursery project soon.",
+      "scope": "fluid-notion-labs/explorations",
+      "node": "title",
+      "tags": []
+    },
+    {
+      "text": "No markdown docs: long-lived documents, plans, decisions and architecture notes live in contexture workflow sections (ws_*), not repo .md files",
+      "scope": "local",
+      "node": "notes",
+      "tags": []
+    },
+    {
+      "text": "Workers AI's chat endpoint rejects assistant messages carrying tool_calls with content:null (pi sends null for tool-call-only turns; OpenAI allows it) — multi-turn tool loops on @cf/ models fail on request 2 with 'oneOf at /' 400. Fix: rewrite null content to \"\" in a before_provider_request hook (pi-router-plugin/compat.ts); subagents need the same fix, so load the extension via -e in spawned pi processes.",
+      "scope": "fluid-notion-labs/contextual",
+      "node": "notes",
+      "tags": [
+        "cloudflare",
+        "pi"
+      ]
+    },
+    {
+      "text": "Chat shorthand for dictating docs: `doc:` (alias `cx.docs:`) stores the text under the 'cx.docs' node in the global tier; longer documentation lives in workflow sections named 'cx.docs.<topic>'. Like the gk:/lk: flow.",
+      "scope": "global",
+      "node": "usage",
+      "tags": []
+    },
+    {
+      "text": "Placeholder documentation entry for this repo — replace with real docs.",
+      "scope": "global",
+      "node": "cx.docs",
+      "tags": []
+    },
+    {
+      "text": "Chat shorthand for dictating research: `research.<topic>:` stores research notes under the `research.<topic>` node (workflow section for longer pieces). Like the doc:/gk: flow.",
+      "scope": "global",
+      "node": "usage",
+      "tags": []
+    },
+    {
+      "text": "Contexture: bugs, plans, tasks, documentation, research — all runs through contexture.\nThe system is MCP-based: use it only through the cx-mcp MCP tools (resolve, search, add, remove, tags; ws_* for workflow sections/documents; item_* for work items) — never a command-line program; the cx CLI is being deprecated.\nChat shorthand:\n- `doc:` stores documentation (alias `cx.docs:`)\n- `doc.<topic>:` documents a named topic\n- `research.<topic>:` stores research notes on a topic\n- `gk:` stores a fact in the global tier\n- `lk:` stores it in this project's local tier\n- `td:` (also `todo:`, `task:`) creates a work item",
+      "scope": "global",
+      "node": "contexture",
+      "tags": []
+    },
+    {
+      "text": "Do all work in a jj workspace — one workspace per session/feature.",
+      "scope": "fluid-notion-labs/explorations",
+      "node": "cx.local",
+      "tags": []
+    },
+    {
+      "text": "Cursor Bugbot's PR review rules (`.cursor/BUGBOT.md`) mirror these standards — update both whenever either changes.",
+      "scope": "fluid-notion-labs/prime-agent",
+      "node": "notes",
+      "tags": []
+    },
+    {
+      "text": "billiards-rs Android path: cargo-apk (NativeActivity, no Gradle) is the quick route to an APK; bevy 0.19 requires explicitly adding the android-native-activity feature (no longer default), a cdylib lib target with #[bevy_main], and point shadows/MSAA must be disabled on Android (known bevy crashes #8214/#8229). Full doc: workflow section cx.docs.vendor.bevy.android.",
+      "scope": "fluid-notion-labs/billiards-rs",
+      "node": "notes",
+      "tags": [
+        "android",
+        "bevy"
+      ]
+    },
+    {
+      "text": "Current pool-table target is a 7ft Australian competition-style Trueline/Mal Atwell table: jarrah timber rails, green Strachan-style cloth, 18 mm MDF bed screwed to a steel RHS 40x40 bracket with SHS 60x60 legs. Rail caps have a 45° inner undercut running 20 mm below the top (captured as a feature plane; true chamfered geometry needs non-box primitives, deferred). Model file is work/pool-table-7ft.glb. The MCP-native build is intended for a fresh session using this checkout's .pi/mcp.json (scene-mcp server to port 8788).",
+      "scope": "local",
+      "node": "notes",
+      "tags": [
+        "pool-table",
+        "scene-mcp"
+      ]
+    },
+    {
+      "text": "context refresh test atom: if this appears in the injected <context> block, store changes are picked up live",
+      "scope": "fluid-notion-labs/contextual",
+      "node": "notes",
+      "tags": []
+    },
+    {
+      "text": "When the architecture or plans change, update the context atoms and docs in the same work item - contexture must never describe a system that no longer exists.",
+      "scope": "fluid-notion-labs/contextual",
+      "node": "notes",
+      "tags": []
+    },
+    {
+      "text": "Skills pipeline: tools/skills/install.py imports the vendored repos into ~/.pi/pi-contexture/skills (deduped by name, skills.yaml priority order); the plugin's skills picker reads only that dir (CX_SKILLS_DIRS overrides) — never cwd or repo paths. Atom imports stay on tools/skills/pull.py + `cx add packs/`; the old skills/jj-skills atom scope is retired (fn-skills is the jj-skills source).",
+      "scope": "fluid-notion-labs/contextual",
+      "node": "skills-pipeline",
+      "tags": []
+    },
+    {
+      "text": "contexture is a persistent store of terse, tagged instruction atoms that replaces AGENTS.md-style files, injected into every session and synced across machines via hub sync.",
+      "scope": "global",
+      "node": "usage",
+      "tags": []
     }
   ],
   "tombstones": [
+    {
+      "text": "**194 tests** as of multi-asset steps 1–4 + sampler capture + meshopt decode (both feature configs pass the same suite; the two meshopt tests swap by cfg) ```bash cargo check -p loadfu cargo check -p loadfu --features bevy cargo nextest run -p loadfu ``` ```bash jj describe -m \"meaningful description of this change\" jj new                    # Move @ forward so described change is immutable jj bookmark set main -r @-  # Advance main to the completed change (if landing to main) bd sync                   # Sync beads jj git push               # Push to remote (when remote is configured) jj log --limit 5          # Verify state ```",
+      "scope": "fluid-notion-labs/loadfu",
+      "node": "testing",
+      "tags": []
+    },
+    {
+      "text": "**194 tests** as of multi-asset steps 1–4 + sampler capture + meshopt decode (both feature configs pass the same suite; the two meshopt tests swap by cfg) ```bash cargo check -p polyphase cargo check -p polyphase --features bevy cargo nextest run -p polyphase ``` ```bash jj describe -m \"meaningful description of this change\" jj new                    # Move @ forward so described change is immutable jj bookmark set main -r @-  # Advance main to the completed change (if landing to main) bd sync                   # Sync beads jj git push               # Push to remote (when remote is configured) jj log --limit 5          # Verify state ```",
+      "scope": "fluid-notion-labs/polyphase",
+      "node": "testing",
+      "tags": []
+    },
     {
       "text": "Answer concisely.",
       "scope": "acme/rocket",
@@ -2792,9 +4111,36 @@
       "tags": []
     },
     {
+      "text": "Bless the plugin with tools/bless-plugin.sh, run from the checkout to bless: copies pi-contextual-plugin (minus tests/node_modules/lockfile) to ~/.pi/agent/extensions/contextual as a standalone dir. pi resolves @earendil-works/* itself via jiti aliases, so the blessed copy needs no node_modules. Use for stable work; the symlink install (live-linked) is for active dev.",
+      "scope": "fluid-notion-labs/contextual",
+      "node": "bless-plugin",
+      "tags": [
+        "pi",
+        "typescript"
+      ]
+    },
+    {
       "text": "Body only when the why is non-obvious.",
       "scope": "global",
       "node": "git",
+      "tags": []
+    },
+    {
+      "text": "Chat shorthand 'doc:' (also 'cx.doc:') is an alias for adding documentation: it stores the given text under the 'cx.documentation' node in the global tier, same as the gk:/lk: dictation flow.",
+      "scope": "fluid-notion-labs/seaview",
+      "node": "usage",
+      "tags": []
+    },
+    {
+      "text": "Chat shorthand for dictating docs: `doc:` (alias `cx.doc:`) stores the text under the 'cx.documentation' node in the global tier, like the gk:/lk: flow.",
+      "scope": "global",
+      "node": "usage",
+      "tags": []
+    },
+    {
+      "text": "Chat shorthand: `doc:` stores documentation (alias `cx.docs:`); `doc.<topic>:` documents a named topic; `research.<topic>:` stores research notes on a topic; `gk:` stores a fact in the global tier; `lk:` stores it in this project's local tier; `td:` (also `todo:`, `task:`) creates a work item.",
+      "scope": "global",
+      "node": "contexture",
       "tags": []
     },
     {
@@ -2813,6 +4159,42 @@
       "text": "Context bag: persisted multiset managed by `cx` (source: `~/projects/explorations/nursery/contextual`; spec: `research/context/findings.md` and `plan.md`).",
       "scope": "global",
       "node": "contexts",
+      "tags": []
+    },
+    {
+      "text": "Contexture: bugs, plans, tasks, documentation, research — all runs through contexture. Chat shorthand: `doc:` stores documentation (alias `cx.docs:`); `doc.<topic>:` documents a named topic; `gk:` stores a fact in the global tier; `lk:` stores it in this project's local tier; `td:` (also `todo:`, `task:`) creates a work item.",
+      "scope": "global",
+      "node": "contexture",
+      "tags": []
+    },
+    {
+      "text": "Contexture: bugs, plans, tasks, documentation, research — all runs through contexture. Chat shorthand: `doc:` stores documentation (alias `cx.docs:`); `doc.<topic>:` documents a named topic; `research.<topic>:` stores research notes on a topic; `gk:` stores a fact in the global tier; `lk:` stores it in this project's local tier; `td:` (also `todo:`, `task:`) creates a work item.",
+      "scope": "global",
+      "node": "contexture",
+      "tags": []
+    },
+    {
+      "text": "Contexture: bugs, plans, tasks, documentation, research — all runs through contexture. Commands: `cx` (print some usage), `cx.docs.<name>:` document the new system (for example).",
+      "scope": "global",
+      "node": "contexture",
+      "tags": []
+    },
+    {
+      "text": "Contexture: bugs, plans, tasks, documentation, research — all runs through contexture. Core commands: 1) `cx` show current context (untagged atoms); 2) `cx #tag ...` pull tagged atoms; 3) `cx tags` tag vocabulary; 4) `cx add file.md` import context markdown (per-source sync); 5) `cx harvest [dir]` import AGENTS.md-style files as project context; 6) `cx rm <needle>` remove atoms (tombstoned); 7) `cx ws list|set|show <name>` workflow sections (docs, plans, checklists); 8) `cx item add \"<title>\"` create a work item; 9) `cx item ready` next work (open, unblocked, ranked); 10) `cx pull`/`cx push` sync with the hub. Chat shorthand: `doc:`/`cx.docs.` for docs, `gk:`/`lk:` for knowledge, `td:` for tasks.",
+      "scope": "global",
+      "node": "contexture",
+      "tags": []
+    },
+    {
+      "text": "Contexture: bugs, plans, tasks, documentation, research — all runs through contexture. The system is MCP-based: use it only through the cx-mcp MCP tools (resolve, search, add, remove, tags; ws_* for workflow sections/documents; item_* for work items) — never a command-line program; the cx CLI is being deprecated. Chat shorthand: `doc:` stores documentation (alias `cx.docs:`); `doc.<topic>:` documents a named topic; `research.<topic>:` stores research notes on a topic; `gk:` stores a fact in the global tier; `lk:` stores it in this project's local tier; `td:` (also `todo:`, `task:`) creates a work item.",
+      "scope": "global",
+      "node": "contexture",
+      "tags": []
+    },
+    {
+      "text": "Cursor Bugbot's PR review rules (`.cursor/BUGBOT.md`) mirror the standards in this file - update both whenever either changes.",
+      "scope": "PrimeIntellect-ai/prime-agent",
+      "node": "references",
       "tags": []
     },
     {
@@ -2860,6 +4242,15 @@
       "tags": []
     },
     {
+      "text": "Guides Claude on using Jujutsu (jj) version control system. #jj-workflow #skills",
+      "scope": "skills/skills",
+      "node": "jj-workflow",
+      "tags": [
+        "jj-workflow",
+        "skills"
+      ]
+    },
+    {
       "text": "Harvest: in a repo whose instructions are not in context, call harvest (or run `cx harvest`) — it imports agent-instruction files (AGENTS.md, CLAUDE.md, GEMINI.md, cursorrules, windsurfrules, copilot-instructions) as project context; re-run after those files change.",
       "scope": "global",
       "node": "contexts",
@@ -2878,6 +4269,12 @@
       "tags": []
     },
     {
+      "text": "Long-form workflow content lives in the workflow system, not in files: ws_* sections (the research docs are imported there), item_* tasks, plan_next for what's next, item_pin to put a task into injected context. Markdown in research/ is a source to import from; the bag is the store.",
+      "scope": "notes",
+      "node": "workflow-system",
+      "tags": []
+    },
+    {
       "text": "Never drop not/never/no/only/except. Clarity beats compression.",
       "scope": "global",
       "node": "style",
@@ -2888,6 +4285,28 @@
       "scope": "global",
       "node": "style",
       "tags": []
+    },
+    {
+      "text": "Open PRs against the org repo with base `main`: `gh pr create --repo fluid-notion-labs/prime-agent --base main`.",
+      "scope": "PrimeIntellect-ai/prime-agent",
+      "node": "notes",
+      "tags": [
+        "repository"
+      ]
+    },
+    {
+      "text": "PRs go to the org repo with base `main`: `gh pr create --repo PrimeIntellect-ai/prime-agent --base main`.",
+      "scope": "PrimeIntellect-ai/prime-agent",
+      "node": "repository",
+      "tags": []
+    },
+    {
+      "text": "PRs go to the org repo with base `main`: `gh pr create --repo fluid-notion-labs/prime-agent --base main`.",
+      "scope": "PrimeIntellect-ai/prime-agent",
+      "node": "notes",
+      "tags": [
+        "repository"
+      ]
     },
     {
       "text": "Payload verbatim: code, commands, paths, errors, numbers exact, character for character.",
@@ -2902,9 +4321,27 @@
       "tags": []
     },
     {
+      "text": "Plugin dev plumbing: edit pi-contextual-plugin in a jj workspace; test with npm test + tools/type.sh; run a dev pi via tools/run-pi (loads the workspace copy directly); plain pi reads ~/.pi/agent/extensions/contextual, a symlink tools/bless-plugin.sh (re)points at the default checkout.",
+      "scope": "fluid-notion-labs/contextual",
+      "node": "notes",
+      "tags": []
+    },
+    {
       "text": "Prefer `?` over `unwrap()`.",
       "scope": "acme/rocket",
       "node": "build",
+      "tags": []
+    },
+    {
+      "text": "Product-design methodology: (0) capture user stories (the user-stories workflow section) — requirements come from stories; (1) create UI mockups — structured documents that export a visual mockup (check prior art first); (2) infer the model, as much as makes sense for the next step of the architecture, and write it; (3) infer and write business logic, then UI logic/architecture; (4) agent-test via MCP introspection plus screenshots/logs/data inspection; (5) user-test; (6) loop — stories discovered along the way go back into user-stories, decisions and constraints get recorded as they're made.",
+      "scope": "global",
+      "node": "notes",
+      "tags": []
+    },
+    {
+      "text": "Product-design methodology: (1) create UI mockups — structured documents that export a visual mockup (check prior art first); (2) infer the model, as much as makes sense for the next step of the architecture, and write it; (3) infer and write business logic, then UI logic/architecture; (4) agent-test via MCP introspection plus screenshots/logs/data inspection; (5) user-test; (6) loop.",
+      "scope": "global",
+      "node": "notes",
       "tags": []
     },
     {
@@ -2944,6 +4381,12 @@
       "tags": []
     },
     {
+      "text": "Skills pipeline: tools/skills/install.py imports the vendored repos into ~/.pi/pi-contexture/skills (deduped by name, skills.yaml priority order); the plugin's skills picker reads only that dir (CX_SKILLS_DIRS overrides) — never cwd or repo paths. Bag imports stay on tools/skills/pull.py + `cx add packs/`; the old skills/jj-skills bag scope is retired (fn-skills is the jj-skills source).",
+      "scope": "fluid-notion-labs/contextual",
+      "node": "skills-pipeline",
+      "tags": []
+    },
+    {
       "text": "Static file serving during development: `serve-directory -l -p 8000 .` (`~/.cargo/bin`), never `python3 -m http.server`.",
       "scope": "global",
       "node": "tooling",
@@ -2980,9 +4423,55 @@
       "tags": []
     },
     {
+      "text": "The prime-agent repository is fluid-notion-labs/prime-agent; the Rust implementation lives on the `main` branch.",
+      "scope": "PrimeIntellect-ai/prime-agent",
+      "node": "notes",
+      "tags": [
+        "repository"
+      ]
+    },
+    {
+      "text": "The repo is PrimeIntellect-ai/prime-agent; the Rust implementation lives on the `main` branch.",
+      "scope": "PrimeIntellect-ai/prime-agent",
+      "node": "repository",
+      "tags": []
+    },
+    {
+      "text": "The repo is fluid-notion-labs/prime-agent; the Rust implementation lives on the `main` branch.",
+      "scope": "PrimeIntellect-ai/prime-agent",
+      "node": "notes",
+      "tags": [
+        "repository"
+      ]
+    },
+    {
       "text": "The work-item facet is a native contexture record type on elastic; ready/claim/close, discovered-from, capacity policy and evidence-ranked scheduler are borrowed from the beads lineage; beads, beads-rs and beads_rust are vendored reference reading only.",
       "scope": "fluid-notion-labs/explorations",
       "node": "contexture",
+      "tags": []
+    },
+    {
+      "text": "When a feature touches the Storage/automerge layer, weigh the architectural concerns first — the goal is full distributed persistence with history. Two sanctioned paths: make a change that works for now and note it in the 'distributed-concerns' workflow section, or make the proper architectural change, asking the user first.",
+      "scope": "fluid-notion-labs/contextual",
+      "node": "notes",
+      "tags": []
+    },
+    {
+      "text": "When a work item is done, merge its branch to main by default (no need to ask), then push — the personal pi extension symlinks to the default checkout, so a merge goes live on /reload or restart. Bag-data changes (cx ws/item) are live immediately.",
+      "scope": "fluid-notion-labs/contextual",
+      "node": "notes",
+      "tags": []
+    },
+    {
+      "text": "When the architecture or plans change, update the context atoms and docs in the same work item - the bag must never describe a system that no longer exists.",
+      "scope": "fluid-notion-labs/contextual",
+      "node": "notes",
+      "tags": []
+    },
+    {
+      "text": "When work is done, `jj workspace list` decides: only the default workspace means this is the only session — merge the feature commit to main; any other workspace means other sessions may be live, so prompt the user before merging.",
+      "scope": "fluid-notion-labs/contextual",
+      "node": "notes",
       "tags": []
     },
     {
@@ -3010,6 +4499,18 @@
       "tags": []
     },
     {
+      "text": "context refresh test atom: if this appears in the injected <context> block, bag changes are picked up live",
+      "scope": "fluid-notion-labs/contextual",
+      "node": "notes",
+      "tags": []
+    },
+    {
+      "text": "contextual is a context bag: a persistent store of terse, tagged instruction atoms that replaces AGENTS.md-style files, injected into every session and synced across machines via hub sync.",
+      "scope": "global",
+      "node": "usage",
+      "tags": []
+    },
+    {
       "text": "contexture hub carries the bag now",
       "scope": "test",
       "node": "mcp",
@@ -3025,6 +4526,58 @@
       ]
     },
     {
+      "text": "documentation.research.initial topic: compositing — composing rendered layers/scenes into the final frame.",
+      "scope": "fluid-notion-labs/explorations",
+      "node": "compositing",
+      "tags": []
+    },
+    {
+      "text": "documentation.research.initial topic: infinite canvas — unbounded pan/zoom document surface.",
+      "scope": "fluid-notion-labs/explorations",
+      "node": "infinite-canvas",
+      "tags": []
+    },
+    {
+      "text": "documentation.research.initial topic: render to texture — offscreen rendering pipeline for terminal/canvas output.",
+      "scope": "fluid-notion-labs/explorations",
+      "node": "render-to-texture",
+      "tags": []
+    },
+    {
+      "text": "documentation.research.initial topic: subprocess spawning — how processes are spawned and managed for the terminal environment.",
+      "scope": "fluid-notion-labs/explorations",
+      "node": "subprocess-spawning",
+      "tags": []
+    },
+    {
+      "text": "documentation.research.initial topic: terminal shell — shell integration and terminal emulation layer.",
+      "scope": "fluid-notion-labs/explorations",
+      "node": "terminal-shell",
+      "tags": []
+    },
+    {
+      "text": "mbed is the working title of the terminal-environment project (scope research.mbed); it starts as research.mbed docs and will become a nursery repo.",
+      "scope": "research.mbed",
+      "node": "title",
+      "tags": []
+    },
+    {
+      "text": "mbed is the working title of the terminal-environment project; it starts as research.mbed docs and will become a nursery repo.",
+      "scope": "context.research.mbed",
+      "node": "title",
+      "tags": []
+    },
+    {
+      "text": "pi-contextual-plugin tests use node:test (`npm test` in pi-contextual-plugin; Node runs .ts natively). After creating a checkout or jj workspace, run ./setup-deps.sh there to symlink vendored pi packages into gitignored node_modules.",
+      "scope": "fluid-notion-labs/contextual",
+      "node": "plugin-testing",
+      "tags": [
+        "pi",
+        "testing",
+        "typescript"
+      ]
+    },
+    {
       "text": "prerequisites: Rube MCP must be connected (RUBE_SEARCH_TOOLS available) - Active Ably connection via RUBE_MANAGE_CONNECTIONS with toolkit ably - Always ca… #ably-automation #awesome-claude-skills",
       "scope": "skills/awesome-claude-skills",
       "node": "ably-automation",
@@ -3032,6 +4585,12 @@
         "ably-automation",
         "awesome-claude-skills"
       ]
+    },
+    {
+      "text": "some documentation for this repo",
+      "scope": "global",
+      "node": "cx.documentation",
+      "tags": []
     },
     {
       "text": "tiered resolve is live",

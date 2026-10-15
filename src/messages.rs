@@ -1,8 +1,8 @@
 //! Messages and broadcasts (S3 / S3b, Track S): the conversation layer.
 //!
 //! Ephemeral by design, like sessions (see `sessions.rs`): rows live in
-//! the bag sqlite, never enter snapshots, and expire by TTL rather than
-//! being edited. A message is conversation, not memory — the bag stays
+//! the sqlite atom store, never enter snapshots, and expire by TTL rather
+//! than being edited. A message is conversation, not memory — the store stays
 //! durable-only. One-to-one is a message (`dest` = recipient session);
 //! one-to-all is a broadcast (no dest; per-session read state drains
 //! the board). `msg_read` and resolve delivery mark reads; sweeping

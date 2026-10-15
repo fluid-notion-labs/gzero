@@ -27,7 +27,7 @@ const item = (over: Partial<RawItem>): RawItem => ({
   ...over,
 });
 
-test("real bag data (16 items) flattens exactly once per item", async () => {
+test("real store data (16 items) flattens exactly once per item", async () => {
   const raw = JSON.parse(
     await readFile(new URL("./fixtures/items-real.json", import.meta.url), "utf8"),
   ) as RawItem[];

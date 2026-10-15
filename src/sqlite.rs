@@ -1,4 +1,4 @@
-//! SQLite storage backend for the context bag.
+//! SQLite backend for contexture's local atom store.
 //!
 //! One table, WAL mode. Rows are (text, source) assertions; sync replaces
 //! all rows for a source in one transaction. `:memory:` opens an in-memory
@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS broadcast_reads (
     PRIMARY KEY (broadcast_id, session_id)
 );";
 
-/// SQLite-backed bag. One row per (text, source) assertion.
+/// SQLite-backed atom store. One row per (text, source) assertion.
 pub struct SqliteStore {
     conn: Connection,
 }

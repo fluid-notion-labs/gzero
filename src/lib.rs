@@ -1,4 +1,4 @@
-//! Context bag: a persisted multiset of terse, tagged instruction atoms.
+//! Contexture: a persisted multiset of terse, tagged instruction atoms.
 //!
 //! Spec: `research/context/findings.md` and `plan.md` in
 //! `~/projects/explorations` (the `context` concept).
@@ -137,7 +137,7 @@ pub fn add_doc(store: &mut dyn Storage, source: &str, input: &str) -> Result<Syn
 
 /// Agent-instruction files contextual harvests from a repo: written for
 /// any agent (pi, Claude Code, Cursor, Copilot, …), imported into the one
-/// bag so every session gets them.
+/// contexture so every session gets them.
 pub const HARVEST_FILES: &[&str] = &[
     "AGENTS.md",
     "CLAUDE.md",
@@ -300,7 +300,7 @@ pub struct ReconcileResult {
     pub removed: Vec<std::path::PathBuf>,
     /// Files whose content hash matches the last harvest.
     pub unchanged: usize,
-    /// `--take` mode: files imported then deleted (bag is sole authority;
+    /// `--take` mode: files imported then deleted (store is sole authority;
     /// hashes cleared so the deletion is not mistaken for a retraction).
     pub taken: Vec<std::path::PathBuf>,
     /// Atoms tombstoned by removals (for hub Remove events).
@@ -312,7 +312,7 @@ pub struct ReconcileResult {
 /// files are re-imported; deleted files retract their sources (tombstoning
 /// texts asserted only by them); unchanged files are left alone. With
 /// `take`, every file with atoms is imported then deleted and its hash
-/// cleared — the bag becomes the sole authority.
+/// cleared — the store becomes the sole authority.
 /// Cost: one read + hash per candidate file. No watcher, no daemon.
 /// Mid-session edits land at the next reconciliation, consistent with the
 /// frozen per-session injection model.
@@ -347,7 +347,7 @@ pub fn reconcile_harvest(
         }
         result.harvested.push(imported);
         if take {
-            // Hand the file over to the bag and forget the file: clear the
+            // Hand the file over to the store and forget the file: clear the
             // hash so its later absence is not read as a retraction.
             store.set_source_hash(&source, None)?;
             std::fs::remove_file(&path)?;
@@ -380,15 +380,15 @@ pub fn reconcile_harvest(
 }
 
 /// Built-in seed documents, compiled into the binary and synced into the
-/// bag at startup. This is what the global tier defaults to: the floor
-/// content that must exist even in a freshly wiped bag. Sources are
+/// store at startup. This is what the global tier defaults to: the floor
+/// content that must exist even in a freshly wiped store. Sources are
 /// namespaced `seed:<name>`; sync is a source-scoped replace, so seed
 /// edits propagate and seed removals retract. User tombstones win:
 /// `alive` excludes tombstoned texts, so an atom removed via the `remove`
 /// tool stays out even after re-seeding.
 pub const SEEDS: &[(&str, &str)] = &[("global", include_str!("../seeds/global.md"))];
 
-/// Sync every seed document into the bag. Returns per-seed stats.
+/// Sync every seed document into the store. Returns per-seed stats.
 pub fn reconcile_seeds(store: &mut dyn Storage) -> Result<Vec<(String, SyncStats)>> {
     SEEDS
         .iter()
@@ -459,7 +459,7 @@ pub fn resolve_tiers(
 
 /// Browse view: every alive atom whose scope starts with `prefix`,
 /// ignoring tier defaults — for inspection UIs, not injection. An empty
-/// prefix returns the whole bag.
+/// prefix returns the whole store.
 pub fn scope_atoms(store: &dyn Storage, prefix: &str) -> Result<Vec<(String, Row)>> {
     let mut items: Vec<(String, Row)> = alive(store)?
         .into_iter()
@@ -879,7 +879,7 @@ mod tests {
     #[test]
     fn seeds_fill_the_global_tier_and_resync_is_idempotent() {
         let mut store = mem();
-        // fresh bag: seeds give the global tier its floor content
+        // fresh store: seeds give the global tier its floor content
         let stats = reconcile_seeds(&mut store).unwrap();
         assert_eq!(stats[0].0, "seed:global");
         assert!(stats[0].1.added > 0);
@@ -991,13 +991,13 @@ mod tests {
     fn reconcile_take_imports_then_removes_without_tombstone() {
         let dir = uniq_dir("cx-reconcile-take");
         let file = dir.join("AGENTS.md");
-        std::fs::write(&file, "# Context\n\n## n\n- keep me in the bag\n").unwrap();
+        std::fs::write(&file, "# Context\n\n## n\n- keep me in the store\n").unwrap();
         let mut store = mem();
 
         let r = reconcile_harvest(&mut store, &dir, true).unwrap();
         assert_eq!(r.taken.len(), 1);
         assert!(!file.exists(), "--take deletes the file");
-        assert_eq!(alive(&store).unwrap().len(), 1, "atoms stay in the bag");
+        assert_eq!(alive(&store).unwrap().len(), 1, "atoms stay in the store");
 
         // the deletion must not read as a retraction on the next pass
         let r = reconcile_harvest(&mut store, &dir, false).unwrap();
@@ -1012,7 +1012,7 @@ mod tests {
         // zero-bullet pointer stub: never harvested, no hash recorded
         std::fs::write(
             dir.join("AGENTS.md"),
-            "# Context\n\nThis file is a pointer. The bag is the authority.\n",
+            "# Context\n\nThis file is a pointer. The store is the authority.\n",
         )
         .unwrap();
         let mut store = mem();

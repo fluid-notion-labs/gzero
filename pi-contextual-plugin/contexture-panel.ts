@@ -207,7 +207,7 @@ function itemDetail(row: FlatRow) {
   };
 }
 
-/** Context tiers (global / local / skills-of-the-bag) → PanelNodes.
+/** Context tiers (global / local / skills) → PanelNodes.
  * Each tier's sections become children; a section's text is its detail. */
 export function tiersToNodes(tiers: TierLike[]): PanelNode[] {
   return tiers.map((tier) => {

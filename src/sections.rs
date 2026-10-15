@@ -7,7 +7,7 @@
 //! (an automerge map put per write), `kind` is `md` or `checklist`.
 //! Scopes are repo identities (see `repo_identity_in`) or `global`.
 //!
-//! Doc shape (inside the bag doc):
+//! Doc shape (inside the contexture doc):
 //! ```text
 //! root
 //! └─ sections: Map<scope -> Map<name -> {kind, title, body, order}>>
