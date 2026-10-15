@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     cwd        TEXT NOT NULL,
     pid        INTEGER NOT NULL,
     label      TEXT NOT NULL DEFAULT '',
+    workspace  TEXT NOT NULL DEFAULT '',
     started_at INTEGER NOT NULL,
     last_seen  INTEGER NOT NULL
 );
@@ -90,6 +91,18 @@ impl SqliteStore {
             conn.execute("DROP TABLE IF EXISTS atoms", [])?;
         }
         conn.execute_batch(SCHEMA)?;
+        // Add workspace to existing sessions tables from pre-session-fork installs.
+        let has_workspace: bool = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name = 'workspace'",
+            [],
+            |r| r.get::<_, i64>(0).map(|n| n > 0),
+        )?;
+        if !has_workspace {
+            conn.execute(
+                "ALTER TABLE sessions ADD COLUMN workspace TEXT NOT NULL DEFAULT ''",
+                [],
+            )?;
+        }
         Ok(())
     }
 

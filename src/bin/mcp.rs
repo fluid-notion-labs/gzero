@@ -401,6 +401,7 @@ fn presence_block(store: &SqliteStore) -> Option<String> {
     let cwd = std::env::current_dir()
         .map(|p| p.display().to_string())
         .unwrap_or_default();
+    let workspace = contextual::sessions::current_workspace();
     let beat = contextual::sessions::SessionInfo {
         session_id: session_id.clone(),
         machine,
@@ -408,6 +409,7 @@ fn presence_block(store: &SqliteStore) -> Option<String> {
         cwd,
         pid: std::process::id() as i64,
         label: String::new(),
+        workspace,
         started_at: 0, // ignored by the upsert on conflict
         last_seen: contextual::sessions::now(),
     };
