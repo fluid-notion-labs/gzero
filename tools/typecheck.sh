@@ -1,12 +1,16 @@
 #!/bin/sh
-# Typecheck the plugin without a node_modules tree: find the vendored pi
+# Typecheck a plugin without a node_modules tree: find the vendored pi
 # checkout, generate a throwaway tsconfig mapping @earendil-works/* to its
 # dist .d.ts files (and @types/node from the vendored tree), run tsc, and
 # remove the generated file. Runtime dep resolution for tests lives in
-# tests/deps.mjs.
+# tests/deps.mjs. Pass the plugin directory name to check a different one
+# (default: pi-contextual-plugin).
 set -e
 root="$(cd "$(dirname "$0")/.." && pwd)"
-plugin="$root/pi-contextual-plugin"
+case "${1:-}" in
+  /*) plugin="$1" ;;
+  *) plugin="$root/${1:-pi-contextual-plugin}" ;;
+esac
 pi=""
 d="$root"
 while [ "$d" != "/" ]; do
