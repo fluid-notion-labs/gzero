@@ -563,22 +563,23 @@ test("section switching scopes the search; tab back and forth", () => {
   assert.equal(hits(p).length, 1);
 });
 
-test("query tokens: is:open, is:active, p<N> restrict to matching tasks", () => {
+test("query tokens: is:open, is:active restrict to matching tasks; p<N> is plain text", () => {
   const p = make(searchableTree());
   p.handleInput("/");
   p.handleInput("is:open");
   const ids = hits(p).map((h) => h.id);
   assert.ok(ids.includes("aaa1") && ids.includes("bbb2"));
-  p.handleInput(" p2");
-  assert.deepEqual(hits(p).map((h) => h.id), []); // neither is p2
-  p.handleInput("\x7f\x7f\x7f");
-  p.handleInput(" ");
   // Token-only query (is:open): both open tasks match.
   assert.equal(hits(p).length, 2);
   p.handleInput("\x1b");
   p.handleInput("/");
   p.handleInput("is:active workspace");
   assert.equal(hits(p).length, 0, "token filter excludes non-tasks");
+  // p<N> priority tokens were removed (d61e): treated as plain fuzzy text.
+  p.handleInput("\x1b");
+  p.handleInput("/");
+  p.handleInput("p2");
+  assert.equal(hits(p).length, 0, "no task is literally named p2");
 });
 
 // ---- queue reordering (m) ----

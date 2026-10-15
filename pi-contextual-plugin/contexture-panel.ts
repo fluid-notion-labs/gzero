@@ -796,7 +796,7 @@ export class ContexturePanel implements Component, Focusable {
     const parsed = this.parseQuery();
     this.contentWin.scrollToStart();
     this.sel = 0;
-    if (!parsed.text && !parsed.statuses && parsed.priority === null) {
+    if (!parsed.text && !parsed.statuses) {
       this.hits = [];
       return;
     }
@@ -805,12 +805,11 @@ export class ContexturePanel implements Component, Focusable {
     for (const entry of this.corpus) {
       // Scope restricts to one top-level section's subtree.
       if (root && entry.root !== root) continue;
-      // Query tokens (is:open, is:active, p<N>) restrict to matching tasks.
-      if (parsed.statuses || parsed.priority !== null) {
+      // Query tokens (is:open, is:active, status:X) restrict to matching tasks.
+      if (parsed.statuses) {
         const item = entry.node.item;
         if (!item) continue;
-        if (parsed.statuses && !matchesStatus(item.status, parsed.statuses)) continue;
-        if (parsed.priority !== null && item.priority !== parsed.priority) continue;
+        if (!matchesStatus(item.status, parsed.statuses)) continue;
       }
       const score = fuzzyScore(parsed.text, entry.text);
       if (score !== null) {
@@ -837,12 +836,11 @@ export class ContexturePanel implements Component, Focusable {
   }
 
   /** Split query tokens: `is:open`/`is:closed`/`is:active`/`status:X` set a
-   * status filter, `p<N>` a priority filter; the rest is the fuzzy text. */
-  private parseQuery(): { text: string; statuses: string[] | null; priority: number | null } {
+   * status filter; the rest is the fuzzy text. */
+  private parseQuery(): { text: string; statuses: string[] | null } {
     const tokens = this.query.trim().split(/\s+/).filter(Boolean);
     let text = "";
     let statuses: string[] | null = null;
-    let priority: number | null = null;
     for (const token of tokens) {
       const sm = token.match(/^(?:is|status):(\w+)$/);
       if (sm) {
@@ -850,14 +848,9 @@ export class ContexturePanel implements Component, Focusable {
         statuses.push(sm[1]);
         continue;
       }
-      const pm = token.match(/^p(\d)$/);
-      if (pm) {
-        priority = Number(pm[1]);
-        continue;
-      }
       text += (text ? " " : "") + token;
     }
-    return { text, statuses, priority };
+    return { text, statuses };
   }
 
   private jumpToHit(): void {
