@@ -11,6 +11,7 @@
 import type { ExtensionAPI, ExtensionContext, ExtensionToolContext, ModelRoute, ModelRouteRequest } from "@earendil-works/pi-coding-agent";
 import type { Message } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
+import { fixAssistantNullContent } from "./compat.ts";
 import { classifyWorkType, buildClassifierState, type ClassifyFn, type WorkClassification } from "./classifier.ts";
 import { DELEGATED_TYPES, loadRouterConfig, WORK_TYPES, type RouterConfig, type WorkType } from "./config.ts";
 import { buildDispatch, dispatchWork, formatDispatchResult, spawnRunner } from "./delegate.ts";
@@ -20,6 +21,9 @@ import { decideRoute, estimateTokens, type RouterState } from "./routing.ts";
 
 const PROVIDER = "router";
 const ID = "auto";
+
+/** This file's URL, so spawned subagents can load the same extension (for the compat fix). */
+const extensionUrl = new URL(import.meta.url).pathname;
 
 function lastUserText(messages: readonly Message[]): string {
   const content = messages.filter((message) => message.role === "user").at(-1)?.content ?? "";
@@ -47,6 +51,10 @@ function recentToolOutput(messages: readonly Message[]): string {
 }
 
 export default function (pi: ExtensionAPI) {
+  // Workers AI quirk: assistant tool-call messages with content: null are
+  // rejected — replace with "". Applies to parent and subagent alike.
+  pi.on("before_provider_request", (event) => fixAssistantNullContent(event.payload));
+
   let config: RouterConfig = loadRouterConfig().config;
   let pinnedType: WorkType | null = null;
   let lastClassification: (WorkClassification & { workType: WorkType | null }) | null = null;
@@ -196,7 +204,7 @@ export default function (pi: ExtensionAPI) {
         config,
         taskStatement: params.task_statement,
       });
-      const plan = buildDispatch({ workType: params.work_type, seed, config });
+      const plan = buildDispatch({ workType: params.work_type, seed, config, extensionPath: extensionUrl });
       const result = await dispatchWork({ plan, cwd: ctx.cwd, config, runner: spawnRunner, signal });
       ledger.append({
         kind: "dispatch",
@@ -266,7 +274,7 @@ export default function (pi: ExtensionAPI) {
       // A manual dispatch has no captured tool output; the task statement carries the context.
       const workType = pinnedType ?? "fix-errors";
       const seed = buildSeed({ workType, recentOutput: "", cwd: ctx.cwd, config, taskStatement: task });
-      const plan = buildDispatch({ workType, seed, config });
+      const plan = buildDispatch({ workType, seed, config, extensionPath: extensionUrl });
       ctx.ui.notify(`router: dispatching to ${plan.model}…`, "info");
       const result = await dispatchWork({ plan, cwd: ctx.cwd, config, runner: spawnRunner });
       ledger.append({

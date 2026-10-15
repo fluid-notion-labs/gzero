@@ -36,10 +36,10 @@ export function buildClassifierState(input: {
 /** What each choice means, phrased for the classifier. */
 export const WORK_TYPE_CRITERIA: Record<WorkType, string> = {
   plan: "The user asks to plan upcoming work: propose steps, sequencing, or an approach before doing it",
-  research: "Read, understand, or explain; questions about how things work; no intent to change code",
+  research: "Read, understand, or explain; questions about how things work; any conversational request with no code or file change involved",
   architect: "Design or restructure across modules or systems: new components, APIs, data flow, boundaries",
   "medium-codefix": "Fix or implement something localized but non-trivial: real logic changes, tests, or refactors",
-  "easy-codefix": "A small, obvious change: one-liners, renames, typos, copy tweaks, config values",
+  "easy-codefix": "A small, obvious change to code or files: one-liners, renames, typos, config values — the request names or clearly implies a concrete edit",
   "fix-warnings": "Clear compiler or linter warnings to clean up; the recent tool output shows warnings",
   "fix-errors": "Compile or runtime errors to fix; the recent tool output shows errors, or the user reports a failure",
 };

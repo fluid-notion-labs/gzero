@@ -22,6 +22,8 @@ export function buildDispatch(opts: {
   workType: WorkType;
   seed: string;
   config: RouterConfig;
+  /** Loaded via -e so the subagent gets the same compat fixes. */
+  extensionPath?: string;
 }): DispatchPlan {
   const model = opts.config.blessed[opts.workType];
   const modelId = `${model.provider}/${model.id}`;
@@ -33,6 +35,7 @@ export function buildDispatch(opts: {
     "--tools",
     opts.config.delegation.subagentTools.join(","),
   ];
+  if (opts.extensionPath) args.push("-e", opts.extensionPath);
   if (model.thinkingLevel) args.push("--thinking-level", model.thinkingLevel);
   args.push(opts.seed);
   return { command: opts.config.delegation.piCommand, args, model: modelId };
