@@ -18,6 +18,15 @@ import type {
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { buildItemTree, flattenTree, type RawItem } from "./items-tree.ts";
+import {
+  getLoadedSkills,
+} from "./skills.ts";
+import {
+  SKILLS_STRIP_RIGHT,
+  SKILLS_STRIP_WIDTH,
+  SkillsStrip,
+  initialSkillsStripMode,
+} from "./skills-strip.ts";
 
 export interface ItemRow {
   id: string;
@@ -386,9 +395,14 @@ export class ItemsPaneController {
   private stripPane: ItemsPane | null = null; // the always-on rail
   private stripHandle: OverlayHandle | null = null;
   private stripDone: ((result: undefined) => void) | null = null;
+  private skillsPane: SkillsStrip | null = null; // loaded-skills column, left of the rail
+  private skillsHandle: OverlayHandle | null = null;
+  private skillsDone: ((result: undefined) => void) | null = null;
   private opening = false;
   /** Whether the 1-column strip runs at all (CX_TASKS_STRIP=0 disables). */
   private readonly stripOn = initialStripMode() === "strip";
+  /** Whether the loaded-skills column runs (CX_SKILLS_STRIP=0 disables). */
+  private readonly skillsStripOn = initialSkillsStripMode() === "strip";
 
   /** True while the full panel is open. */
   get active(): boolean {
@@ -404,9 +418,10 @@ export class ItemsPaneController {
     await this.open(ctx);
   }
 
-  /** Session start: start the always-on strip (panel stays closed). */
+  /** Session start: start the always-on strip and skills column (panel stays closed). */
   async start(ctx: ExtensionContext): Promise<void> {
     await this.ensureStrip(ctx);
+    await this.ensureSkillsStrip(ctx);
   }
 
   /**
@@ -431,6 +446,7 @@ export class ItemsPaneController {
           this.pane = pane;
           this.opening = false;
           this.stripHandle?.setHidden(true);
+          this.skillsHandle?.setHidden(true);
           return pane;
         },
         {
@@ -458,10 +474,11 @@ export class ItemsPaneController {
       this.done = null;
       this.opening = false;
       this.stripHandle?.setHidden(false);
+      this.skillsHandle?.setHidden(false);
     }
   }
 
-  /** Close the panel; the strip returns. */
+  /** Close the panel; the strip and skills column return. */
   close(): void {
     this.pane?.dispose();
     const done = this.done;
@@ -471,6 +488,7 @@ export class ItemsPaneController {
     this.opening = false;
     done?.(undefined);
     this.stripHandle?.setHidden(false);
+    this.skillsHandle?.setHidden(false);
   }
 
   /** Full teardown on session shutdown. */
@@ -482,6 +500,12 @@ export class ItemsPaneController {
     this.stripHandle = null;
     this.stripPane = null;
     done?.(undefined);
+    this.skillsPane?.dispose();
+    const skillsDone = this.skillsDone;
+    this.skillsDone = null;
+    this.skillsHandle = null;
+    this.skillsPane = null;
+    skillsDone?.(undefined);
   }
 
   async refresh(): Promise<void> {
@@ -490,6 +514,8 @@ export class ItemsPaneController {
       await this.pane.refresh();
       this.syncVisibility();
     }
+    // The skills column derives from live state on every render; nothing
+    // to refresh here.
   }
 
   private async ensureStrip(ctx: ExtensionContext): Promise<void> {
@@ -532,6 +558,50 @@ export class ItemsPaneController {
       this.stripPane = null;
       this.stripHandle = null;
       this.stripDone = null;
+      this.opening = false;
+    }
+  }
+
+  /**
+   * The loaded-skills column: a passive narrow overlay left of the rail.
+   * Visible only when skills are loaded this session (checked every
+   * render cycle via `visible`, so loading one makes it appear without
+   * any explicit refresh).
+   */
+  private async ensureSkillsStrip(ctx: ExtensionContext): Promise<void> {
+    if (!this.skillsStripOn || this.skillsPane || this.opening || ctx.mode !== "tui" || !ctx.hasUI) return;
+    this.opening = true;
+    const pane = new SkillsStrip();
+    try {
+      await ctx.ui.custom(
+        (tui, theme, _keybindings, done) => {
+          pane.attach(tui, theme);
+          this.skillsDone = done;
+          this.skillsPane = pane;
+          this.opening = false;
+          return pane;
+        },
+        {
+          overlay: true,
+          overlayOptions: () => ({
+            width: SKILLS_STRIP_WIDTH,
+            minWidth: SKILLS_STRIP_WIDTH,
+            maxHeight: "96%",
+            anchor: "top-right",
+            margin: { top: 2, right: SKILLS_STRIP_RIGHT },
+            nonCapturing: true,
+            visible: (termWidth: number) => termWidth >= 60 && getLoadedSkills().length > 0,
+          }),
+          onHandle: (handle) => {
+            this.skillsHandle = handle;
+          },
+        },
+      );
+    } finally {
+      pane.dispose();
+      this.skillsPane = null;
+      this.skillsHandle = null;
+      this.skillsDone = null;
       this.opening = false;
     }
   }

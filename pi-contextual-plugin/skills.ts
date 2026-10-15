@@ -201,11 +201,17 @@ export function skillBody(file: string): string {
 export class SkillsAutocomplete implements AutocompleteProvider {
   triggerCharacters = ["#"];
 
-  constructor(
-    private fallback: AutocompleteProvider,
-    /** Current skills, or null when discovery hasn't finished yet. */
-    private getSkills: () => SkillEntry[] | null,
-  ) {}
+  private fallback: AutocompleteProvider;
+  /** Current skills, or null when discovery hasn't finished yet. */
+  private getSkills: () => SkillEntry[] | null;
+
+  // Explicit field assignment (no parameter properties): node's strip-only
+  // TS loader rejects parameter properties, and this module is imported by
+  // test-reachable modules (items-pane → skills-strip).
+  constructor(fallback: AutocompleteProvider, getSkills: () => SkillEntry[] | null) {
+    this.fallback = fallback;
+    this.getSkills = getSkills;
+  }
 
   private tokenAt(line: string, cursorCol: number): string {
     let start = cursorCol;
@@ -270,8 +276,20 @@ export class SkillsAutocomplete implements AutocompleteProvider {
 // binding, so reassignment survives jiti's module interop.
 const loadedSkills = new Map<string, SkillEntry>();
 
+// Loaded-skill change notifications: the skills strip (and any future
+// surface) re-renders when a skill is loaded. A listener Set, not an
+// exported binding, so registration survives jiti's module interop.
+const skillsListeners = new Set<() => void>();
+
+/** Subscribe to loaded-skill changes; returns an unsubscribe function. */
+export function onSkillsChanged(listener: () => void): () => void {
+  skillsListeners.add(listener);
+  return () => skillsListeners.delete(listener);
+}
+
 export function addLoadedSkill(entry: SkillEntry): void {
   loadedSkills.set(`${entry.vendor}/${entry.name.toLowerCase()}`, entry);
+  for (const listener of [...skillsListeners]) listener();
 }
 
 export function getLoadedSkills(): SkillEntry[] {
@@ -360,13 +378,20 @@ class SkillsPicker implements Component {
   /** Wrapped detail body, cached per (file, width). */
   private bodyCache: { file: string; width: number; lines: string[] } | null = null;
 
+  private entries: SkillEntry[];
+  private theme: Theme;
+  private done: (result?: SkillEntry) => void;
+
   constructor(
-    private entries: SkillEntry[],
-    private theme: Theme,
-    private done: (result?: SkillEntry) => void,
+    entries: SkillEntry[],
+    theme: Theme,
+    done: (result?: SkillEntry) => void,
     /** Injected by ctx.ui.custom; optional for tests. */
     keybindings?: KeybindingsManager,
   ) {
+    this.entries = entries;
+    this.theme = theme;
+    this.done = done;
     this.nav = viewerNav(keybindings);
     this.kb = keybindings;
     this.input.focused = true;

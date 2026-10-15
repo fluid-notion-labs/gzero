@@ -71,6 +71,11 @@ contextual only via MCP — no direct SQLite or hub access.
   priority, auto-hidden when empty, with a rule under its title — the
   strip hides while the panel covers its corner. `CX_TASKS_STRIP=0`
   removes the strip and restores panel-only behavior
+- A **loaded-skills column** sits left of the rail: one ✦-marked skill
+  name per line for every skill loaded this session. Passive display
+  only — loading happens in the skills picker or the contexture panel's
+  skills search; the column appears when the first skill is loaded and
+  never reaches the chat area. `CX_SKILLS_STRIP=0` removes it
 - warns on a stale `cx-mcp` (missing tools via `tools/list`)
 - offers to install contextual on first run if `cx-mcp` is missing
 
