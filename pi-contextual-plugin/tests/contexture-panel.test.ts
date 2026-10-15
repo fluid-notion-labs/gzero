@@ -94,13 +94,13 @@ test("up/down move the cursor within bounds", () => {
   assert.equal(p.selected.node.id, "t1");
 });
 
-test("ctrl+w closes the panel (cutover: ctrl+w toggles)", () => {
+test("ctrl+q closes the panel (ctrl+q toggles, da36)", () => {
   let closed = false;
   const p = make(tree(), () => {
     closed = true;
   });
-  p.handleInput("\x17"); // ctrl+w
-  assert.equal(closed, true, "ctrl+w closes like esc/alt+c");
+  p.handleInput("\x11"); // ctrl+q
+  assert.equal(closed, true, "ctrl+q closes like esc");
 });
 
 test("showSection opens directly on a section with its first entry", () => {
@@ -158,14 +158,14 @@ test("collapsing above the cursor keeps the cursor valid", () => {
   assert.ok(["tier-global", "skills", "product-stance"].includes(sel.node.id));
 });
 
-test("done fires on escape, q and alt+c", () => {
+test("done fires on escape, q and ctrl+q", () => {
   let closed = 0;
   const p = make(tree(), () => {
     closed++;
   });
   p.handleInput("\x1b");
   p.handleInput("q");
-  p.handleInput("\x1b\x63"); // alt+c
+  p.handleInput("\x11"); // ctrl+q
   assert.equal(closed, 3);
 });
 

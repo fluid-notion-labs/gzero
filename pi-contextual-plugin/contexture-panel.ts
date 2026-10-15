@@ -1,4 +1,4 @@
-// contexture-panel.ts — the unified left-tree pane (alt+c).
+// contexture-panel.ts — the unified left-tree pane (ctrl+q / /contexture).
 //
 // One pane, fresh build (design: work item 2c31). A vertical tree
 // along the left with three top-levels — tasks | context |
@@ -6,9 +6,10 @@
 // strip along the top: the title and the section headings live in the
 // tree column itself, so navigation is one cursor over one column.
 //
-// The existing overlays (ctrl+w panel, ctrl+b viewer, alt-s picker)
-// stay untouched until this reaches parity; remapping happens in the
-// P5 cutover only.
+// The panel is the primary since the P5 cutover (da36 bindings):
+// ctrl+q toggles, /contexture [section] opens with an optional
+// section, and the retired overlays (ctrl+w viewer, ctrl+b viewer)
+// are gone.
 //
 // P0 skeleton: tree interaction (cursor, expand/collapse, top-level
 // jumps) over a static tree. Data wiring (tasks, tiers, ws sections)
@@ -493,8 +494,8 @@ export class ContexturePanel implements Component, Focusable {
     if (this.mode === "search") this.runSearch();
   }
 
-  /** Open directly on a section (cutover: ctrl+w and /context land on
-   * the panel). Index-based so callers can't depend on labels. */
+  /** Open directly on a section (/contexture context starts here).
+   * Index-based so callers can't depend on labels. */
   showSection(index: number): void {
     const count = this.nodes.length;
     if (count === 0) return;
@@ -532,14 +533,13 @@ export class ContexturePanel implements Component, Focusable {
       this.handleNoteInput(data);
       return;
     }
-    // alt+c / ctrl+w toggle — the overlay owns input while active, so
-    // the extension shortcut can't see it (same pattern as the old
+    // ctrl+q toggles — the overlay owns input while active, so the
+    // extension shortcut can't see it (same pattern as the old
     // ctrl+w viewer).
     if (
       this.nav.cancel(data) ||
       matchesKey(data, "q") ||
-      matchesKey(data, "alt+c") ||
-      matchesKey(data, "ctrl+w")
+      matchesKey(data, "ctrl+q")
     ) {
       this.done();
     } else if (this.handleContentScroll(data)) {
@@ -1050,7 +1050,7 @@ export class ContexturePanel implements Component, Focusable {
             : this.mode === "move"
               ? `↕ reorder · enter/esc done`
               : `/ search · tab/shift+tab section · ↑↓ move · e edit · m move · pgup/pgdn page · ` +
-                `${keyHint(this.kb, "tui.select.cancel", "esc")}/alt+c close`;
+                `${keyHint(this.kb, "tui.select.cancel", "esc")}/ctrl+q close`;
 
     return boxFrame(width, [
       this.topBarLine(inner),

@@ -6,11 +6,9 @@ contextual only via MCP — no direct SQLite or hub access.
 - registers `cx-mcp` so the model gets the `mcp__context__*` tools
 - injects the resolved default context (global + project tiers) into the
   system prompt on every turn
-- plain `/context` opens the **contexture panel** on the context tier
-  (see below) — ground truth for what is injected this session: the
-  `<context>` block tiers (global / local / skillbag) and the
-  session-loaded skills. Note the skillbag is *not* sent to the model —
-  its atoms load only when a tag is pulled or a skill is
+- plain `/context` shows usage; it no longer opens anything —
+  `/contexture` is the panel. Note the skillbag is *not* sent to the
+  model — its atoms load only when a tag is pulled or a skill is
   referenced/loaded. The injection refreshes itself: the cache is
   stamped with the bag file's mtime, so any change — the model's
   `add`/`remove` calls, `/context add`, `cx` in a shell, another
@@ -40,8 +38,9 @@ contextual only via MCP — no direct SQLite or hub access.
   idempotent (bag dedupes by text); explicitly removed atoms stay
   removed (tombstones). Plain hashtags still type normally — just keep
   typing past the popup. Skill discovery is precached on session start
-- `Ctrl+W`, `alt+c`, `/panel` or `/workflow` toggles the **contexture
-  panel**: a full-height left-tree pane with three sections in a top
+- `Ctrl+Q` or `/contexture` toggles the **contexture panel**
+  (`/contexture [tasks|context|documentation]` opens directly on a
+  section): a full-height left-tree pane with three sections in a top
   bar — `tasks` (the work-item tree with queue order, status
   transitions, priority, notes and `m` move mode), `context`
   (injection tiers + session-loaded skills; `/` searches the skill
@@ -50,16 +49,23 @@ contextual only via MCP — no direct SQLite or hub access.
   per-section cursor memory, ↑↓/j/k move, enter/←→ expand and open
   details, `/` searches the active section (fuzzy, with `is:open`
   / `is:closed` / `is:active` / `status:X` filters), pgup/pgdn page,
-  home/end jump, esc/q/ctrl+w/alt+c close. Markdown details re-flow to
-  the pane width and tables render as aligned text
+  home/end jump, esc/q/ctrl+q close. Markdown details re-flow to the
+  pane width and tables render as aligned text
+- **Backtick taps** also open the panel: double-tap `` opens it,
+  single taps still type a literal backtick (held until the next
+  keystroke, so typing code spans keeps order). `CX_PANEL_TAPS=3`
+  switches the trigger to a triple tap — then double-tap types `` (an
+  empty inline code span) and only a genuine triple opens; triple is
+  exactly the markdown fence, so pick your clash. `CX_PANEL_TAPS=0`
+  disables the interception and restores the default editor
 - The **tasks strip** is always visible: a narrow bordered rail on the
   right edge, one glyph per task in timeline order — ✓ closed at top
   (past), ● in-progress, ○ open — so new tasks appear at the bottom and
   work flows upward as it completes. In-progress tasks spin (braille
   frames; the animation timer only runs while a spinner is visible).
   Blocked tasks show ⊘, overflow shows ⋮ after dropping the oldest
-  rows, and an empty strip shows a quiet `·`. `ctrl+q` (or `/tasks`,
-  alias `/items`) toggles the full **panel**: a non-capturing overlay
+  rows, and an empty strip shows a quiet `·`. `/tasks` (alias
+  `/items`) toggles the full **panel**: a non-capturing overlay
   anchored top-right listing work items with status glyphs and
   priority, auto-hidden when empty, with a rule under its title — the
   strip hides while the panel covers its corner. `CX_TASKS_STRIP=0`

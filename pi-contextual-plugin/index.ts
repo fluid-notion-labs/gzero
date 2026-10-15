@@ -28,6 +28,7 @@ import {
   type SkillEntry,
   addLoadedSkill,
 } from "./skills.ts";
+import { TapEditor, tapTrigger } from "./panel-taps.ts";
 import {
   ContexturePanel,
   docsToNodes,
@@ -236,9 +237,10 @@ export function bucketTiers(rendered: string): TierSection[] {
 
 // ---- Contexture panel: the unified tasks / context / documentation pane ----
 // Tree logic lives in items-tree.ts, the panel component in
-// contexture-panel.ts (both unit-tested). P5 cutover: the Ctrl+W tabbed
-// viewer (workflow-viewer.ts) and the /context tier viewer are retired —
-// ctrl+w, /workflow and plain /context all land on this panel.
+// contexture-panel.ts (both unit-tested). P5 cutover shipped, then
+// da36 consolidated the bindings: ctrl+q and /contexture are the only
+// openers — the ctrl+w tabbed viewer, alt+c, /panel, /workflow and
+// plain-/context opening are all gone.
 
 import {
   buildItemTree,
@@ -258,7 +260,7 @@ async function cxJson(args: string[]): Promise<unknown> {
   return JSON.parse(res.stdout);
 }
 
-async function loadWorkflowSections(): Promise<TierSection[]> {
+async function loadDocSections(): Promise<TierSection[]> {
   const list = (await cxJson(["ws", "list", "--json"])) as {
     name: string;
     kind: string;
@@ -408,13 +410,13 @@ async function projectScope(): Promise<string | null> {
   }
 }
 
-/** The contexture panel: alt+c / /panel. The unified pane replacing
- * the overlay family once it reaches parity (work item 2c31). */
+/** The contexture panel: ctrl+q / /contexture. The unified pane
+ * (work item 2c31); the only panel since the P5 cutover. */
 async function openContexturePanel(
   ctx: ExtensionContext,
   loadTiers: () => Promise<TierSection[]>,
-  /** Open directly on this section (ctrl+w and /context land on the
-   * panel; /context starts on the context tier). */
+  /** Open directly on this section (/contexture [section] starts
+   * here). */
   section?: "tasks" | "context" | "documentation",
 ): Promise<void> {
   if (ctx.mode !== "tui") {
@@ -425,7 +427,7 @@ async function openContexturePanel(
     cxJson(["item", "list", "--json"]) as Promise<RawItem[]>,
     loadTiers(),
     ensureSkills(),
-    loadWorkflowSections(),
+    loadDocSections(),
     presenceLabel(),
   ]);
   const unwrap = <T>(r: PromiseSettledResult<T>): T | null =>
@@ -502,6 +504,10 @@ export default function (pi: ExtensionAPI) {
   let bagStampAtResolve = 0;
   /** The #skill autocomplete stacks once per process; sessions may start more than once. */
   let autocompleteInstalled = false;
+  /** Set once the tap editor is installed; holds the session context
+   * the TapEditor callback needs to open the panel. */
+  let editorInstalled = false;
+  let uiCtx: ExtensionContext | null = null;
   /** Skill references already distilled into the bag this session. */
   const addedToBag = new Set<string>();
 
@@ -583,13 +589,8 @@ export default function (pi: ExtensionAPI) {
     return resolvedBody;
   };
 
-  // Plain /context: open the contexture panel on the context tier —
-  // exactly what is injected this session (global / local / skillbag
-  // plus session-loaded skills). The subcommands above (reload, add,
-  // local/global condense) stay as they are.
-  const openContextBag = async (ctx: ExtensionContext): Promise<void> => {
-    await openContexturePanel(ctx, loadTierSections, "context");
-  };
+  // Plain /context no longer opens anything (da36): /contexture is the
+  // panel. A notification shows the resolved context in non-TUI modes.
 
   // The model's MCP tools. Registered in the factory; pi connects the
   // server when the session starts. A user mcp.json entry named "context"
@@ -613,6 +614,21 @@ export default function (pi: ExtensionAPI) {
           const cached = getSkillsCache();
           return cached.length > 0 ? cached : null;
         }),
+      );
+    }
+    // Backtick taps open the panel (da36): a CustomEditor subclass is
+    // the only sanctioned way to see every keystroke, which tap
+    // counting needs (a single held tap must flush when any other key
+    // arrives, in order). Everything else forwards to super untouched.
+    // CX_PANEL_TAPS=0 keeps the default editor.
+    if (!editorInstalled && ctx.mode === "tui" && tapTrigger() !== 0) {
+      editorInstalled = true;
+      uiCtx = ctx;
+      ctx.ui.setEditorComponent(
+        (tui, theme, keybindings) =>
+          new TapEditor(tui, theme, keybindings, () => {
+            if (uiCtx) void openContexturePanel(uiCtx, loadTierSections);
+          }),
       );
     }
     const cxMcp = await findCxMcp();
@@ -678,16 +694,19 @@ export default function (pi: ExtensionAPI) {
     itemsPane.shutdown();
   });
 
-  // ctrl+q → toggle the full task panel; the 1-column strip on the
-  // right edge is always visible underneath. CX_TASKS_STRIP=0 removes
-  // the strip and restores the old panel-only behavior.
+  // ctrl+q → toggle the contexture panel (tasks | context |
+  // documentation). While it's open the overlay owns input and closes
+  // on the same ctrl+q (ContexturePanel.handleInput); esc keeps
+  // working. The tasks sidebar stays reachable via /tasks (/items);
+  // the 1-column strip on the right edge is always visible underneath,
+  // CX_TASKS_STRIP=0 removes it.
   pi.registerShortcut(Key.ctrl("q"), {
-    description: "Toggle the task panel (strip stays)",
-    handler: (ctx) => itemsPane.toggle(ctx),
+    description: "Toggle the contexture panel (tasks / context / documentation)",
+    handler: (ctx) => openContexturePanel(ctx, loadTierSections),
   });
 
   pi.registerCommand("tasks", {
-    description: "Toggle the task panel (same as ctrl+q); 'refresh' refetches now",
+    description: "Toggle the tasks sidebar; 'refresh' refetches now, 'off' closes it",
     handler: async (args: string, ctx: ExtensionCommandContext) => {
       const sub = args.trim().split(/\s+/)[0] ?? "";
       if (sub === "off") {
@@ -714,30 +733,9 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  pi.registerCommand("workflow", {
-    description: "Open the contexture panel (same as ctrl+w)",
-    handler: async (_args: string, ctx: ExtensionCommandContext) => {
-      await openContexturePanel(ctx, loadTierSections);
-    },
-  });
-
-  // Ctrl+W → the contexture panel (P5 cutover: the unified pane
-  // replaces the retired tabbed workflow viewer). First-class pi
-  // shortcut instead of an editor subclass: matched before app
-  // keybindings and listed under Extensions in /hotkeys. It shadows
-  // `deleteWordBackward` (still on alt+backspace); /workflow is the
-  // discoverable path for the same action. Toggles: while the panel is
-  // open the overlay owns input and closes on the same ctrl+w
-  // (ContexturePanel.handleInput); esc keeps working too.
-  pi.registerShortcut(Key.ctrl("w"), {
-    description: "Toggle the contexture panel (tasks / context / documentation)",
-    handler: (ctx) => openContexturePanel(ctx, loadTierSections),
-  });
-
-  // ---- contexture panel (alt+c) — the unified pane ----
+  // ---- the contexture panel (ctrl+q / /contexture) ----
   // One left-tree pane with tasks / context / documentation
-  // (design: work item 2c31); the primary panel since the P5 cutover.
-  // /panel is the discoverable path.
+  // (design: work item 2c31); the only panel since the P5 cutover.
   /** Tiers for the panel's context subtree: resolved via the same
    * cached resolution the injection uses. Empty on failure — the pane
    * shows a placeholder. */
@@ -748,15 +746,16 @@ export default function (pi: ExtensionAPI) {
     if (!body) return [];
     return bucketTiers(body).filter((s) => s.nodes.length > 0);
   };
-  pi.registerShortcut(Key.alt("c"), {
-    description: "Toggle the contexture panel (tasks / context / documentation)",
-    handler: (ctx) => openContexturePanel(ctx, loadTierSections),
-  });
 
-  pi.registerCommand("panel", {
-    description: "Toggle the contexture panel (same as alt+c)",
-    handler: async (_args: string, ctx: ExtensionCommandContext) => {
-      await openContexturePanel(ctx, loadTierSections);
+  pi.registerCommand("contexture", {
+    description: "Toggle the contexture panel (same as ctrl+q); optional section: /contexture [tasks|context|documentation]",
+    handler: async (args: string, ctx: ExtensionCommandContext) => {
+      const section = args.trim().split(/\s+/)[0] ?? "";
+      if (section === "tasks" || section === "context" || section === "documentation") {
+        await openContexturePanel(ctx, loadTierSections, section);
+      } else {
+        await openContexturePanel(ctx, loadTierSections);
+      }
     },
   });
 
@@ -876,7 +875,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.registerCommand("context", {
     description:
-      "Show exactly what is sent to the model; 'reload' re-resolves; 'add <text>' saves an atom; 'local|global <text>' condenses via the model then saves to that tier",
+      "Context operations: 'reload' re-resolves; 'add <text>' saves an atom; 'local|global <text>' condenses via the model then saves to that tier. Plain /context shows usage — /contexture opens the panel",
     handler: async (args: string, ctx: ExtensionCommandContext) => {
       const cxMcp = await findCxMcp();
       if (!cxMcp) {
@@ -985,12 +984,14 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
-      // Plain /context: show what the model is injected. In TUI mode the
-      // tiered overlay; elsewhere a notification.
-      // Uses the same cache as injection, so this shows exactly what the
-      // model gets.
+      // Plain /context (da36): no panel opening — /contexture is the
+      // panel. Show usage in TUI mode; non-TUI modes still get the
+      // resolved context as a notification (same cache as injection).
       if (ctx.mode === "tui") {
-        await openContextBag(ctx);
+        ctx.ui.notify(
+          "usage: /context [reload | add <text> | local|global <text>] — /contexture opens the panel",
+          "info",
+        );
         return;
       }
       try {
