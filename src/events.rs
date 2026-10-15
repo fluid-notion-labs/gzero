@@ -8,7 +8,7 @@
 //! care about, so local edits, hub sync and a second process's `cx`
 //! calls all flow identically.
 //!
-//! Scope: the ws doc only — items and sections. Bag atoms ride sqlite
+//! Scope: the ws doc only — items and sections. Atom changes ride sqlite
 //! and are already covered by the plugin's bagStamp staleness check.
 //!
 //! Object model (items.rs / sections.rs):
@@ -72,7 +72,7 @@ impl ChangeEvent {
 }
 
 /// A store that can broadcast semantic change events. Implemented by
-/// [`AutomergeStore`]; the sqlite bag store emits nothing (items and
+/// [`AutomergeStore`]; the sqlite atom store emits nothing (items and
 /// sections live solely in the automerge doc).
 pub trait ChangeFeed {
     /// Start receiving events. The returned receiver gets every event
