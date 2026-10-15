@@ -266,25 +266,31 @@ async function loadDocSections(): Promise<TierSection[]> {
     kind: string;
     title: string;
   }[];
+  // One spawn per section: fetch them ALL at once. Serially this was
+  // the panel's slowest leg — 16 × ~33ms ≈ 533ms of the ~600ms open;
+  // parallel it's one spawn's time.
+  const shows = await Promise.allSettled(
+    list.map(
+      (s) =>
+        cxJson(["ws", "show", s.name, "--json"]) as Promise<{
+          title?: string;
+          body?: string;
+        }>,
+    ),
+  );
   const sections: TierSection[] = [];
-  for (const s of list) {
+  list.forEach((s, i) => {
     let body = "(empty)";
     let title = s.title || s.name;
-    try {
-      const detail = (await cxJson(["ws", "show", s.name, "--json"])) as {
-        title?: string;
-        body?: string;
-      };
-      if (detail.body) body = renderChecklist(detail.body, s.kind);
-      if (detail.title) title = detail.title;
-    } catch {
-      // body fetch failed; the list entry still shows
-    }
+    const detail = shows[i].status === "fulfilled" ? shows[i].value : null;
+    if (detail?.body) body = renderChecklist(detail.body, s.kind);
+    if (detail?.title) title = detail.title;
+    // body fetch failed; the list entry still shows
     sections.push({
       label: s.name,
       nodes: [{ label: title, text: body }],
     });
-  }
+  });
   return sections;
 }
 
