@@ -30,6 +30,8 @@ pub struct SessionInfo {
     pub pid: i64,
     /// Optional human label (e.g. "panel dev"), empty when unset.
     pub label: String,
+    /// jj workspace name, or "default" for the default checkout.
+    pub workspace: String,
     /// First heartbeat this session id was seen.
     pub started_at: i64,
     /// Last heartbeat (unix seconds).
@@ -41,6 +43,47 @@ pub fn now() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0)
+}
+
+/// Best-effort current jj workspace name. Returns "default" when the
+/// current working directory is the (colocated) repo root, otherwise
+/// the basename of the workspace root. Falls back to "unknown" if
+/// either the cwd is not a jj workspace or git common-dir is missing.
+pub fn current_workspace() -> String {
+    let ws_root = run_str(&["jj", "workspace", "root", "--no-pager"]);
+    let git_common = run_str(&["git", "rev-parse", "--git-common-dir"]);
+
+    let repo_root = git_common
+        .as_deref()
+        .and_then(|g| {
+            std::path::Path::new(g)
+                .parent()
+                .map(|p| p.to_string_lossy().to_string())
+        })
+        .or_else(|| std::env::current_dir().ok().map(|p| p.display().to_string()));
+
+    match (ws_root, repo_root) {
+        (Some(ws), Some(repo)) if ws == repo => "default".to_string(),
+        (Some(ws), _) => std::path::Path::new(&ws)
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| "unknown".to_string()),
+        _ => "unknown".to_string(),
+    }
+}
+
+fn run_str(args: &[&str]) -> Option<String> {
+    std::process::Command::new(args[0])
+        .args(&args[1..])
+        .output()
+        .ok()
+        .and_then(|o| {
+            if o.status.success() {
+                Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+            } else {
+                None
+            }
+        })
 }
 
 /// Session + machine identity from the environment. The pi plugin sets
@@ -70,14 +113,15 @@ impl SqliteStore {
     pub fn heartbeat(&self, s: &SessionInfo) -> Result<()> {
         self.conn().execute(
             "INSERT INTO sessions
-                (session_id, machine, scope, cwd, pid, label, started_at, last_seen)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                (session_id, machine, scope, cwd, pid, label, workspace, started_at, last_seen)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
              ON CONFLICT(session_id) DO UPDATE SET
                 machine = excluded.machine,
                 scope = excluded.scope,
                 cwd = excluded.cwd,
                 pid = excluded.pid,
                 label = excluded.label,
+                workspace = excluded.workspace,
                 last_seen = excluded.last_seen",
             params![
                 s.session_id,
@@ -86,6 +130,7 @@ impl SqliteStore {
                 s.cwd,
                 s.pid,
                 s.label,
+                s.workspace,
                 s.started_at,
                 s.last_seen
             ],
@@ -107,7 +152,7 @@ impl SqliteStore {
     /// `exclude` (the caller). Oldest first for stable display.
     pub fn active_peers(&self, scope: &str, exclude: &str, ttl: i64) -> Result<Vec<SessionInfo>> {
         let mut stmt = self.conn().prepare(
-            "SELECT session_id, machine, scope, cwd, pid, label, started_at, last_seen
+            "SELECT session_id, machine, scope, cwd, pid, label, workspace, started_at, last_seen
              FROM sessions
              WHERE scope = ?1 AND session_id != ?2 AND last_seen >= ?3
              ORDER BY started_at",
@@ -120,7 +165,7 @@ impl SqliteStore {
     /// All presence rows, stale included — for inspection (`cx sessions`).
     pub fn all_sessions(&self) -> Result<Vec<SessionInfo>> {
         let mut stmt = self.conn().prepare(
-            "SELECT session_id, machine, scope, cwd, pid, label, started_at, last_seen
+            "SELECT session_id, machine, scope, cwd, pid, label, workspace, started_at, last_seen
              FROM sessions ORDER BY started_at",
         )?;
         let rows = stmt.query_map([], session_row)?;
@@ -137,8 +182,9 @@ fn session_row(r: &rusqlite::Row) -> rusqlite::Result<SessionInfo> {
         cwd: r.get(3)?,
         pid: r.get(4)?,
         label: r.get(5)?,
-        started_at: r.get(6)?,
-        last_seen: r.get(7)?,
+        workspace: r.get(6)?,
+        started_at: r.get(7)?,
+        last_seen: r.get(8)?,
     })
 }
 
@@ -154,6 +200,7 @@ mod tests {
             cwd: "/tmp".into(),
             pid: 1,
             label: String::new(),
+            workspace: "default".into(),
             started_at: seen,
             last_seen: seen,
         }

@@ -389,15 +389,23 @@ async function presenceLabel(): Promise<string> {
     const rows = (await cxJson(["sessions", "--json"])) as Array<{
       session_id: string;
       scope: string;
+      workspace: string;
       last_seen: number;
     }>;
     const me = process.env.CX_SESSION_ID ?? "";
     const now = Date.now() / 1000;
     const project = await projectScope();
-    const n = rows.filter(
+    const peers = rows.filter(
       (r) => r.session_id !== me && r.scope === project && now - r.last_seen < 300,
-    ).length;
-    return n === 0 ? "" : `${n} other session${n === 1 ? "" : "s"} here`;
+    );
+    if (peers.length === 0) {
+      return "";
+    }
+    const names = peers
+      .slice(0, 3)
+      .map((r) => (r.workspace && r.workspace !== "default" ? r.workspace : "default"));
+    const extra = peers.length > names.length ? ` +${peers.length - names.length}` : "";
+    return `${peers.length} other session${peers.length === 1 ? "" : "s"}: ${names.join(", ")}${extra}`;
   } catch {
     return "";
   }

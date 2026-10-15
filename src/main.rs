@@ -148,10 +148,11 @@ fn main() {
                 };
                 let m = (contextual::sessions::now() - s.last_seen) / 60;
                 println!(
-                    "{}{}  {}  {}  seen {}m ago",
+                    "{}{}  {}  {}  {}  seen {}m ago",
                     &s.session_id[..s.session_id.len().min(12)],
                     marker,
                     s.scope,
+                    if s.workspace.is_empty() { "default" } else { &s.workspace },
                     if s.cwd.is_empty() { "?" } else { &s.cwd },
                     m
                 );
