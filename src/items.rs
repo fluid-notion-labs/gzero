@@ -1098,7 +1098,7 @@ fn created_millis() -> i64 {
 
 /// Short random hex id: starts at 4 chars, widens on collision. Items
 /// are named, so ids only need to be unique within a scope.
-fn fresh_id(existing: &HashSet<String>) -> String {
+pub fn fresh_id(existing: &HashSet<String>) -> String {
     for len in [4usize, 6, 8, 12] {
         for salt in 0..64u64 {
             let id = hashed_hex(len, salt);

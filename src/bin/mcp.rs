@@ -232,6 +232,11 @@ fn call_tool(
             let mut ws = ws_store()?;
             tool_session_handoff(&args, &mut ws)?
         }
+        "msg_send" | "msg_read" | "broadcast" => match name {
+            "msg_send" => tool_msg_send(&args, store)?,
+            "msg_read" => tool_msg_read(store)?,
+            _ => tool_broadcast(&args, store)?,
+        },
         "item_add" | "item_list" | "item_ready" | "item_get" | "item_edit" | "item_note"
         | "item_delete" | "item_pin" | "item_gate" => {
             let mut ws = ws_store()?;
@@ -309,6 +314,12 @@ fn tool_resolve(args: &serde_json::Value, store: &SqliteStore) -> Result<String,
     if let Some(block) = presence_block(store) {
         out.push_str(&block);
     }
+    // Conversation layer (S3/S3b): unread messages for this session;
+    // unseen broadcasts delivered and drained. Ephemeral sweeps ride
+    // on the same piggyback.
+    if let Some(block) = comms_block(store) {
+        out.push_str(&block);
+    }
     // Handoff slot (S2): the newest open handoff in this scope, unless
     // this session authored it. A pointer, not the full text — the
     // model pulls details with item_get.
@@ -319,6 +330,44 @@ fn tool_resolve(args: &serde_json::Value, store: &SqliteStore) -> Result<String,
         out.push_str(&block);
     }
     Ok(out)
+}
+
+/// Unread messages and unseen broadcasts for this session (S3/S3b).
+/// Messages show until read via msg_read; broadcasts drain on this
+/// delivery (per-session seen state). Also sweeps expired rows. Best-
+/// effort: failures never break resolve.
+fn comms_block(store: &SqliteStore) -> Option<String> {
+    let (me, _) = contextual::sessions::session_identity();
+    let _ = store.sweep_messages(contextual::messages::MESSAGE_TTL_SECS);
+    let _ = store.sweep_broadcasts(contextual::messages::MESSAGE_TTL_SECS);
+    let unread = store.unread_messages(&me).ok()?;
+    let broadcasts = store.unseen_broadcasts(&me).ok()?;
+    if unread.is_empty() && broadcasts.is_empty() {
+        return None;
+    }
+    let mut out = String::new();
+    if !unread.is_empty() {
+        out.push_str(&format!(
+            "\n\n## messages for you\n{} unread — from your session siblings:\n",
+            unread.len()
+        ));
+        for m in unread.iter().take(5) {
+            out.push_str(&format!("- from `{}`: {}\n", m.sender, m.text));
+        }
+        out.push_str("- msg_read drains these; reply with msg_send {to, text}\n");
+    }
+    if !broadcasts.is_empty() {
+        out.push_str(&format!(
+            "\n\n## broadcast board\n{} new — information, not demand:\n",
+            broadcasts.len()
+        ));
+        for b in broadcasts.iter().take(5) {
+            out.push_str(&format!("- from `{}`: {}\n", b.sender, b.text));
+        }
+    }
+    let ids: Vec<String> = broadcasts.iter().map(|b| b.id.clone()).collect();
+    let _ = store.mark_broadcasts_seen(&me, &ids);
+    Some(out)
 }
 
 /// The dedicated resolve slot for the newest open session handoff in
@@ -892,6 +941,66 @@ fn tool_session_handoff(
     ))
 }
 
+/// msg_send (S3): one-to-one conversation between sessions. Sender =
+/// this session's id. Ephemeral: expires by TTL, never stored in the
+/// bag.
+fn tool_msg_send(args: &serde_json::Value, store: &SqliteStore) -> Result<String, String> {
+    let to = args
+        .get("to")
+        .and_then(|t| t.as_str())
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .ok_or("msg_send: 'to' (recipient session id) is required")?;
+    let text = args
+        .get("text")
+        .and_then(|t| t.as_str())
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .ok_or("msg_send: text is required")?;
+    let (me, _) = contextual::sessions::session_identity();
+    let m = store
+        .send_message(to, &me, text)
+        .map_err(|e| e.to_string())?;
+    Ok(format!(
+        "message {} sent to {} — their next resolve shows it; expires in 7 days",
+        m.id, m.dest
+    ))
+}
+
+/// msg_read (S3): drain this session's unread messages (marks them
+/// read).
+fn tool_msg_read(store: &SqliteStore) -> Result<String, String> {
+    let (me, _) = contextual::sessions::session_identity();
+    let unread = store.unread_messages(&me).map_err(|e| e.to_string())?;
+    if unread.is_empty() {
+        return Ok("no unread messages".to_string());
+    }
+    let mut out = format!("{} unread message(s):\n", unread.len());
+    for m in unread.iter().take(10) {
+        out.push_str(&format!("- [{}] from `{}`: {}\n", m.id, m.sender, m.text));
+    }
+    store.mark_messages_read(&me).map_err(|e| e.to_string())?;
+    out.push_str("marked read; reply with msg_send {to, text}");
+    Ok(out)
+}
+
+/// broadcast (S3b): post to the shared board. One-to-all, information
+/// not demand; sessions see it once (drained per-session).
+fn tool_broadcast(args: &serde_json::Value, store: &SqliteStore) -> Result<String, String> {
+    let text = args
+        .get("text")
+        .and_then(|t| t.as_str())
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .ok_or("broadcast: text is required")?;
+    let (me, _) = contextual::sessions::session_identity();
+    let b = store.post_broadcast(&me, text).map_err(|e| e.to_string())?;
+    Ok(format!(
+        "broadcast {} posted — sessions see it once in resolve; expires in 7 days",
+        b.id
+    ))
+}
+
 fn tool_item_list(args: &serde_json::Value, store: &AutomergeStore) -> Result<String, String> {
     let scope = ws_scope_arg(args);
     let mut items = store.item_list(&scope).map_err(|e| e.to_string())?;
@@ -1422,6 +1531,34 @@ const TOOLS: &str = r#"[
         "limit": { "type": "integer", "description": "Default 5, max 20." },
         "scope": { "type": "string", "description": "Omit for the current project." }
       }
+    }
+  },
+  {
+    "name": "msg_send",
+    "description": "Send a short message to another session in this repo (S3): conversation, not memory — ephemeral, expires in 7 days, never stored in the durable bag. 'to' is the recipient session id (see the 'also here' presence block for who is active; sibling sessions show their session id). Their next resolve shows it; msg_read drains.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "to": { "type": "string", "description": "Recipient session id." },
+        "text": { "type": "string", "description": "The message. Keep it conversational and short." }
+      },
+      "required": ["to", "text"]
+    }
+  },
+  {
+    "name": "msg_read",
+    "description": "Read (and mark read) this session's unread messages from other sessions. Resolve already shows unread counts; use this to drain them.",
+    "inputSchema": { "type": "object", "properties": {} }
+  },
+  {
+    "name": "broadcast",
+    "description": "Post to the shared broadcast board (S3b): one-to-all, information not demand — state of the world any session can read ('deploys paused until 5pm'). Ephemeral (7-day TTL); sessions see each broadcast once in resolve, drained per-session.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "text": { "type": "string", "description": "The broadcast. Informational, no action required." }
+      },
+      "required": ["text"]
     }
   },
   {

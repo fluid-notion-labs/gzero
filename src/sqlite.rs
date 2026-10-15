@@ -36,6 +36,26 @@ CREATE TABLE IF NOT EXISTS sessions (
     label      TEXT NOT NULL DEFAULT '',
     started_at INTEGER NOT NULL,
     last_seen  INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS messages (
+    id TEXT PRIMARY KEY,
+    dest TEXT NOT NULL,
+    sender TEXT NOT NULL,
+    text TEXT NOT NULL,
+    created INTEGER NOT NULL,
+    read_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS broadcasts (
+    id TEXT PRIMARY KEY,
+    sender TEXT NOT NULL,
+    text TEXT NOT NULL,
+    created INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS broadcast_reads (
+    broadcast_id TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    read_at INTEGER NOT NULL,
+    PRIMARY KEY (broadcast_id, session_id)
 );";
 
 /// SQLite-backed bag. One row per (text, source) assertion.
