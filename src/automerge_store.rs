@@ -37,6 +37,9 @@ pub struct AutomergeStore {
     path: Option<PathBuf>,
     /// Machine-local harvest hashes (sidecar JSON, never in the doc).
     hashes: BTreeMap<String, String>,
+    /// ChangeFeed subscribers (see events.rs); dead senders are dropped
+    /// at drain time.
+    pub(crate) subscribers: Vec<std::sync::mpsc::Sender<crate::events::ChangeEvent>>,
 }
 
 impl AutomergeStore {
@@ -51,6 +54,7 @@ impl AutomergeStore {
             doc,
             path: path.map(Path::to_path_buf),
             hashes: BTreeMap::new(),
+            subscribers: Vec::new(),
         };
         if !store.has(&ROOT, "atoms") {
             store.doc.put_object(ROOT, "atoms", ObjType::Map)?;
@@ -81,7 +85,13 @@ impl AutomergeStore {
             doc: AutoCommit::load(bytes)?,
             path: None,
             hashes: BTreeMap::new(),
+            subscribers: Vec::new(),
         })
+    }
+
+    /// The doc file this store persists to, if any (`cx watch` polls it).
+    pub fn path(&self) -> Option<&Path> {
+        self.path.as_deref()
     }
 
     /// The whole doc — persistence, transport, offline exchange.

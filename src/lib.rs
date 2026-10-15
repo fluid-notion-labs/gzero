@@ -27,12 +27,14 @@ pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + S
 pub mod automerge_store;
 pub mod hub;
 pub mod items;
+pub mod events;
 pub mod messages;
 pub mod sections;
 pub mod sessions;
 pub mod snapshot;
 pub mod sqlite;
 pub use automerge_store::AutomergeStore;
+pub use events::{ChangeFeed, ChangeEvent};
 pub use sessions::{SessionInfo, PRESENCE_TTL_SECS};
 pub use sqlite::SqliteStore;
 

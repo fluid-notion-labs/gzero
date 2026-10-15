@@ -18,7 +18,7 @@ use contextual::hub::{events_for_snapshot, Event, Hub};
 use contextual::items::{EdgeKind, ItemEdit, MoveTarget, NewItem, Status, WorkItem};
 use contextual::sections::{checklist_progress, Section, SectionKind};
 use contextual::snapshot::Atom;
-use contextual::{source_counts, tag_counts, AutomergeStore, SqliteStore, Storage};
+use contextual::{source_counts, tag_counts, AutomergeStore, ChangeFeed, SqliteStore, Storage};
 
 /// Post events to the hub if configured; warn (don't fail) otherwise.
 fn try_post_events(events: &[Event]) {
@@ -85,6 +85,8 @@ cx item gate <id> [--met|--unmet] [\"text\"]  set/satisfy the close gate
 cx item label <id> add|rm <label>
 cx item edge <id> add|rm blocks|child-of|discovered-from <target>
 cx item rm <id>   delete an item
+cx watch          stream ws-doc change events (items/sections) as JSON lines
+                  until the reader hangs up; polls the doc file (3cd4)
 cx sessions       session presence rows (stale marked; S1 inspection)
 env: CX_DB        bag location (default ~/.pi/agent/context.db)
 env: CX_WS_DB     workflow doc: sections + items (default ~/.pi/agent/context.ws)";
@@ -100,6 +102,13 @@ fn main() {
         return;
     }
     match args[0].as_str() {
+        "watch" => {
+            // Stream ws-doc change events as JSON lines (work item
+            // 3cd4). Polls the doc file's mtime — cheap, and the
+            // semantic events still give per-item granularity. Exits
+            // when the reader hangs up (EPIPE): the client is gone.
+            watch_loop();
+        }
         "scope" => {
             // Print the repo identity used to scope project-tier data —
             // lets script/TS clients match scopes exactly.
@@ -783,6 +792,48 @@ fn ws_json(s: &Section) -> serde_json::Value {
 fn open_ws() -> AutomergeStore {
     let path = contextual::sections::default_ws_path();
     AutomergeStore::open(Some(&path)).unwrap_or_else(|e| panic!("cx: open {}: {e}", path.display()))
+}
+
+/// `cx watch` — stream semantic change events (items/sections) as JSON
+/// lines. Detects external writes by mtime, merges them into a live
+/// doc, and drains the resulting patches; events print one per line.
+fn watch_loop() {
+    use std::io::Write;
+    use std::time::{Duration, SystemTime};
+    let _path = contextual::sections::default_ws_path();
+    let mut store = open_ws();
+    let Some(doc_path) = store.path().map(|p| p.to_path_buf()) else {
+        eprintln!("cx: watch needs a doc file (CX_WS_DB)");
+        exit(1);
+    };
+    // Baseline: consume the store's initial state as events, discard.
+    let _ = ChangeFeed::drain_events(&mut store);
+    let stdout = std::io::stdout();
+    let mut out = stdout.lock();
+    let mut last = file_mtime(&doc_path);
+    let poll = Duration::from_millis(200);
+    loop {
+        std::thread::sleep(poll);
+        let m = file_mtime(&doc_path);
+        if m == last {
+            continue;
+        }
+        last = m;
+        if let Err(e) = store.reload_merge(&doc_path) {
+            eprintln!("cx: watch: {e}");
+            continue;
+        }
+        for ev in ChangeFeed::drain_events(&mut store) {
+            if writeln!(out, "{}", ev.to_line()).and_then(|_| out.flush()).is_err() {
+                // Reader gone (client closed the pipe) — done.
+                return;
+            }
+        }
+    }
+
+    fn file_mtime(p: &Path) -> Option<SystemTime> {
+        std::fs::metadata(p).and_then(|m| m.modified()).ok()
+    }
 }
 
 /// Work items (plan3 W2): named records with a lifecycle, stored in
