@@ -6,17 +6,10 @@ contextual only via MCP — no direct SQLite or hub access.
 - registers `cx-mcp` so the model gets the `mcp__context__*` tools
 - injects the resolved default context (global + project tiers) into the
   system prompt on every turn
-- `/context` toggles the context bag viewer (opens when
-  closed, closes when open; esc still works). It shows ground truth —
-  exactly what is injected into the system prompt this session: the
-  `<context>` block (global + project tier defaults) and the
-  `<skills>` block (session-loaded skills).
-  It renders as a tabbed document: top-level tier menu bar (global /
-  local / skills), and below
-  it a flat scrollable document where each section opens with a
-  horizontal divider carrying its title. Keys: ←→ switch tiers, ↑↓
-  scroll line-wise, pgup/pgdn page-wise, ctrl+↓/ctrl+↑ jump
-  sections, esc/q close. Note the skillbag is *not* sent to the model —
+- plain `/context` opens the **contexture panel** on the context tier
+  (see below) — ground truth for what is injected this session: the
+  `<context>` block tiers (global / local / skillbag) and the
+  session-loaded skills. Note the skillbag is *not* sent to the model —
   its atoms load only when a tag is pulled or a skill is
   referenced/loaded. The injection refreshes itself: the cache is
   stamped with the bag file's mtime, so any change — the model's
@@ -47,18 +40,18 @@ contextual only via MCP — no direct SQLite or hub access.
   idempotent (bag dedupes by text); explicitly removed atoms stay
   removed (tombstones). Plain hashtags still type normally — just keep
   typing past the popup. Skill discovery is precached on session start
-- `Ctrl+W` or `/workflow` toggles the context panel (opens when
-  closed, closes when open; esc still works): a flat horizontal
-  tab bar with one tab per thing — `tasks` (the work-item tree) first,
-  then one tab per workspace section in `cx ws list` order
-  (architecture, user-stories, …). The panel keeps a fixed shape: the
-  body area is always the full viewport height, and the footer's left
-  corner holds a scroll indicator (accent-colored ↓ when there's more
-  content below, ↑ when content sits above). tab/shift+tab (or ←→)
-  cycle tabs, ↑↓/j/k scroll, pgup/pgdn page, home/end (and g/G) jump,
-  esc/q (or ctrl+c) closes; ctrl+w closes it too. When the strip doesn't fit the width it
-  slides — a window of tabs centered on the active one, `‹`/`›` marking
-  hidden tabs
+- `Ctrl+W`, `alt+c`, `/panel` or `/workflow` toggles the **contexture
+  panel**: a full-height left-tree pane with three sections in a top
+  bar — `tasks` (the work-item tree with queue order, status
+  transitions, priority, notes and `m` move mode), `context`
+  (injection tiers + session-loaded skills; `/` searches the skill
+  catalog to load new ones) and `documentation` (ws sections as
+  heading trees). tab/shift+tab (or ctrl+↑↓) switch sections with
+  per-section cursor memory, ↑↓/j/k move, enter/←→ expand and open
+  details, `/` searches the active section (fuzzy, with `is:open`
+  / `is:closed` / `is:active` / `status:X` filters), pgup/pgdn page,
+  home/end jump, esc/q/ctrl+w/alt+c close. Markdown details re-flow to
+  the pane width and tables render as aligned text
 - The **tasks strip** is always visible: a narrow bordered rail on the
   right edge, one glyph per task in timeline order — ✓ closed at top
   (past), ● in-progress, ○ open — so new tasks appear at the bottom and

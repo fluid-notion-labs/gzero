@@ -2,7 +2,7 @@
 // section bodies render as aligned plain text instead of raw pipes.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { renderTables } from "../workflow-viewer.ts";
+import { renderTables } from "../reflow.ts";
 
 test("table becomes aligned columns with a rule under the header", () => {
   const out = renderTables(

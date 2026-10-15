@@ -1,8 +1,10 @@
-// Tests for reflowMarkdown (workflow-viewer.ts): hard-wrapped markdown
+// Tests for reflowMarkdown (reflow.ts): hard-wrapped markdown
 // prose re-flows to the pane width; structural lines keep their shape.
+// textDetail is the contexture panel's use of it (section/tier details).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { reflowMarkdown, buildSectionBody } from "../workflow-viewer.ts";
+import { reflowMarkdown } from "../reflow.ts";
+import { textDetail } from "../contexture-panel.ts";
 import { wrapPlain } from "../window.ts";
 
 test("hard-wrapped prose joins into one paragraph and re-wraps", () => {
@@ -42,13 +44,10 @@ test("table rows are preserved for renderTables", () => {
   assert.ok(reflowMarkdown(md).includes("| a | b |"));
 });
 
-test("buildSectionBody reflows a hard-wrapped body to full width", () => {
+test("panel textDetail reflows a hard-wrapped body to full width", () => {
   const theme = { fg: (_c: string, s: string) => s, bold: (s: string) => s };
-  const lines = buildSectionBody(
-    [{ nodes: [{ label: "t", text: "one two three four\nfive six seven" }] }],
-    60,
-    theme,
-  );
+  const detail = textDetail("one two three four\nfive six seven");
+  const lines = detail(60, theme as never);
   const body = lines.find((l) => l.includes("one two three four"));
   assert.ok(body!.includes("five six seven"), "paragraph reflowed onto one line");
 });

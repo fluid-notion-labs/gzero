@@ -14,16 +14,7 @@ import type {
   KeybindingsManager,
   Theme,
 } from "@earendil-works/pi-coding-agent";
-import {
-  Key,
-  Text,
-  matchesKey,
-  truncateToWidth,
-  type Component,
-  type Focusable,
-} from "@earendil-works/pi-tui";
-import { boxFrame, LineWindow, modalViewport, scrollIndicator, wrapPlain } from "./window.ts";
-import { keyHint, viewerNav, type ViewerNav } from "./keymap.ts";
+import { Key } from "@earendil-works/pi-tui";
 import {
   distillSkill,
   extractSkillRefs,
@@ -242,160 +233,12 @@ export function bucketTiers(rendered: string): TierSection[] {
   ];
 }
 
-/**
- * Read-only overlay viewer for /context: a tab bar with the top-level
- * tiers, and below it a flat document of that tier's sections, each
- * introduced by a horizontal divider with its title. Navigation: ←/→
- * switch tiers, ↑/↓ scroll line-wise, PgUp/PgDn page-wise,
- * ctrl+↓/ctrl+↑ jump to the next/previous section, esc/q closes.
- * Fixed-size body like the context panel (renderFixed + indicator slot).
- */
-class TierViewer implements Component, Focusable {
-  focused = false;
-  private tab = 0;
-  private window = new LineWindow(modalViewport());
-  /** Active tier's document (titled dividers + wrapped content). */
-  private docCache: { tab: number; width: number; lines: string[]; sectionStarts: number[] } | null = null;
-  private lastStarts: number[] = [];
-  private nav: ViewerNav;
-  private kb: KeybindingsManager | undefined;
 
-  constructor(
-    private sections: TierSection[],
-    private theme: Theme,
-    private done: (result?: unknown) => void,
-    /** Extra footer note, e.g. "2 skills". */
-    private note?: string,
-    /** Injected by ctx.ui.custom; optional for tests. */
-    keybindings?: KeybindingsManager,
-  ) {
-    this.nav = viewerNav(keybindings);
-    this.kb = keybindings;
-  }
-
-  invalidate(): void {}
-
-  private switchTo(tab: number) {
-    if (tab === this.tab || tab < 0 || tab >= this.sections.length) return;
-    this.tab = tab;
-    this.docCache = null;
-    this.window.scrollToStart();
-  }
-
-  /** Build the flat document for the active tier. */
-  private document(width: number): { lines: string[]; sectionStarts: number[] } {
-    if (this.docCache && this.docCache.tab === this.tab && this.docCache.width === width) {
-      return this.docCache;
-    }
-    const t = this.theme;
-    const inner = Math.max(width - 2, 20);
-    const tier = this.sections[this.tab];
-    const lines: string[] = [];
-    const sectionStarts: number[] = [];
-    const divider = (title: string) => {
-      const head = "── ";
-      const tail = Math.max(0, inner - head.length - title.length - 1);
-      return t.fg("borderMuted", head) + t.fg("accent", title) + t.fg("borderMuted", " " + "─".repeat(tail));
-    };
-    for (const node of tier?.nodes ?? []) {
-      // the tab already names the tier — drop its prefix from titles
-      const title = node.label.startsWith(`${tier.label}/`)
-        ? node.label.slice(tier.label.length + 1)
-        : node.label;
-      sectionStarts.push(lines.length);
-      lines.push(divider(title));
-      for (const wrapped of wrapPlain(node.text || "(empty)", inner - 1)) {
-        lines.push(` ${wrapped}`);
-      }
-      lines.push("");
-    }
-    if (lines.length === 0) lines.push(` ${t.fg("dim", "(empty)")}`);
-    this.docCache = { tab: this.tab, width, lines, sectionStarts };
-    this.lastStarts = sectionStarts;
-    this.window.setLines(lines);
-    return this.docCache;
-  }
-
-  /** Index of the section divider at or before the current scroll top. */
-  private currentSection(starts: number[]): number {
-    let idx = 0;
-    for (let i = 0; i < starts.length; i++) {
-      if (starts[i] <= this.window.scrollTop) idx = i;
-      else break;
-    }
-    return idx;
-  }
-
-  handleInput(data: string): void {
-    // esc / q close; ctrl+w closes while the overlay owns input (same
-    // toggle pattern as the context panel). The ctrl+b shortcut was
-    // removed — it shadowed the built-in tui.editor.cursorLeft.
-    if (this.nav.cancel(data) || matchesKey(data, "q")) {
-      this.done();
-    } else if (matchesKey(data, "left") || matchesKey(data, "shift+tab")) {
-      this.switchTo((this.tab + this.sections.length - 1) % this.sections.length);
-    } else if (matchesKey(data, "right") || matchesKey(data, "tab")) {
-      this.switchTo((this.tab + 1) % this.sections.length);
-    } else if (matchesKey(data, "ctrl+down")) {
-      const cur = this.currentSection(this.lastStarts);
-      const next = this.lastStarts[Math.min(cur + 1, this.lastStarts.length - 1)];
-      this.window.scrollTo(next);
-    } else if (matchesKey(data, "ctrl+up")) {
-      const cur = this.currentSection(this.lastStarts);
-      const prev = this.lastStarts[Math.max(0, cur - 1)];
-      this.window.scrollTo(prev);
-    } else if (this.nav.up(data)) {
-      this.window.scrollBy(-1);
-    } else if (this.nav.down(data)) {
-      this.window.scrollBy(1);
-    } else if (this.nav.pageUp(data)) {
-      this.window.scrollBy(-this.window.viewport + 2);
-    } else if (this.nav.pageDown(data)) {
-      this.window.scrollBy(this.window.viewport - 2);
-    } else if (matchesKey(data, "home")) {
-      this.window.scrollToStart();
-    } else if (matchesKey(data, "end") || matchesKey(data, "shift+g")) {
-      this.window.scrollToEnd();
-    } else if (matchesKey(data, "j")) {
-      this.window.scrollBy(1);
-    } else if (matchesKey(data, "k")) {
-      this.window.scrollBy(-1);
-    }
-  }
-
-  render(width: number): string[] {
-    const t = this.theme;
-    const inner = Math.max(width - 2, 20);
-    const doc = this.document(width);
-    const tabs = this.sections
-      .map((s, i) => {
-        const label = ` ${s.label} `;
-        return i === this.tab ? t.fg("accent", t.bold(label)) : t.fg("dim", label);
-      })
-      .join(t.fg("dim", "│"));
-    const divider = t.fg("borderMuted", "─".repeat(inner));
-    const hints =
-      `←→ tier · ${keyHint(this.kb, "tui.select.up", "↑")}${keyHint(this.kb, "tui.select.down", "↓")} line ` +
-      `· ${keyHint(this.kb, "tui.select.pageUp", "pgup")}/${keyHint(this.kb, "tui.select.pageDown", "pgdn")} page ` +
-      `· ctrl+↓↑ section · ${keyHint(this.kb, "tui.select.cancel", "esc")}/q close`;
-    const body = this.note ? `${hints} · ${this.note}` : hints;
-    // Fixed-size: the body area renders exactly viewport rows, so the
-    // box height doesn't jump as content changes. Indicator outside the
-    // dim wrapper — nested fg() resets would strip the dim styling.
-    const footer = scrollIndicator(this.window, t) + t.fg("dim", body);
-    return boxFrame(width, [
-      ...new Text(tabs, 1).render(inner),
-      divider,
-      ...this.window.renderFixed().map((line) => ` ${line}`),
-      divider,
-      ...new Text(footer, 1).render(inner),
-    ], (s: string) => t.fg("borderMuted", s));
-  }
-}
-
-// ---- Ctrl+W context panel: tabbed tasks / workspace sections ----
-// Tree logic lives in items-tree.ts, the viewer component in
-// workflow-viewer.ts (both unit-tested).
+// ---- Contexture panel: the unified tasks / context / documentation pane ----
+// Tree logic lives in items-tree.ts, the panel component in
+// contexture-panel.ts (both unit-tested). P5 cutover: the Ctrl+W tabbed
+// viewer (workflow-viewer.ts) and the /context tier viewer are retired —
+// ctrl+w, /workflow and plain /context all land on this panel.
 
 import {
   buildItemTree,
@@ -403,12 +246,6 @@ import {
   type FlatRow,
   type RawItem,
 } from "./items-tree.ts";
-import {
-  WorkflowViewer,
-  buildItemBody,
-  buildSectionBody,
-  type WorkflowPage,
-} from "./workflow-viewer.ts";
 
 // ---- workspace sections for the context panel's section tabs ----
 
@@ -576,6 +413,9 @@ async function projectScope(): Promise<string | null> {
 async function openContexturePanel(
   ctx: ExtensionContext,
   loadTiers: () => Promise<TierSection[]>,
+  /** Open directly on this section (ctrl+w and /context land on the
+   * panel; /context starts on the context tier). */
+  section?: "tasks" | "context" | "documentation",
 ): Promise<void> {
   if (ctx.mode !== "tui") {
     ctx.ui.notify("The contexture panel needs TUI mode", "warning");
@@ -597,8 +437,8 @@ async function openContexturePanel(
     unwrap(docsRes),
   );
   await ctx.ui.custom(
-    (_tui, theme, keybindings, done) =>
-      new ContexturePanel(
+    (_tui, theme, keybindings, done) => {
+      const panel = new ContexturePanel(
         nodes,
         theme,
         done,
@@ -606,77 +446,18 @@ async function openContexturePanel(
         panelActions(),
         panelSkills(),
         unwrap(presenceRes) ?? "",
-      ),
+      );
+      if (section) {
+        const index = ["tasks", "context", "documentation"].indexOf(section);
+        if (index > 0) panel.showSection(index);
+      }
+      return panel;
+    },
     {
       overlay: true,
       overlayOptions: { width: "100%", maxHeight: "100%", anchor: "center" },
     },
   );
-}
-
-async function openWorkflow(
-  ctx: ExtensionContext,
-  pane: ItemsPaneController,
-): Promise<void> {
-  if (ctx.mode !== "tui") {
-    ctx.ui.notify("The context panel needs TUI mode", "warning");
-    return;
-  }
-  const paneWasActive = pane.active;
-  pane.close();
-  // Fetch both tab sources concurrently; either may be missing — the
-  // viewer shows whichever tabs have content.
-  const [itemsRes, sectionsRes] = await Promise.allSettled([
-    cxJson(["item", "list", "--json"]) as Promise<RawItem[]>,
-    loadWorkflowSections(),
-  ]);
-  // Flat tabs: one per thing. "todo" is the work-item tree; every ws
-  // section gets its own tab (in cx ws list order) so navigation is
-  // tab-cycle + scroll instead of scrolling through everything. Each
-  // section tab still renders its titled divider — the tab shows the
-  // short name, the divider carries the full title.
-  const pages: WorkflowPage[] = [];
-  if (itemsRes.status === "fulfilled") {
-    const rows = flattenTree(buildItemTree(itemsRes.value));
-    if (rows.length > 0) {
-      pages.push({
-        label: "tasks",
-        note: `${rows.filter((r) => r.item.status !== "closed").length} open`,
-        build: (inner, t) => buildItemBody(rows, inner, t),
-      });
-    }
-  }
-  if (sectionsRes.status === "fulfilled") {
-    for (const section of sectionsRes.value) {
-      pages.push({
-        label: section.label,
-        build: (inner, t) => buildSectionBody([section], inner, t),
-      });
-    }
-  }
-  if (pages.length === 0) {
-    const err = (r: PromiseSettledResult<unknown>) =>
-      r.status === "rejected" && r.reason instanceof Error ? r.reason.message : "";
-    const problems = [err(itemsRes), err(sectionsRes)].filter(Boolean).join(" · ");
-    ctx.ui.notify(
-      problems
-        ? `Workflow unavailable: ${problems}`
-        : "Nothing to show — `cx item add` / `cx ws set` create content",
-      problems ? "warning" : "info",
-    );
-    return;
-  }
-  try {
-    await ctx.ui.custom(
-      (_tui, theme, keybindings, done) => new WorkflowViewer(pages, theme, done, 0, keybindings),
-      {
-        overlay: true,
-        overlayOptions: { width: "100%", maxHeight: "100%", anchor: "center" },
-      },
-    );
-  } finally {
-    if (paneWasActive) void pane.open(ctx);
-  }
 }
 
 /**
@@ -802,50 +583,12 @@ export default function (pi: ExtensionAPI) {
     return resolvedBody;
   };
 
-  // The tiered bag overlay (global / local / skills), opened by
-  // /context. Shows ground truth: exactly what is injected
-  // into the system prompt this session — the <context> block (global
-  // + project tier defaults) and the <skills> block (session-loaded
-  // skills). Returns when there is nothing to show.
+  // Plain /context: open the contexture panel on the context tier —
+  // exactly what is injected this session (global / local / skillbag
+  // plus session-loaded skills). The subcommands above (reload, add,
+  // local/global condense) stay as they are.
   const openContextBag = async (ctx: ExtensionContext): Promise<void> => {
-    if (ctx.mode !== "tui") {
-      ctx.ui.notify("The context bag viewer needs TUI mode", "warning");
-      return;
-    }
-    const cxMcp = await findCxMcp();
-    if (!cxMcp) {
-      ctx.ui.notify(`cx-mcp not found. Install with: ${INSTALL_CMD}`, "error");
-      return;
-    }
-    try {
-      resolvedBody = await cachedResolved(cxMcp);
-    } catch {
-      ctx.ui.notify("Could not resolve context", "error");
-      return;
-    }
-    if (resolvedBody === null) {
-      ctx.ui.notify("Nothing resolved for this project — /context add or tagged pulls", "info");
-      return;
-    }
-    const sections = bucketTiers(resolvedBody).filter((s) => s.nodes.length > 0);
-    const loaded = getLoadedSkills();
-    if (loaded.length > 0) {
-      sections.push({
-        label: "skills (loaded)",
-        nodes: loaded.map((s) => ({ label: s.name, text: skillBody(s.file) })),
-      });
-    }
-    const note =
-      loaded.length > 0
-        ? `${loaded.length} skill${loaded.length === 1 ? "" : "s"}`
-        : undefined;
-    await ctx.ui.custom(
-      (_tui, theme, keybindings, done) => new TierViewer(sections, theme, done, note, keybindings),
-      {
-        overlay: true,
-        overlayOptions: { width: "100%", maxHeight: "100%", anchor: "center" },
-      },
-    );
+    await openContexturePanel(ctx, loadTierSections, "context");
   };
 
   // The model's MCP tools. Registered in the factory; pi connects the
@@ -972,29 +715,29 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerCommand("workflow", {
-    description: "Open the context panel (same as Ctrl+W)",
+    description: "Open the contexture panel (same as ctrl+w)",
     handler: async (_args: string, ctx: ExtensionCommandContext) => {
-      await openWorkflow(ctx, itemsPane);
+      await openContexturePanel(ctx, loadTierSections);
     },
   });
 
-  // Ctrl+W → the context panel (tasks + workspace sections, one tab
-  // each). First-class pi shortcut instead of an editor subclass:
-  // matched before app keybindings and listed under Extensions in
-  // /hotkeys. It shadows `deleteWordBackward` (still on alt+backspace);
-  // /workflow is the discoverable path for the same action. Toggles:
-  // while the panel is open the overlay owns input and closes on the
-  // same ctrl+w (WorkflowViewer.handleInput); esc keeps working too.
+  // Ctrl+W → the contexture panel (P5 cutover: the unified pane
+  // replaces the retired tabbed workflow viewer). First-class pi
+  // shortcut instead of an editor subclass: matched before app
+  // keybindings and listed under Extensions in /hotkeys. It shadows
+  // `deleteWordBackward` (still on alt+backspace); /workflow is the
+  // discoverable path for the same action. Toggles: while the panel is
+  // open the overlay owns input and closes on the same ctrl+w
+  // (ContexturePanel.handleInput); esc keeps working too.
   pi.registerShortcut(Key.ctrl("w"), {
-    description: "Toggle the context panel (tasks / sections)",
-    handler: (ctx) => openWorkflow(ctx, itemsPane),
+    description: "Toggle the contexture panel (tasks / context / documentation)",
+    handler: (ctx) => openContexturePanel(ctx, loadTierSections),
   });
 
   // ---- contexture panel (alt+c) — the unified pane ----
-  // Fresh build (design: work item 2c31): one left-tree pane with
-  // tasks / context / documentation. The existing overlays above are
-  // untouched until this reaches parity (P5 cutover); /panel is the
-  // discoverable path.
+  // One left-tree pane with tasks / context / documentation
+  // (design: work item 2c31); the primary panel since the P5 cutover.
+  // /panel is the discoverable path.
   /** Tiers for the panel's context subtree: resolved via the same
    * cached resolution the injection uses. Empty on failure — the pane
    * shows a placeholder. */

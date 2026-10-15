@@ -94,6 +94,27 @@ test("up/down move the cursor within bounds", () => {
   assert.equal(p.selected.node.id, "t1");
 });
 
+test("ctrl+w closes the panel (cutover: ctrl+w toggles)", () => {
+  let closed = false;
+  const p = make(tree(), () => {
+    closed = true;
+  });
+  p.handleInput("\x17"); // ctrl+w
+  assert.equal(closed, true, "ctrl+w closes like esc/alt+c");
+});
+
+test("showSection opens directly on a section with its first entry", () => {
+  const p = make();
+  p.showSection(2); // documentation
+  assert.equal(get(p, "active"), 2);
+  assert.equal(p.selected.node.id, "d1");
+  p.showSection(1); // context
+  assert.equal(get(p, "active"), 1);
+  assert.equal(p.selected.node.id, "global");
+  p.showSection(99); // out of range clamps to the last section
+  assert.equal(get(p, "active"), 2);
+});
+
 test("tab / ctrl+up-down switch the active section, top bar tabs", () => {
   const p = make();
   p.handleInput("\x1b[1;5B"); // ctrl+down → context

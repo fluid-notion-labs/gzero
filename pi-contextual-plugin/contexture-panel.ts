@@ -19,6 +19,7 @@ import { matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tu
 import type { Component, Focusable, KeybindingsManager } from "@earendil-works/pi-tui";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { boxFrame, LineWindow, scrollIndicator, wrapPlain } from "./window.ts";
+import { reflowMarkdown, renderTables } from "./reflow.ts";
 import { keyHint, viewerNav, type ViewerNav } from "./keymap.ts";
 import { buildItemTree, flattenTree as flattenItems, type FlatRow, type RawItem } from "./items-tree.ts";
 
@@ -232,7 +233,7 @@ export function skillsToNodes(entries: SkillLike[]): PanelNode[] {
         theme.fg("accent", theme.bold(entry.name)),
         theme.fg("dim", `${entry.vendor} · ${entry.file}`),
         "",
-        ...wrapPlain(skillBodyFromFile(entry.file), width),
+        ...wrapPlain(renderTables(reflowMarkdown(skillBodyFromFile(entry.file))), width),
       ];
       return lines.map((l) => truncateToWidth(l, width));
     },
@@ -250,11 +251,14 @@ function skillBodyFromFile(file: string): string {
 }
 
 /** Wrap once per width; long section bodies otherwise re-wrap each render. */
-function textDetail(text: string) {
+export function textDetail(text: string) {
   let cache: { width: number; lines: string[] } | null = null;
   return (width: number, theme: Theme): string[] => {
     if (!cache || cache.width !== width) {
-      cache = { width, lines: wrapPlain(text || "(empty)", width) };
+      cache = {
+        width,
+        lines: wrapPlain(renderTables(reflowMarkdown(text || "(empty)")), width),
+      };
     }
     return cache.lines;
   };
@@ -489,6 +493,18 @@ export class ContexturePanel implements Component, Focusable {
     if (this.mode === "search") this.runSearch();
   }
 
+  /** Open directly on a section (cutover: ctrl+w and /context land on
+   * the panel). Index-based so callers can't depend on labels. */
+  showSection(index: number): void {
+    const count = this.nodes.length;
+    if (count === 0) return;
+    this.active = Math.max(0, Math.min(index, count - 1));
+    this.rows = flattenTree(this.activeSection?.children ?? []);
+    this.cursor = Math.min(this.sectionCursors[this.active] ?? 0, Math.max(0, this.rows.length - 1));
+    this.contentWin.scrollToStart();
+    this.followCursor();
+  }
+
   private toggleExpanded(): void {
     const node = this.selected.node;
     if (!node.children || node.children.length === 0) return;
@@ -516,9 +532,15 @@ export class ContexturePanel implements Component, Focusable {
       this.handleNoteInput(data);
       return;
     }
-    // alt+c toggles — the overlay owns input while active, so the
-    // extension shortcut can't see it (same pattern as ctrl+w/ctrl+b).
-    if (this.nav.cancel(data) || matchesKey(data, "q") || matchesKey(data, "alt+c")) {
+    // alt+c / ctrl+w toggle — the overlay owns input while active, so
+    // the extension shortcut can't see it (same pattern as the old
+    // ctrl+w viewer).
+    if (
+      this.nav.cancel(data) ||
+      matchesKey(data, "q") ||
+      matchesKey(data, "alt+c") ||
+      matchesKey(data, "ctrl+w")
+    ) {
       this.done();
     } else if (this.handleContentScroll(data)) {
       // content-area paging (pgup/pgdn/home/end)
