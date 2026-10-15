@@ -22,6 +22,7 @@ if (!piRoot) {
 
 const dist = {
   "@earendil-works/pi-tui": join(piRoot, "packages/tui/dist/index.js"),
+  "@earendil-works/pi-ai": join(piRoot, "packages/ai/dist/index.js"),
   "@earendil-works/pi-coding-agent": join(piRoot, "packages/coding-agent/dist/index.js"),
 };
 

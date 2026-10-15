@@ -31,6 +31,7 @@ cat > "$tmp" <<EOF
     "types": ["node"],
     "paths": {
       "@earendil-works/pi-tui": ["$pi/packages/tui/dist/index.d.ts"],
+      "@earendil-works/pi-ai": ["$pi/packages/ai/dist/index.d.ts"],
       "@earendil-works/pi-coding-agent": ["$pi/packages/coding-agent/dist/index.d.ts"]
     }
   }
