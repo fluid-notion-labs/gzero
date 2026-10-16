@@ -219,12 +219,13 @@ fn call_tool(
         "tags" => tool_tags(store)?,
         "harvest" => tool_harvest(&args, store)?,
         "park_claim" => tool_park_claim(&args)?,
-        "ws_put" | "ws_get" | "ws_list" | "ws_delete" => {
+        "ws_put" | "ws_get" | "ws_list" | "ws_ensure" | "ws_delete" => {
             let mut ws = ws_store()?;
             match name {
                 "ws_put" => tool_ws_put(&args, &mut ws)?,
                 "ws_get" => tool_ws_get(&args, &ws)?,
                 "ws_list" => tool_ws_list(&args, &ws)?,
+                "ws_ensure" => tool_ws_ensure(&args, &mut ws)?,
                 _ => tool_ws_delete(&args, &mut ws)?,
             }
         }
@@ -1336,6 +1337,22 @@ fn tool_ws_delete(args: &serde_json::Value, store: &mut AutomergeStore) -> Resul
     }
 }
 
+fn tool_ws_ensure(args: &serde_json::Value, store: &mut AutomergeStore) -> Result<String, String> {
+    let name = args
+        .get("name")
+        .and_then(|n| n.as_str())
+        .ok_or("ws_ensure: name is required")?;
+    let scope = ws_scope_arg(args);
+    let created = store
+        .section_ensure(&scope, name)
+        .map_err(|e| e.to_string())?;
+    Ok(if created {
+        format!("ensured namespace {scope}/{name}")
+    } else {
+        format!("namespace {scope}/{name} already exists")
+    })
+}
+
 const TOOLS: &str = r#"[
   {
     "name": "resolve",
@@ -1460,8 +1477,20 @@ const TOOLS: &str = r#"[
     }
   },
   {
+    "name": "ws_ensure",
+    "description": "Create the namespace chain for a dotted section name without content — mkdir -p for the section hierarchy. 'a.b.c' creates containers a, a.b, a.b.c; sections can then be put under any level. Idempotent.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Dotted namespace path, e.g. 'docs.tech-debt.cas-document-system'." },
+        "scope": { "type": "string", "description": "Omit for the current project." }
+      },
+      "required": ["name"]
+    }
+  },
+  {
     "name": "ws_list",
-    "description": "List workflow sections for a scope: one line each — name, kind, title, and done/total for checklists.",
+    "description": "List workflow sections for a scope: one line each — name, kind, title, and done/total for checklists. Dotted names nest; bare ancestors are containers, not sections.",
     "inputSchema": {
       "type": "object",
       "properties": {

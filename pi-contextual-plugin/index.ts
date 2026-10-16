@@ -71,6 +71,7 @@ const EXPECTED_TOOLS = [
   "item_pin",
   "item_gate",
   "plan_next",
+  "ws_ensure",
 ];
 
 /** Look up a binary on PATH (a lookup, not a long-running process). */

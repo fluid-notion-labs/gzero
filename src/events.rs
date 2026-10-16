@@ -17,12 +17,16 @@
 //! ROOT ─ items ─ scope ─ <id> ─ fields (+ submaps: labels, notes,
 //!                                               blocks, discovered_from,
 //!                                               child_of)
-//!      └ sections ─ scope ─ <name> ─ {kind, title, body, order}
+//!      └ sections ─ scope ─ ch ─ <seg> ─ {kind, title, body, order}
+//!                                       └ ch ─ <seg> ─ ... (nested
+//!                                                names, dots nest)
 //! ```
 //!
-//! A patch on a scope map is an add/remove; on a record or its submap,
-//! a field change (submap patches collapse to the parent field, e.g.
-//! `child_of`).
+//! A patch on an items scope map is an add/remove; on a record or its
+//! submap, a field change (submap patches collapse to the parent field,
+//! e.g. `child_of`). Sections nest: a patch on a node's `ch` submap is
+//! a section add/remove named by the full dotted path; a patch on a
+//! `kind`-carrying node is a field change.
 //!
 //! Consumers: `cx watch` streams these as JSON lines today; a future
 //! embedded client uses `ChangeFeed` directly. Call `drain_events()`
@@ -103,6 +107,10 @@ struct DocIndex {
     records: HashMap<ObjId, (Container, String, String)>,
     /// Record submap (labels/notes/edges) -> (container, scope, id, field).
     submaps: HashMap<ObjId, (Container, String, String, String)>,
+    /// A section node's children submap -> (scope, parent's dotted path,
+    /// "" for the scope-level map). Puts/deletes here add/remove the
+    /// child named `parent.seg`.
+    chmaps: HashMap<ObjId, (String, String)>,
 }
 
 /// The record submaps that carry list-ish state; patches on them
@@ -150,6 +158,7 @@ impl AutomergeStore {
         let mut scope_maps = HashMap::new();
         let mut records = HashMap::new();
         let mut submaps = HashMap::new();
+        let mut chmaps: HashMap<ObjId, (String, String)> = HashMap::new();
         // Pass 1: scope maps.
         for (key, container) in [("items", Container::Items), ("sections", Container::Sections)] {
             let Some((_, map_id)) = self.doc.get(ROOT, key).ok().flatten() else {
@@ -163,21 +172,32 @@ impl AutomergeStore {
         }
         // Pass 2: records and their submaps.
         for (scope_id, (container, scope)) in scope_maps.iter() {
-            for name in self.doc.keys(scope_id) {
-                if let Some((value, rec)) = self.doc.get(scope_id, &name).ok().flatten() {
-                    if !matches!(value, Value::Object(ObjType::Map)) {
-                        continue;
-                    }
-                    records.insert(rec.clone(), (*container, scope.clone(), name.clone()));
-                    for sub in SUBMAPS {
-                        if let Some((Value::Object(_), sub_id)) =
-                            self.doc.get(&rec, sub).ok().flatten()
-                        {
-                            submaps.insert(
-                                sub_id,
-                                (*container, scope.clone(), name.clone(), sub.to_string()),
-                            );
+            match container {
+                Container::Items => {
+                    for name in self.doc.keys(scope_id) {
+                        if let Some((value, rec)) = self.doc.get(scope_id, &name).ok().flatten() {
+                            if !matches!(value, Value::Object(ObjType::Map)) {
+                                continue;
+                            }
+                            records.insert(rec.clone(), (*container, scope.clone(), name.clone()));
+                            for sub in SUBMAPS {
+                                if let Some((Value::Object(_), sub_id)) =
+                                    self.doc.get(&rec, sub).ok().flatten()
+                                {
+                                    submaps.insert(
+                                        sub_id,
+                                        (*container, scope.clone(), name.clone(), sub.to_string()),
+                                    );
+                                }
+                            }
                         }
+                    }
+                }
+                Container::Sections => {
+                    // Nested node tree: scope.ch.seg[.ch.seg...]; a node
+                    // carrying `kind` is a section record.
+                    if let Some((_, ch)) = self.doc.get(scope_id, "ch").ok().flatten() {
+                        self.index_sections_node(ch, scope, "", &mut records, &mut chmaps);
                     }
                 }
             }
@@ -186,6 +206,40 @@ impl AutomergeStore {
             scope_maps,
             records,
             submaps,
+            chmaps,
+        }
+    }
+
+    /// Index one level of the section node tree: `ch` maps a segment to
+    /// a child node; children may carry `kind` (a section record) and/or
+    /// their own `ch`.
+    fn index_sections_node(
+        &self,
+        ch: ObjId,
+        scope: &str,
+        prefix: &str,
+        records: &mut HashMap<ObjId, (Container, String, String)>,
+        chmaps: &mut HashMap<ObjId, (String, String)>,
+    ) {
+        chmaps.insert(ch.clone(), (scope.to_string(), prefix.to_string()));
+        for seg in self.doc.keys(&ch.clone()) {
+            let Some((value, node)) = self.doc.get(&ch, &seg).ok().flatten() else {
+                continue;
+            };
+            if !matches!(value, Value::Object(ObjType::Map)) {
+                continue;
+            }
+            let full = if prefix.is_empty() {
+                seg.clone()
+            } else {
+                format!("{prefix}.{seg}")
+            };
+            if self.has(&node, "kind") {
+                records.insert(node.clone(), (Container::Sections, scope.to_string(), full.clone()));
+            }
+            if let Some((_, sub)) = self.doc.get(&node.clone(), "ch").ok().flatten() {
+                self.index_sections_node(sub, scope, &full, records, chmaps);
+            }
         }
     }
 }
@@ -455,15 +509,34 @@ fn classify(patches: Vec<automerge::Patch>, idx: &DocIndex) -> Vec<ChangeEvent> 
         }
         match &patch.action {
             PatchAction::PutMap { key, .. } => {
-                if let Some((container, scope)) = idx.scope_maps.get(&patch.obj) {
-                    events.push(event_for(*container, scope, key, ChangeKind::Added));
+                if let Some((scope, parent)) = idx.chmaps.get(&patch.obj) {
+                    let name = if parent.is_empty() {
+                        key.clone()
+                    } else {
+                        format!("{parent}.{key}")
+                    };
+                    events.push(event_for(Container::Sections, scope, &name, ChangeKind::Added));
+                } else if let Some((container, scope)) = idx.scope_maps.get(&patch.obj) {
+                    // Section scope maps only ever gain their `ch` map.
+                    if *container == Container::Items {
+                        events.push(event_for(*container, scope, key, ChangeKind::Added));
+                    }
                 } else if let Some((c, scope, id, field)) = idx.changed(&patch.obj, key.clone()) {
                     events.push(event_for(c, &scope, &id, ChangeKind::Changed(field)));
                 }
             }
             PatchAction::DeleteMap { key } => {
-                if let Some((container, scope)) = idx.scope_maps.get(&patch.obj) {
-                    events.push(event_for(*container, scope, key, ChangeKind::Removed));
+                if let Some((scope, parent)) = idx.chmaps.get(&patch.obj) {
+                    let name = if parent.is_empty() {
+                        key.clone()
+                    } else {
+                        format!("{parent}.{key}")
+                    };
+                    events.push(event_for(Container::Sections, scope, &name, ChangeKind::Removed));
+                } else if let Some((container, scope)) = idx.scope_maps.get(&patch.obj) {
+                    if *container == Container::Items {
+                        events.push(event_for(*container, scope, key, ChangeKind::Removed));
+                    }
                 } else if let Some((c, scope, id, field)) = idx.changed(&patch.obj, key.clone()) {
                     // Deleting a record field is rare; consumers re-read.
                     events.push(event_for(c, &scope, &id, ChangeKind::Changed(field)));
