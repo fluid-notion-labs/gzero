@@ -334,20 +334,55 @@ export function headingTree(md: string): PanelNode[] {
   return out;
 }
 
-/** Documentation sections → PanelNodes with heading-tree children.
- * A section without ATX headings gets a single (body) leaf. */
+/** Documentation sections → PanelNodes as a nested tree. Dotted
+ * section names nest (cx.doc.tech-dept.cas-document-system becomes
+ * cx.doc → tech-dept → cas-document-system); every segment is a level,
+ * labels show the leaf segment, ids keep the full dotted name. A level
+ * that is itself a section renders its heading tree (or a single body
+ * leaf) alongside its children; bare group levels just expand. */
 export function docsToNodes(sections: TierLike[]): PanelNode[] {
-  return sections.map((section) => {
-    const body = section.nodes[0]?.text ?? "";
-    const hasHeadings = /^#{1,6}\s+/m.test(body);
-    return {
-      id: `doc-${section.label}`,
-      label: section.label,
-      children: hasHeadings
-        ? headingTree(body)
-        : [{ id: `doc-${section.label}-body`, label: "(body)", detail: textDetail(body) }],
-    };
-  });
+  interface Trie {
+    children: Map<string, Trie>;
+    section?: TierLike;
+  }
+  const root: Trie = { children: new Map() };
+  for (const section of sections) {
+    let cur = root;
+    for (const seg of section.label.split(".")) {
+      let next = cur.children.get(seg);
+      if (!next) {
+        next = { children: new Map() };
+        cur.children.set(seg, next);
+      }
+      cur = next;
+    }
+    cur.section = section;
+  }
+  const build = (trie: Trie, path: string): PanelNode[] => {
+    const out: PanelNode[] = [];
+    for (const seg of [...trie.children.keys()].sort()) {
+      const child = trie.children.get(seg)!;
+      const full = path ? `${path}.${seg}` : seg;
+      const sub = build(child, full);
+      const body = child.section?.nodes[0]?.text ?? "";
+      const hasHeadings = /^#{1,6}\s+/m.test(body);
+      const own = child.section
+        ? hasHeadings
+          ? headingTree(body)
+          : [{ id: `doc-${full}-body`, label: "(body)", detail: textDetail(body) }]
+        : [];
+      out.push({
+        id: `doc-${full}`,
+        label: seg,
+        children: [...own, ...sub],
+        // Bare group levels auto-expand so the namespace tree is
+        // visible; sections keep the collapsed default.
+        expanded: child.section ? undefined : true,
+      });
+    }
+    return out;
+  };
+  return build(root, "");
 }
 
 export class ContexturePanel implements Component, Focusable {

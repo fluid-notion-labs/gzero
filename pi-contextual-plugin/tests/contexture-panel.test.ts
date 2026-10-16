@@ -344,6 +344,45 @@ test("docsToNodes wraps a section body in a heading tree or body fallback", () =
   assert.ok(detail.some((l) => l.includes("just text")));
 });
 
+test("docsToNodes nests dotted names into a tree, labels show leaf segments", () => {
+  const nodes = docsToNodes([
+    { label: "cx.doc.tech-dept.cas-document-system", nodes: [{ label: "x", text: "# CAS\nbody" }] },
+    { label: "plan.ingest-system", nodes: [{ label: "x", text: "# Ingest" }] },
+    { label: "plan.search-index", nodes: [{ label: "x", text: "# Search" }] },
+    { label: "polyphase-rename", nodes: [{ label: "x", text: "just text" }] },
+  ]);
+  const rows = flattenTree(nodes).map((r) => r.node);
+  // Every segment is a level; leaf labels are segments, not full names.
+  assert.deepEqual(
+    rows.map((n) => n.id.replace(/^doc-/, "")),
+    [
+      "cx",
+      "cx.doc",
+      "cx.doc.tech-dept",
+      "cx.doc.tech-dept.cas-document-system",
+      "plan",
+      "plan.ingest-system",
+      "plan.search-index",
+      "polyphase-rename",
+    ],
+  );
+  assert.deepEqual(rows.map((n) => n.label), [
+    "cx",
+    "doc",
+    "tech-dept",
+    "cas-document-system",
+    "plan",
+    "ingest-system",
+    "search-index",
+    "polyphase-rename",
+  ]);
+  // The leaf keeps its heading tree; a plain body gets the body leaf.
+  const cas = rows[3];
+  assert.equal(cas.children![0].label, "CAS");
+  const poly = rows[7];
+  assert.equal(poly.children![0].label, "(body)");
+});
+
 // ---- P3 fuzzy search ----
 
 test("fuzzyScore ranks substring over subsequence, null on no match", () => {
