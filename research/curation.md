@@ -152,5 +152,5 @@ Same discipline, different mechanism.
 - ✅ `add`/`remove` tool descriptions rewritten, batch `operations` on
   `add` (remove-first, one `sync_source`), self-healing no-match on
   `remove` (closest entries by word overlap, `closest_matches` in lib.rs)
-- ✅ injection preamble in the plugin (P1 shipped, `nursery/contextual/pi/`)
+- ✅ injection preamble in the plugin (P1 shipped, `pi-contextual-plugin/`)
 - ⬜ post-turn review hook

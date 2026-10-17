@@ -20,7 +20,7 @@ Verify: `cx tags | head`
 ## 3. Plugin
 ```sh
 mkdir -p ~/.pi/agent/extensions
-ln -s ~/projects/explorations/nursery/contextual/pi-contextual-plugin \
+ln -s ~/projects/explorations/nursery/contexture/pi-contextual-plugin \
       ~/.pi/agent/extensions/contextual
 # package.json has no deps — only recreate the pi-tui symlink:
 # mkdir -p pi-contextual-plugin/node_modules/@earendil-works

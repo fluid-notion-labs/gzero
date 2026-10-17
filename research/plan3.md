@@ -10,7 +10,7 @@ later and not planned here.*
 
 ## Where the code is (audited 2026-10)
 
-Everything lives in this repo (`nursery/contextual`), crate
+Everything lives in this repo (`nursery/contexture`), crate
 `contextual`, binaries `cx` + `cx-mcp`, ~3.3k LOC:
 
 | component | file | state |
