@@ -1,9 +1,10 @@
 # Contextual — pi plugin spec
 
 *The plugin: pi extension that connects the context system to pi sessions.
-Code (when written): `nursery/contextual/pi/`. Companions: `architecture.md`
-(components, resolution model, pull-in workflow), `plan.md` (M3), `sync.md`
-(transport). Supersedes M3's "decide the consumption path": the path is
+Code: `pi-contextual-plugin/` (pi extension, blessed snapshot at
+`~/.pi/agent/extensions/contextual`). Companions: the ws `architecture`
+section (components, resolution model), `old/plan.md`, `old/sync.md`
+(transport history). Supersedes M3's "decide the consumption path": the path is
 **MCP**, and the split is below.*
 
 ## Division of responsibility
@@ -111,8 +112,8 @@ Details:
   with `- atom` bullets — inject verbatim. Empty resolve → inject nothing.
 - **Tags are not injected.** Default tiers only; the model pulls tagged
   atoms itself via `resolve(tags)` when the user names technologies, and
-  discovers hashtags via `search` — the pull-in workflow in
-  `architecture.md` is unchanged and runs through the same MCP tools the
+  discovers hashtags via `search` — the pull-in workflow (ws
+  `architecture` section) is unchanged and runs through the same MCP tools the
   model already sees (`mcp__context__*`).
 
 ### 3. Commands
@@ -203,8 +204,7 @@ descriptions and the injection preamble).
 
 ## Milestones
 
-1. **P1 — wire-up (done).** Code at `nursery/contextual/pi/` (symlinked
-   here as `pi/`). Install detection + offer (background
+1. **P1 — wire-up (done).** Code in `pi-contextual-plugin/`. Install detection + offer (background
    `cargo install --git`, notified on completion), `registerMcpServer`,
    first-prompt injection as a `<context>` section (with the curation
    preamble from `curation.md`), offline degradation. Verified: injection

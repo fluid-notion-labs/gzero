@@ -4,7 +4,7 @@
 `plan2.md`'s build-order TODO; plan2 stays as reference for the engine
 rationale, record-type schema, and the workflow-content rule (workflow
 content lives in the bag, not in files). Ordering follows the
-re-phased build order in `architecture.md`: the workflow system (WS)
+re-phased build order in `old/architecture.md`: the workflow system (WS)
 built **locally**, then **distributed**; the resident track is far
 later and not planned here.*
 
@@ -181,7 +181,7 @@ Everything lives in this repo (`nursery/contextual`), crate
 
 ## Later — not planned here
 
-`architecture.md` build order 4–7: thin resident shim → cloudrust
+`old/architecture.md` build order 4–7: thin resident shim → cloudrust
 artifact pull-back → in-memory tree → full resident daemon; ai-harness
 session tree after that. The MCP surface stays stable throughout.
 

@@ -5,7 +5,7 @@ curation policy, not the architecture. Source: hermes-agent clone at
 `../../vendor/hermes-agent/` (paths cited to it). Context: we are moving
 off files to the hub as the always-on, always-distributed store; what
 carries over is the *policy*, since it is store-agnostic. Companion:
-`pi-plugin.md` (injection), `architecture.md` (store).*
+`pi-plugin.md` (injection), `old/architecture.md` (store).*
 
 ## The three instruction sites (hermes)
 

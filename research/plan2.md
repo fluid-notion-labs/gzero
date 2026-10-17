@@ -2,7 +2,9 @@
 
 ## Status
 
-Fresh plan (2026-10) for the productization thread: contextual grows
+Superseded by `plan3.md` (2026-10) — kept as reference for the engine
+rationale, record-type schema, and the workflow-content rule. Original
+greeting: productization thread: contextual grows
 from "bag + CLI" into a fully specified product — doc set, user
 stories, work-item/todo facet, native history — with automerge-rs as
 the engine core behind contextual's `Storage` trait (**elastic** is the
