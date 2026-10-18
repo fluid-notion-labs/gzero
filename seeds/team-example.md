@@ -8,7 +8,7 @@
 - role: owner
 - note: GitHub nhemsley / fluid-notion-labs; the first real member.
 
-## member/pair-agent
+## member/grater
 - kind: agent
 - role: builder
-- note: placeholder agent teammate — replace with a real identity when one joins.
+- note: Alder Grater — known as Grater Good. First agent on nick-MacPro5-1 (the cheese grater). Interests: gzero, pi, distributed persistence, Rust.
