@@ -911,6 +911,27 @@ test("collapsed documentation sections keep the tree short", () => {
 
 // ---- skills / router / history sections (panel integration) ----
 
+test("zero-data sections: empty catalog renders without crashing", () => {
+  // Regression: "skills 0" — an empty catalog produced zero tree rows and
+  // the panel crashed reading the selection (render and enter).
+  const p = make([
+    { id: "tasks", label: "tasks", expanded: true, children: [] },
+    { id: "context", label: "context", expanded: true, children: [] },
+    { id: "skills", label: "skills", expanded: true, children: skillsSectionNodes([], []) },
+    { id: "router", label: "router", expanded: true, children: [] },
+    { id: "history", label: "history", expanded: true, children: [] },
+    { id: "documentation", label: "documentation", children: [] },
+  ]);
+  const out = plain(p.render(100)).join("\n");
+  assert.ok(out.includes("skills 0"), "tab count reflects the empty section");
+  assert.ok(out.includes("(empty)"), "detail pane shows a stub, not a crash");
+  p.handleInput("\r"); // enter on an empty section must not throw
+  p.handleInput("j");
+  p.handleInput("k");
+  p.handleInput("\\");
+  assert.ok(true);
+});
+
 test("skillsSectionNodes groups the catalog by vendor, marks loaded with a checkmark", () => {
   const loaded = skillEntry("loaded-one");
   const nodes = skillsSectionNodes(

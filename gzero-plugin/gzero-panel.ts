@@ -660,7 +660,10 @@ export class GzeroPanel implements Component, Focusable {
   invalidate(): void {}
 
   get selected(): PanelRow {
-    return this.rows[this.cursor];
+    // Zero-data sections (e.g. an empty skills catalog) leave this.rows
+    // empty; hand back a stub so render and key handling can't crash on
+    // a missing selection (this happened with "skills 0").
+    return this.rows[this.cursor] ?? { node: { id: "__empty", label: "(empty)" }, depth: 0 };
   }
 
   private moveCursor(delta: number): void {
