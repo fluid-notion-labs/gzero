@@ -772,6 +772,111 @@ fn hashtags(text: &str) -> BTreeSet<String> {
         .collect()
 }
 
+/// The atom store backend: the automerge doc by default (D1-synced,
+/// same doc as sections/items), the legacy SQLite database under
+/// `CX_LEGACY_DB=1` (rollback hatch until every machine has cut over).
+pub enum Atoms {
+    Doc(Box<AutomergeStore>),
+    Legacy(SqliteStore),
+}
+
+/// True when the legacy SQLite atom store is forced on.
+pub fn legacy_db() -> bool {
+    std::env::var("CX_LEGACY_DB").ok().as_deref() == Some("1")
+}
+
+/// The sync bag: hub-side namespace for this doc's change log.
+pub fn atoms_bag() -> String {
+    std::env::var("CX_BAG").unwrap_or_else(|_| "context".into())
+}
+
+/// Default legacy SQLite atom store path (`CX_DB`).
+pub fn legacy_db_path() -> std::path::PathBuf {
+    if let Ok(p) = std::env::var("CX_DB") {
+        return p.into();
+    }
+    if let Some(home) = std::env::var_os("HOME") {
+        return std::path::Path::new(&home).join(".pi/agent/context.db");
+    }
+    std::path::PathBuf::from("context.db")
+}
+
+impl Atoms {
+    /// Open the configured atom store. Doc mode maps `CX_WS_DB` via
+    /// [`sections::default_ws_path`]; legacy mode maps `CX_DB` via
+    /// [`legacy_db_path`].
+    pub fn open() -> std::result::Result<Atoms, String> {
+        if legacy_db() {
+            let path = legacy_db_path();
+            let store = SqliteStore::open(path.to_str().unwrap_or("context.db"))
+                .map_err(|e| format!("atoms: open {}: {e}", path.display()))?;
+            Ok(Atoms::Legacy(store))
+        } else {
+            let path = sections::default_ws_path();
+            let store = AutomergeStore::open(Some(&path))
+                .map_err(|e| format!("atoms: open {}: {e}", path.display()))?;
+            Ok(Atoms::Doc(Box::new(store)))
+        }
+    }
+
+    pub fn storage(&mut self) -> &mut dyn Storage {
+        match self {
+            Atoms::Doc(s) => &mut **s,
+            Atoms::Legacy(s) => s,
+        }
+    }
+
+    /// Read-only transaction on the atom store.
+    pub fn read<T>(
+        &mut self,
+        f: impl FnOnce(&dyn Storage) -> std::result::Result<T, String>,
+    ) -> std::result::Result<T, String> {
+        f(self.storage())
+    }
+
+    /// Write transaction: run `f`, then (doc mode) sync the doc through
+    /// the hub — pull first, push after. Sync failure is reported on
+    /// stderr but never fails the call: the write is durable locally
+    /// and the next sync catches up. Offline (no `CX_HUB_URL`) the
+    /// write is local-only.
+    pub fn write<T>(
+        &mut self,
+        f: impl FnOnce(&mut dyn Storage) -> std::result::Result<T, String>,
+    ) -> std::result::Result<T, String> {
+        let out = f(self.storage())?;
+        if let Err(e) = self.sync() {
+            eprintln!("gzero: atom sync failed: {e}");
+        }
+        Ok(out)
+    }
+
+    /// Pull + push through the hub (doc mode only; legacy is a no-op).
+    pub fn sync(&mut self) -> std::result::Result<(), String> {
+        let Atoms::Doc(store) = self else {
+            return Ok(());
+        };
+        sync_doc(store)
+    }
+}
+
+/// Pull + push one automerge doc through the hub. The cursor sidecar
+/// lives next to the doc; offline (no `CX_HUB_URL`/`CX_TOKEN`) this is
+/// a no-op. In-memory stores (no path) are never synced.
+pub fn sync_doc(store: &mut AutomergeStore) -> std::result::Result<(), String> {
+    let Some(path) = store.path().map(|p| p.to_path_buf()) else {
+        return Ok(());
+    };
+    let bag = atoms_bag();
+    let Some(hub) = hub_changes::HubChanges::from_env(&bag) else {
+        return Ok(());
+    };
+    let sidecar = hub_changes::sidecar_path(&path);
+    let mut cursor = hub_changes::SyncCursor::load(&sidecar, &bag)?;
+    let result = hub_changes::sync_once(store, &hub, &mut cursor);
+    cursor.save(&sidecar, &bag)?;
+    result.map(|_| ())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1312,5 +1417,50 @@ mod tests {
         let doc_texts: BTreeSet<String> =
             alive(&doc).unwrap().into_iter().map(|(t, _)| t).collect();
         assert!(doc_texts.contains("two"));
+    }
+
+    #[test]
+    fn atoms_read_write_roundtrip_offline() {
+        // In-memory doc, no hub env: write txn must succeed locally and
+        // sync must be a silent no-op.
+        let mut atoms = Atoms::Doc(Box::new(AutomergeStore::in_memory().unwrap()));
+        atoms
+            .write(|s| add_doc(s, "t.md", "## n\n- hello\n").map_err(|e| e.to_string()))
+            .unwrap();
+        let found = atoms
+            .read(|s| search(s, "hello").map_err(|e| e.to_string()))
+            .unwrap();
+        assert_eq!(found.len(), 1);
+        assert!(found[0].1.text.contains("hello"));
+    }
+
+    #[test]
+    fn sync_doc_skips_in_memory_stores() {
+        let mut doc = AutomergeStore::in_memory().unwrap();
+        sync_doc(&mut doc).unwrap();
+    }
+
+    #[test]
+    fn atoms_open_respects_legacy_flag() {
+        // CX_LEGACY_DB=1 → SQLite at CX_DB; unset → the doc at CX_WS_DB.
+        let dir = std::env::temp_dir().join(format!("gzero-atoms-open-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("legacy.db");
+        let ws = dir.join("doc.ws");
+        std::env::set_var("CX_LEGACY_DB", "1");
+        std::env::set_var("CX_DB", db.to_str().unwrap());
+        match Atoms::open().unwrap() {
+            Atoms::Legacy(_) => {}
+            Atoms::Doc(_) => panic!("legacy flag ignored"),
+        }
+        std::env::remove_var("CX_LEGACY_DB");
+        std::env::remove_var("CX_DB");
+        std::env::set_var("CX_WS_DB", ws.to_str().unwrap());
+        match Atoms::open().unwrap() {
+            Atoms::Doc(_) => {}
+            Atoms::Legacy(_) => panic!("doc mode expected"),
+        }
+        std::env::remove_var("CX_WS_DB");
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

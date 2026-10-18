@@ -15,14 +15,20 @@
 //! Workflow sections (`ws_*`): keyed, typed documents (md or checklist)
 //! per project scope — the workflow system's long-form content
 //! (vision, plan, checklists, user stories; plan3 W1). Stored in the
-//! automerge doc at `CX_WS_DB` (default ~/.pi/agent/context.ws),
-//! separate from the atom store.
+//! automerge doc at `CX_WS_DB` (default ~/.pi/agent/context.ws) —
+//! since 23c0 the atoms live in that same doc, D1-synced.
 //!
 //! Curation policy in the tool descriptions follows hermes' memory tool
 //! (see `research/context/curation.md`): WHEN/SKIP routing, declarative
 //! phrasing, swap-don't-skip via batched remove+add.
 //!
-//! `CX_DB` selects the atom store (default `~/.pi/agent/context.db`, same as `cx`).
+//! Atom storage: the automerge doc at `CX_WS_DB` (default
+//! `~/.pi/agent/context.ws`), synced through the gzero-hub D1 change
+//! log (`CX_HUB_URL`/`CX_TOKEN`, bag `CX_BAG`). `CX_LEGACY_DB=1`
+//! selects the legacy SQLite store at `CX_DB` (default
+//! `~/.pi/agent/context.db`) — the rollback hatch. Sessions, messages,
+//! broadcasts and presence always live in the SQLite handle
+//! (`CX_DB`): ephemeral data, never synced.
 //! Logging goes to stderr only; stdout is protocol.
 
 use std::collections::BTreeSet;
@@ -33,18 +39,39 @@ use gzero::items::{MoveTarget, Status, WorkItem};
 use gzero::sections::{Section, SectionKind};
 use gzero::snapshot::Atom;
 use gzero::{
-    resolve_tiers, search, tag_counts, AutomergeStore, ParsedAtom, Row, SqliteStore, Storage,
+    legacy_db, resolve_tiers, search, tag_counts, Atoms, AutomergeStore, ParsedAtom, Row,
+    SqliteStore, Storage,
 };
 
 const SOURCE: &str = "mcp";
 const FALLBACK_SCOPE: &str = "inbox";
 const DEFAULT_NODE: &str = "notes";
 
+/// Server state. The SQLite handle lives for the whole session
+/// (sessions, messages, broadcasts, presence); the atom store is
+/// opened per call — a long-lived automerge handle would let a save
+/// clobber concurrent CLI writers (same-file whole-save LWW).
+struct App {
+    comms: SqliteStore,
+    atoms: Box<dyn Fn() -> Result<Atoms, String> + Send>,
+}
+
+impl App {
+    fn new() -> App {
+        App {
+            comms: open_store(),
+            atoms: Box::new(Atoms::open),
+        }
+    }
+
+    fn open_atoms(&mut self) -> Result<Atoms, String> {
+        (self.atoms)()
+    }
+}
+
 fn main() {
-    let mut store = open_store();
-    pull_from_hub(&mut store);
-    seed_on_startup(&mut store);
-    reconcile_harvest_on_startup(&mut store);
+    let mut app = App::new();
+    startup(&mut app);
     let stdin = std::io::stdin();
     let mut out = std::io::stdout().lock();
     for line in stdin.lock().lines() {
@@ -52,21 +79,55 @@ fn main() {
         if line.trim().is_empty() {
             continue;
         }
-        if let Some(response) = handle_line(&line, &mut store) {
+        if let Some(response) = handle_line(&line, &mut app) {
             writeln!(out, "{response}").expect("gzero-mcp: stdout closed");
             out.flush().expect("gzero-mcp: flush failed");
         }
     }
 }
 
+/// Best-effort startup sync: pull the hub's content before anything
+/// local runs, so seeds and harvest reconcile land on a fresh doc.
+/// Never fatal: the session works without it.
+fn startup(app: &mut App) {
+    if legacy_db() {
+        // In legacy mode the comms handle is the atom store.
+        pull_from_hub(&mut app.comms);
+        seed_on_startup(&mut app.comms);
+        reconcile_harvest_on_startup(&mut app.comms);
+    } else {
+        let mut atoms = match app.open_atoms() {
+            Ok(a) => a,
+            Err(e) => {
+                eprintln!("gzero-mcp: cannot open atom store: {e}");
+                return;
+            }
+        };
+        if let Err(e) = atoms.sync() {
+            eprintln!("gzero-mcp: hub sync failed: {e}");
+        }
+        if let Err(e) = atoms.write(|s| {
+            gzero::reconcile_seeds(s)
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        }) {
+            eprintln!("gzero-mcp: seed sync failed: {e}");
+        }
+        if let Err(e) = atoms.write(|s| {
+            let dir = std::env::current_dir().map_err(|e| e.to_string())?;
+            gzero::reconcile_harvest(s, &dir, false)
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        }) {
+            eprintln!("gzero-mcp: harvest reconcile failed: {e}");
+        }
+    }
+}
+
 fn open_store() -> SqliteStore {
-    let path = std::env::var("CX_DB").unwrap_or_else(|_| {
-        format!(
-            "{}/.pi/agent/context.db",
-            std::env::var("HOME").expect("gzero-mcp: no HOME")
-        )
-    });
-    SqliteStore::open(&path).expect("gzero-mcp: cannot open atom store")
+    let path = gzero::legacy_db_path();
+    SqliteStore::open(path.to_str().unwrap_or("context.db"))
+        .expect("gzero-mcp: cannot open comms store")
 }
 
 /// Best-effort: absorb the hub's merged snapshot so this session sees
@@ -146,7 +207,9 @@ fn reconcile_harvest_on_startup(store: &mut SqliteStore) {
 
 /// Best-effort event post to the hub.
 fn try_post(events: Vec<Event>) {
-    if events.is_empty() {
+    // Doc mode propagates atom changes via the D1 change log
+    // (sync_once); legacy /events would double-write.
+    if events.is_empty() || !legacy_db() {
         return;
     }
     if let Some(hub) = Hub::from_env() {
@@ -157,7 +220,7 @@ fn try_post(events: Vec<Event>) {
 }
 
 /// Handle one incoming JSON-RPC message; None for notifications.
-fn handle_line(line: &str, store: &mut SqliteStore) -> Option<String> {
+fn handle_line(line: &str, app: &mut App) -> Option<String> {
     let msg: serde_json::Value = serde_json::from_str(line).ok()?;
     let id = msg.get("id").cloned()?;
     let method = msg.get("method").and_then(|m| m.as_str())?.to_string();
@@ -185,7 +248,7 @@ fn handle_line(line: &str, store: &mut SqliteStore) -> Option<String> {
             "tools": serde_json::from_str::<serde_json::Value>(TOOLS)
                 .expect("gzero-mcp: TOOLS literal is not valid JSON")
         })),
-        "tools/call" => call_tool(&params, store),
+        "tools/call" => call_tool(&params, app),
         _ => Err(format!("method not found: {method}")),
     };
 
@@ -199,10 +262,7 @@ fn handle_line(line: &str, store: &mut SqliteStore) -> Option<String> {
     })
 }
 
-fn call_tool(
-    params: &serde_json::Value,
-    store: &mut SqliteStore,
-) -> Result<serde_json::Value, String> {
+fn call_tool(params: &serde_json::Value, app: &mut App) -> Result<serde_json::Value, String> {
     let name = params
         .get("name")
         .and_then(|n| n.as_str())
@@ -211,13 +271,26 @@ fn call_tool(
         .get("arguments")
         .cloned()
         .unwrap_or(serde_json::json!({}));
+    // Atom tools open the atom store per call: short transactions that
+    // sync through the hub on writes, so the MCP server and the CLI can
+    // interleave safely.
     let text = match name {
-        "resolve" => tool_resolve(&args, store)?,
-        "search" => tool_search(&args, store)?,
-        "add" => tool_add(&args, store)?,
-        "remove" => tool_remove(&args, store)?,
-        "tags" => tool_tags(store)?,
-        "harvest" => tool_harvest(&args, store)?,
+        "resolve" | "search" | "tags" => {
+            let mut atoms = app.open_atoms()?;
+            match name {
+                "resolve" => tool_resolve(&args, atoms.storage(), &app.comms)?,
+                "search" => tool_search(&args, atoms.storage())?,
+                _ => tool_tags(atoms.storage())?,
+            }
+        }
+        "add" | "remove" | "harvest" => {
+            let mut atoms = app.open_atoms()?;
+            match name {
+                "add" => atoms.write(|s| tool_add(&args, s))?,
+                "remove" => atoms.write(|s| tool_remove(&args, s))?,
+                _ => atoms.write(|s| tool_harvest(&args, s))?,
+            }
+        }
         "park_claim" => tool_park_claim(&args)?,
         "ws_put" | "ws_get" | "ws_list" | "ws_ensure" | "ws_delete" => {
             let mut ws = ws_store()?;
@@ -234,9 +307,9 @@ fn call_tool(
             tool_session_handoff(&args, &mut ws)?
         }
         "msg_send" | "msg_read" | "broadcast" => match name {
-            "msg_send" => tool_msg_send(&args, store)?,
-            "msg_read" => tool_msg_read(store)?,
-            _ => tool_broadcast(&args, store)?,
+            "msg_send" => tool_msg_send(&args, &app.comms)?,
+            "msg_read" => tool_msg_read(&app.comms)?,
+            _ => tool_broadcast(&args, &app.comms)?,
         },
         "item_add" | "item_list" | "item_ready" | "item_get" | "item_edit" | "item_note"
         | "item_delete" | "item_pin" | "item_gate" | "item_move" => {
@@ -254,7 +327,7 @@ fn call_tool(
                 _ => tool_item_delete(&args, &mut ws)?,
             }
         }
-        "sessions" => tool_sessions(store)?,
+        "sessions" => tool_sessions(&app.comms)?,
         "scope" => tool_scope()?,
         "plan_next" => {
             let ws = ws_store()?;
@@ -301,7 +374,11 @@ fn render(items: Vec<(String, Row)>) -> String {
     out
 }
 
-fn tool_resolve(args: &serde_json::Value, store: &SqliteStore) -> Result<String, String> {
+fn tool_resolve(
+    args: &serde_json::Value,
+    store: &mut dyn Storage,
+    comms: &SqliteStore,
+) -> Result<String, String> {
     // Browse mode: a scope_prefix (even empty) bypasses tier defaults and
     // returns every atom whose scope starts with it — for inspection UIs.
     if let Some(prefix) = args.get("scope_prefix").and_then(|v| v.as_str()) {
@@ -315,13 +392,13 @@ fn tool_resolve(args: &serde_json::Value, store: &SqliteStore) -> Result<String,
     let mut out = render(items);
     // Presence (S1): resolve doubles as the heartbeat — it runs every
     // turn, so no timer. Sweeping expired rows rides along.
-    if let Some(block) = presence_block(store) {
+    if let Some(block) = presence_block(comms) {
         out.push_str(&block);
     }
     // Conversation layer (S3/S3b): unread messages for this session;
     // unseen broadcasts delivered and drained. Ephemeral sweeps ride
     // on the same piggyback.
-    if let Some(block) = comms_block(store) {
+    if let Some(block) = comms_block(comms) {
         out.push_str(&block);
     }
     // Handoff slot (S2): the newest open handoff in this scope, unless
@@ -482,7 +559,7 @@ fn pinned_block() -> Option<String> {
     Some(out)
 }
 
-fn tool_search(args: &serde_json::Value, store: &SqliteStore) -> Result<String, String> {
+fn tool_search(args: &serde_json::Value, store: &dyn Storage) -> Result<String, String> {
     let needle = args
         .get("text")
         .and_then(|t| t.as_str())
@@ -514,7 +591,7 @@ fn tool_search(args: &serde_json::Value, store: &SqliteStore) -> Result<String, 
 
 /// Full atoms among the alive set whose text contains `needle` — the
 /// exact identity removal events need.
-fn alive_matching(store: &SqliteStore, needle: &str) -> Result<Vec<Atom>, String> {
+fn alive_matching(store: &dyn Storage, needle: &str) -> Result<Vec<Atom>, String> {
     Ok(gzero::alive(store)
         .map_err(|e| e.to_string())?
         .into_iter()
@@ -629,7 +706,7 @@ fn tool_park_claim(args: &serde_json::Value) -> Result<String, String> {
     ))
 }
 
-fn tool_harvest(args: &serde_json::Value, store: &mut SqliteStore) -> Result<String, String> {
+fn tool_harvest(args: &serde_json::Value, store: &mut dyn Storage) -> Result<String, String> {
     let dir = match args.get("path").and_then(|p| p.as_str()) {
         Some(p) => std::path::PathBuf::from(p),
         None => std::env::current_dir().map_err(|e| e.to_string())?,
@@ -674,7 +751,7 @@ fn tool_harvest(args: &serde_json::Value, store: &mut SqliteStore) -> Result<Str
     Ok(out.trim_end().to_string())
 }
 
-fn tool_add(args: &serde_json::Value, store: &mut SqliteStore) -> Result<String, String> {
+fn tool_add(args: &serde_json::Value, store: &mut dyn Storage) -> Result<String, String> {
     let ops = parse_ops(args)?;
     let mut added: Vec<Atom> = Vec::new();
     let mut removed: Vec<Atom> = Vec::new();
@@ -751,7 +828,7 @@ fn row_to_parsed(row: Row) -> ParsedAtom {
     }
 }
 
-fn tool_remove(args: &serde_json::Value, store: &mut SqliteStore) -> Result<String, String> {
+fn tool_remove(args: &serde_json::Value, store: &mut dyn Storage) -> Result<String, String> {
     let needle = args
         .get("text")
         .and_then(|t| t.as_str())
@@ -785,7 +862,7 @@ fn tool_remove(args: &serde_json::Value, store: &mut SqliteStore) -> Result<Stri
     Ok(format!("tombstoned {n} atom(s) matching {needle:?}"))
 }
 
-fn tool_tags(store: &SqliteStore) -> Result<String, String> {
+fn tool_tags(store: &dyn Storage) -> Result<String, String> {
     let counts = tag_counts(store).map_err(|e| e.to_string())?;
     if counts.is_empty() {
         return Ok("(no tags yet)".to_string());
@@ -1799,13 +1876,32 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn store() -> SqliteStore {
-        SqliteStore::in_memory().unwrap()
+    /// Test app: comms in memory, atoms in a unique temp doc file that
+    /// every call reopens — the same per-call semantics as production.
+    fn app() -> App {
+        static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let path = std::env::temp_dir().join(format!(
+            "gzero-mcp-test-{}-{}.ws",
+            std::process::id(),
+            N.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+        ));
+        App {
+            comms: SqliteStore::in_memory().unwrap(),
+            atoms: Box::new(move || {
+                let store = AutomergeStore::open(Some(&path)).unwrap();
+                Ok(Atoms::Doc(Box::new(store)))
+            }),
+        }
+    }
+
+    /// Open the test app's atom store (for direct assertions).
+    fn atoms_of(s: &mut App) -> Atoms {
+        (s.atoms)().unwrap()
     }
 
     #[test]
     fn initialize_handshake() {
-        let mut s = store();
+        let mut s = app();
         let reply = handle_line(
             r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}"#,
             &mut s,
@@ -1815,9 +1911,46 @@ mod tests {
         assert!(reply.contains("context"));
     }
 
+    /// Legacy app: atoms in a persistent temp SQLite file — same
+    /// per-call reopen semantics as production legacy mode.
+    fn legacy_app() -> App {
+        let path = std::env::temp_dir().join(format!("gzero-mcp-legacy-{}.db", std::process::id()));
+        App {
+            comms: SqliteStore::in_memory().unwrap(),
+            atoms: Box::new(move || {
+                let store = SqliteStore::open(path.to_str().unwrap()).map_err(|e| e.to_string())?;
+                Ok(Atoms::Legacy(store))
+            }),
+        }
+    }
+
+    #[test]
+    fn legacy_backend_parity() {
+        // CX_LEGACY_DB=1 rollback hatch: the same tool surface on the
+        // SQLite store.
+        let mut s = legacy_app();
+        handle_line(
+            r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"add","arguments":{"text":"legacy rule","tags":"style"}}}"#,
+            &mut s,
+        )
+        .unwrap();
+        let res = handle_line(
+            r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"resolve","arguments":{"tags":"style"}}}"#,
+            &mut s,
+        )
+        .unwrap();
+        assert!(res.contains("legacy rule"));
+        handle_line(
+            r#"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"remove","arguments":{"text":"legacy"}}}"#,
+            &mut s,
+        )
+        .unwrap();
+        assert_eq!(atoms_of(&mut s).storage().tombstones().unwrap().len(), 1);
+    }
+
     #[test]
     fn notifications_get_no_reply() {
-        let mut s = store();
+        let mut s = app();
         assert!(handle_line(
             r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#,
             &mut s
@@ -1827,7 +1960,7 @@ mod tests {
 
     #[test]
     fn list_and_call_roundtrip() {
-        let mut s = store();
+        let mut s = app();
         let reply =
             handle_line(r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#, &mut s).unwrap();
         assert!(reply.contains("\"resolve\""));
@@ -1851,7 +1984,7 @@ mod tests {
 
     #[test]
     fn tagged_atom_hidden_until_pulled() {
-        let mut s = store();
+        let mut s = app();
         handle_line(
             r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"add","arguments":{"text":"rust only fact","tags":"rust"}}}"#,
             &mut s,
@@ -1875,7 +2008,7 @@ mod tests {
 
     #[test]
     fn search_finds_and_shows_tags() {
-        let mut s = store();
+        let mut s = app();
         handle_line(
             r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"add","arguments":{"text":"sveltekit adapter node","tags":"svelte"}}}"#,
             &mut s,
@@ -1891,7 +2024,7 @@ mod tests {
 
     #[test]
     fn remove_tombstones() {
-        let mut s = store();
+        let mut s = app();
         handle_line(
             r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"add","arguments":{"text":"gone soon"}}}"#,
             &mut s,
@@ -1909,12 +2042,12 @@ mod tests {
         .unwrap();
         assert!(!res.contains("gone soon"));
         // tombstone recorded, so it propagates via export
-        assert_eq!(s.tombstones().unwrap().len(), 1);
+        assert_eq!(atoms_of(&mut s).storage().tombstones().unwrap().len(), 1);
     }
 
     #[test]
     fn batch_add_and_remove_in_one_call() {
-        let mut s = store();
+        let mut s = app();
         handle_line(
             r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"add","arguments":{"text":"stale rule"}}}"#,
             &mut s,
@@ -1934,12 +2067,12 @@ mod tests {
         assert!(res.contains("fresh rule"));
         assert!(!res.contains("stale rule"));
         // both the tombstone and the mcp row for the old text are recorded
-        assert_eq!(s.tombstones().unwrap().len(), 1);
+        assert_eq!(atoms_of(&mut s).storage().tombstones().unwrap().len(), 1);
     }
 
     #[test]
     fn batch_validation_errors() {
-        let mut s = store();
+        let mut s = app();
         for body in [
             r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"add","arguments":{"operations":[]}}}"#,
             r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"add","arguments":{"operations":[{"action":"merge","text":"x"}]}}}"#,
@@ -1952,7 +2085,7 @@ mod tests {
 
     #[test]
     fn remove_no_match_returns_closest_entries() {
-        let mut s = store();
+        let mut s = app();
         handle_line(
             r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"add","arguments":{"text":"user prefers concise responses"}}}"#,
             &mut s,
@@ -1975,7 +2108,7 @@ mod tests {
 
     #[test]
     fn reassert_updates_tags() {
-        let mut s = store();
+        let mut s = app();
         handle_line(
             r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"add","arguments":{"text":"same text","tags":"a"}}}"#,
             &mut s,
@@ -2011,7 +2144,7 @@ mod tests {
             "# Gemini\n\n## style\n- prefer short answers\n",
         )
         .unwrap();
-        let mut s = store();
+        let mut s = app();
         let reply = handle_line(
             &format!(
                 "{{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{{\"name\":\"harvest\",\"arguments\":{{\"path\":\"{}\"}}}}}}",
@@ -2128,7 +2261,7 @@ mod tests {
 
     #[test]
     fn unknown_tool_and_method_error() {
-        let mut s = store();
+        let mut s = app();
         let reply = handle_line(
             r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"nope","arguments":{}}}"#,
             &mut s,
