@@ -22,7 +22,9 @@ use gzero::{source_counts, tag_counts, AutomergeStore, ChangeFeed, SqliteStore, 
 
 /// Post events to the hub if configured; warn (don't fail) otherwise.
 fn try_post_events(events: &[Event]) {
-    if events.is_empty() {
+    // Doc mode propagates atom changes via the D1 change log
+    // (Atoms::write sync); legacy /events would double-write.
+    if events.is_empty() || gzero::legacy_db() {
         return;
     }
     if let Some(hub) = Hub::from_env() {
@@ -92,8 +94,12 @@ gzero item rm <id>   delete an item
 gzero watch          stream ws-doc change events (items/sections) as JSON lines
                   until the reader hangs up; polls the doc file (3cd4)
 gzero sessions       session presence rows (stale marked; S1 inspection)
-env: CX_DB        atom store location (default ~/.pi/agent/context.db)
-env: CX_WS_DB     workflow doc: sections + items (default ~/.pi/agent/context.ws)";
+env: CX_WS_DB     atom store + workflow doc: atoms, tombstones, sections, items
+                  (default ~/.pi/agent/context.ws); synced via `gzero sync`
+                  (CX_HUB_URL, CX_TOKEN, bag CX_BAG default 'context')
+env: CX_LEGACY_DB=1  rollback: atoms on the legacy SQLite store (CX_DB,
+                  default ~/.pi/agent/context.db); `gzero pull`/`push` are
+                  legacy-only; migrate-db imports SQLite into the doc";
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -172,31 +178,34 @@ fn main() {
                 eprintln!("usage: gzero add file.md ...");
                 exit(2);
             }
-            let mut store = open_store();
-            for f in &args[1..] {
-                let text =
-                    std::fs::read_to_string(f).unwrap_or_else(|e| panic!("gzero: {}: {e}", f));
-                let source = source_path(Path::new(f));
-                let stats = gzero::add_doc(&mut store, &source, &text)
-                    .unwrap_or_else(|e| panic!("gzero: {e}"));
-                println!(
-                    "{f}: +{} -{} ={} (kept {})",
-                    stats.added, stats.removed, stats.kept, stats.kept
-                );
-                // Post only what this sync added (idempotent on the hub).
-                let events: Vec<Event> = gzero::parse(&text)
-                    .into_iter()
-                    .map(|a| Event::Put {
-                        atom: Atom {
-                            text: a.text,
-                            scope: a.scope,
-                            node: a.node,
-                            tags: a.tags,
-                        },
-                    })
-                    .collect();
-                try_post_events(&events);
-            }
+            let mut atoms = open_atoms();
+            let mut events: Vec<Event> = Vec::new();
+            atoms
+                .write(|store| {
+                    for f in &args[1..] {
+                        let text = std::fs::read_to_string(f)
+                            .unwrap_or_else(|e| panic!("gzero: {}: {e}", f));
+                        let source = source_path(Path::new(f));
+                        let stats =
+                            gzero::add_doc(store, &source, &text).map_err(|e| e.to_string())?;
+                        println!(
+                            "{f}: +{} -{} ={} (kept {})",
+                            stats.added, stats.removed, stats.kept, stats.kept
+                        );
+                        // Post only what this sync added (idempotent on the hub).
+                        events.extend(gzero::parse(&text).into_iter().map(|a| Event::Put {
+                            atom: Atom {
+                                text: a.text,
+                                scope: a.scope,
+                                node: a.node,
+                                tags: a.tags,
+                            },
+                        }));
+                    }
+                    Ok(())
+                })
+                .unwrap_or_else(|e| panic!("gzero: {e}"));
+            try_post_events(&events);
         }
         "sync" => {
             let bag = std::env::var("CX_BAG").unwrap_or_else(|_| "context".into());
@@ -292,8 +301,9 @@ fn main() {
                 eprintln!("usage: gzero export <file>");
                 exit(2);
             }
-            let store = open_store();
-            let snap = gzero::export_snapshot(&store).unwrap_or_else(|e| panic!("gzero: {e}"));
+            let mut atoms = open_atoms();
+            let snap =
+                gzero::export_snapshot(atoms.storage()).unwrap_or_else(|e| panic!("gzero: {e}"));
             let bytes = snap.to_json().unwrap_or_else(|e| panic!("gzero: {e}"));
             std::fs::write(&args[1], bytes).unwrap_or_else(|e| panic!("gzero: {}: {e}", args[1]));
             println!(
@@ -308,13 +318,13 @@ fn main() {
                 eprintln!("usage: gzero absorb <file>...");
                 exit(2);
             }
-            let mut store = open_store();
+            let mut atoms = open_atoms();
             for f in &args[1..] {
                 let bytes = std::fs::read(f).unwrap_or_else(|e| panic!("gzero: {}: {e}", f));
                 let snap = gzero::snapshot::Snapshot::from_json(&bytes)
                     .unwrap_or_else(|e| panic!("gzero: {f}: {e}"));
                 let source = source_path(Path::new(f));
-                let stats = gzero::absorb_snapshot(&mut store, &source, &snap)
+                let stats = gzero::absorb_snapshot(atoms.storage(), &source, &snap)
                     .unwrap_or_else(|e| panic!("gzero: {e}"));
                 println!(
                     "{f}: +{} -{} kept {} ({} tombstones)",
@@ -326,8 +336,10 @@ fn main() {
             }
         }
         "sources" => {
-            let store = open_store();
-            for (source, n) in source_counts(&store).unwrap_or_else(|e| panic!("gzero: {e}")) {
+            let mut atoms = open_atoms();
+            for (source, n) in
+                source_counts(atoms.storage()).unwrap_or_else(|e| panic!("gzero: {e}"))
+            {
                 println!("{n}\t{source}");
             }
         }
@@ -337,20 +349,26 @@ fn main() {
                 exit(2);
             }
             let needle = args[1..].join(" ");
-            let mut store = open_store();
-            let victims = matched_atoms(&store, &needle);
-            match store.remove_matching(&needle) {
-                Ok(0) => println!("(no matches)"),
-                Ok(n) => {
-                    println!("removed {n}");
-                    try_post_events(
-                        &victims
+            let mut atoms = open_atoms();
+            let (removed, events) = atoms
+                .write(|store| {
+                    let victims = matched_atoms(store, &needle);
+                    let n = store.remove_matching(&needle).map_err(|e| e.to_string())?;
+                    Ok((
+                        n,
+                        victims
                             .into_iter()
                             .map(|atom| Event::Remove { atom })
                             .collect::<Vec<_>>(),
-                    );
+                    ))
+                })
+                .unwrap_or_else(|e| panic!("gzero: {e}"));
+            match removed {
+                0 => println!("(no matches)"),
+                n => {
+                    println!("removed {n}");
+                    try_post_events(&events);
                 }
-                Err(e) => panic!("gzero: {e}"),
             }
         }
         "harvest" => {
@@ -361,9 +379,10 @@ fn main() {
                 Some(d) => PathBuf::from(d),
                 None => std::env::current_dir().unwrap_or_else(|e| panic!("gzero: {e}")),
             };
-            let mut store = open_store();
+            let mut atoms = open_atoms();
             if check || take {
-                let result = gzero::reconcile_harvest(&mut store, &dir, take)
+                let result = atoms
+                    .write(|s| gzero::reconcile_harvest(s, &dir, take).map_err(|e| e.to_string()))
                     .unwrap_or_else(|e| panic!("gzero: harvest: {e}"));
                 for r in &result.harvested {
                     match &r.stats {
@@ -411,7 +430,8 @@ fn main() {
                 }
                 try_post_events(&events);
             } else {
-                let results = gzero::harvest_dir(&mut store, &dir)
+                let results = atoms
+                    .write(|s| gzero::harvest_dir(s, &dir).map_err(|e| e.to_string()))
                     .unwrap_or_else(|e| panic!("gzero: harvest: {e}"));
                 if results.is_empty() {
                     println!(
@@ -456,8 +476,8 @@ fn main() {
                 exit(2);
             }
             let needle = args[1..].join(" ");
-            let mut store = open_store();
-            let sources: Vec<String> = source_counts(&store)
+            let mut atoms = open_atoms();
+            let sources: Vec<String> = source_counts(atoms.storage())
                 .unwrap_or_else(|e| panic!("gzero: {e}"))
                 .into_iter()
                 .map(|(s, _)| s)
@@ -467,7 +487,8 @@ fn main() {
                 [source] => {
                     // Tombstone first so removal survives hub pulls; then
                     // drop the rows (sync with nothing = the source asserts nothing).
-                    let victims: Vec<Atom> = store
+                    let victims: Vec<Atom> = atoms
+                        .storage()
                         .all()
                         .unwrap_or_else(|e| panic!("gzero: {e}"))
                         .into_iter()
@@ -479,13 +500,15 @@ fn main() {
                             tags: r.tags,
                         })
                         .collect();
-                    store
-                        .tombstone(&victims)
+                    atoms
+                        .write(|store| {
+                            store.tombstone(&victims).map_err(|e| e.to_string())?;
+                            let stats =
+                                store.sync_source(source, &[]).map_err(|e| e.to_string())?;
+                            println!("{source}: removed {}", stats.removed);
+                            Ok(())
+                        })
                         .unwrap_or_else(|e| panic!("gzero: {e}"));
-                    let stats = store
-                        .sync_source(source, &[])
-                        .unwrap_or_else(|e| panic!("gzero: {e}"));
-                    println!("{source}: removed {}", stats.removed);
                     try_post_events(
                         &victims
                             .into_iter()
@@ -507,8 +530,8 @@ fn main() {
             }
         }
         "tags" => {
-            let store = open_store();
-            for (tag, n) in tag_counts(&store).unwrap_or_else(|e| panic!("gzero: {e}")) {
+            let mut atoms = open_atoms();
+            for (tag, n) in tag_counts(atoms.storage()).unwrap_or_else(|e| panic!("gzero: {e}")) {
                 println!("#{tag} {n}");
             }
         }
@@ -540,10 +563,10 @@ fn main() {
 }
 
 fn show(tags: &BTreeSet<String>) {
-    let store = open_store();
+    let mut atoms = open_atoms();
     let refs: Vec<&str> = tags.iter().map(String::as_str).collect();
     let project = gzero::repo_identity();
-    let items = gzero::resolve_tiers(&store, project.as_deref(), &refs)
+    let items = gzero::resolve_tiers(atoms.storage(), project.as_deref(), &refs)
         .unwrap_or_else(|e| panic!("gzero: {e}"));
     if items.is_empty() {
         println!("(no matching context)");
@@ -558,6 +581,12 @@ fn show(tags: &BTreeSet<String>) {
         }
         println!("- {text}");
     }
+}
+
+/// The atom store for CLI commands: the automerge doc by default
+/// (D1-synced via Atoms::write), legacy SQLite under CX_LEGACY_DB=1.
+fn open_atoms() -> gzero::Atoms {
+    gzero::Atoms::open().unwrap_or_else(|e| panic!("gzero: atoms: {e}"))
 }
 
 fn open_store() -> SqliteStore {
