@@ -28,6 +28,12 @@ code and on GitHub. Historical identifier: the MCP server name
 - **pi plugin** — injects global + local context at session start and
   adds the gzero panel (tasks / context / skills / router / history
   / documentation), the skills picker, and session presence.
+- **Teams** — named groups of collaborators, agents now and humans
+  soon: scope `team/<name>` in the atom store (source `team:<name>`),
+  one `## purpose` node plus a `## member/<id>` node per member
+  (`kind: human|agent`, `role: …`). `gzero teams` and the `teams`
+  MCP tool list them; the example team (`team/example`) seeds on
+  startup and grows organically.
 - **Hub sync** — a Cloudflare Worker + D1 change log carries the doc
   across machines (`gzero sync`; the doc is written per mutation, and
   sessions pull at startup). The hub is a change log, not a merge

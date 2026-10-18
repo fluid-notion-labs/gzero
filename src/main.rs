@@ -343,6 +343,15 @@ fn main() {
                 println!("{n}\t{source}");
             }
         }
+        "teams" => {
+            // List teams (scope team/<name>): name, purpose, members.
+            let mut atoms = open_atoms();
+            print!(
+                "{}",
+                gzero::teams::render(&gzero::teams::list_teams(atoms.storage())
+                    .unwrap_or_else(|e| panic!("gzero: {e}")))
+            );
+        }
         "rm" => {
             if args.len() < 2 {
                 eprintln!("usage: gzero rm <needle>");

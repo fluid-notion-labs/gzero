@@ -275,11 +275,14 @@ fn call_tool(params: &serde_json::Value, app: &mut App) -> Result<serde_json::Va
     // sync through the hub on writes, so the MCP server and the CLI can
     // interleave safely.
     let text = match name {
-        "resolve" | "search" | "tags" => {
+        "resolve" | "search" | "tags" | "teams" => {
             let mut atoms = app.open_atoms()?;
             match name {
                 "resolve" => tool_resolve(&args, atoms.storage(), &app.comms)?,
                 "search" => tool_search(&args, atoms.storage())?,
+                "teams" => gzero::teams::render(
+                    &gzero::teams::list_teams(atoms.storage()).map_err(|e| e.to_string())?
+                ),
                 _ => tool_tags(atoms.storage())?,
             }
         }
@@ -1615,6 +1618,11 @@ const TOOLS: &str = r#"[
   {
     "name": "tags",
     "description": "List the context repository's hashtag vocabulary with counts.",
+    "inputSchema": { "type": "object", "properties": {} }
+  },
+  {
+    "name": "teams",
+    "description": "List teams (scope team/<name>): name, purpose, and members with kind (human|agent) and role. Teams are durable, synced configuration — the example team seeds on startup and grows organically.",
     "inputSchema": { "type": "object", "properties": {} }
   },
   {

@@ -34,6 +34,7 @@ pub mod sections;
 pub mod sessions;
 pub mod snapshot;
 pub mod sqlite;
+pub mod teams;
 pub use automerge_store::AutomergeStore;
 pub use events::{ChangeEvent, ChangeFeed};
 pub use sessions::{SessionInfo, PRESENCE_TTL_SECS};
@@ -387,7 +388,11 @@ pub fn reconcile_harvest(
 /// edits propagate and seed removals retract. User tombstones win:
 /// `alive` excludes tombstoned texts, so an atom removed via the `remove`
 /// tool stays out even after re-seeding.
-pub const SEEDS: &[(&str, &str)] = &[("global", include_str!("../seeds/global.md"))];
+pub const SEEDS: &[(&str, &str)] = &[
+    ("global", include_str!("../seeds/global.md")),
+    // The example team (b66c): the teams test fixture / first-team starter.
+    ("team-example", include_str!("../seeds/team-example.md")),
+];
 
 /// Sync every seed document into the store. Returns per-seed stats.
 pub fn reconcile_seeds(store: &mut dyn Storage) -> Result<Vec<(String, SyncStats)>> {
