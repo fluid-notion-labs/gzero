@@ -33,10 +33,11 @@ concrete v0 scope.*
 - Workflow docs (sections + items) do NOT sync: `context.ws` is copied
   between machines by hand (`sync/SETUP.md` step 4 warns to reconcile
   manually). This is Track D, deferred.
-- **The deployed Worker's source is not in any known repo** (plan3
-  finding 8, still unresolved). No wrangler project found anywhere in
-  `explorations/`. The deployed worker may still be live but is
-  effectively unowned.
+- ~~The deployed Worker's source is not in any known repo~~ **Resolved
+  2026-10-18**: the source lives at `fluid-notion-labs/gzero-hub`
+  (commit e0f48e9, "contexture-hub", pushed 2026-10-10). Whether the
+  deployed Worker is still live and on which route remains an open
+  question.
 
 **Mobile client — design only.** `research/flutter-client.md` specifies
 the plane stack (Surface / App state / Lattice / Local replica /
@@ -44,10 +45,15 @@ Transport / Hub+Sync DO) with a 3D diagram built in scene-mcp. No code.
 
 ## Decisions for v0
 
-1. **`gzero-hub` is a new repo.** The old Worker's source is lost; v0 is
-   a rewrite, not a recovery. Repo: `fluid-notion-labs/gzero-hub`
-   (TypeScript, Wrangler, Worker + Durable Object). This also closes
-   plan3 finding 8.
+1. **`gzero-hub` is the existing repo.** *(Corrected 2026-10-18, after
+   this section was written: the old Worker's source was found on
+   GitHub — `fluid-notion-labs/gzero-hub` commit e0f48e9,
+   "contexture-hub", pushed 2026-10-10 — resolving plan3 finding 8.
+   v0 evolves that repo in place with history intact, not a new repo.
+   The original text said the source was lost and called for a
+   rewrite.)* The repo is TypeScript, Wrangler, Worker + Durable
+   Object; its old server-side atom merge (`src/merge.ts`) is kept for
+   the legacy `bag:global` path.
 2. **The hub is a change log, not a merge engine (v0).** The DO stores
    an append-only log of automerge changes per bag + a bootstrap
    snapshot. Merge happens client-side (automerge is already
