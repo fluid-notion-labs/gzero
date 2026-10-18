@@ -42,8 +42,15 @@ use crate::{items::fresh_id, Result};
 
 /// How much dead weight a comms bag accumulates before a replica rolls
 /// the epoch. Sweeping at every resolve only counts; the roll happens
-/// when this many expired messages are visible.
-const EPOCH_ROLL_THRESHOLD: usize = 64;
+/// when this many expired messages are visible (`CX_EPOCH_ROLL_THRESHOLD`
+/// overrides, for test runs that exercise the roll).
+fn epoch_roll_threshold() -> usize {
+    std::env::var("CX_EPOCH_ROLL_THRESHOLD")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .filter(|v| *v >= 1)
+        .unwrap_or(64)
+}
 
 /// Presence rows older than this are dropped at epoch roll (client-side
 /// staleness already hides them long before).
@@ -401,23 +408,28 @@ impl CommsStore {
             AutomergeStore::from_bytes(&bytes)?
         };
 
-        if self.sidecar.is_some() {
-            if let Some(hub) = HubChanges::from_env(&comms_bag()) {
-                let mut cursor = SyncCursor::load(
-                    self.sidecar.as_ref().unwrap(),
-                    &comms_bag(),
-                )?;
-                cursor.pushed_heads = Vec::new();
-                let pushed = hub.push(&mut self.store, &mut cursor)?;
-                cursor.save(self.sidecar.as_ref().unwrap(), &comms_bag())?;
-                if pushed > 0 {
-                    if let Ok(head) = hub.head_seq() {
-                        let before = head.saturating_sub(pushed as u64);
-                        if before > 0 {
-                            // GC is best-effort: a hub without the
-                            // truncate endpoint just skips it.
-                            let _ = hub.truncate_before(before);
-                        }
+        // Push the new epoch; truncate the superseded log. Works with
+        // or without a sidecar (in-memory replicas get a fresh cursor).
+        if let Some(hub) = HubChanges::from_env(&comms_bag()) {
+            let mut cursor = match &self.sidecar {
+                Some(sidecar) => {
+                    let mut c = SyncCursor::load(sidecar, &comms_bag())?;
+                    c.pushed_heads = Vec::new();
+                    c
+                }
+                None => SyncCursor::default(),
+            };
+            let pushed = hub.push(&mut self.store, &mut cursor)?;
+            if let Some(sidecar) = &self.sidecar {
+                cursor.save(sidecar, &comms_bag())?;
+            }
+            if pushed > 0 {
+                if let Ok(head) = hub.head_seq() {
+                    let before = head.saturating_sub(pushed as u64);
+                    if before > 0 {
+                        // GC is best-effort: a hub without the
+                        // truncate endpoint just skips it.
+                        let _ = hub.truncate_before(before);
                     }
                 }
             }
@@ -641,7 +653,7 @@ impl CommsLayer for CommsStore {
 
     fn sweep(&mut self) -> Result<usize> {
         let expired = self.expired_count();
-        if expired >= EPOCH_ROLL_THRESHOLD {
+        if expired >= epoch_roll_threshold() {
             self.roll_epoch()?;
         }
         Ok(expired)
@@ -798,6 +810,50 @@ mod tests {
         let bytes = b.store.save_bytes();
         a.store = AutomergeStore::from_bytes(&bytes).unwrap();
         assert!(a.unread_messages("sess-b").unwrap().is_empty());
+    }
+
+    /// The full GC loop through a real hub: a replica rolls the epoch,
+    /// the new doc is pushed, the hub truncates the superseded log, and
+    /// the other replica converges on the live data. Requires
+    /// HUB_TEST_URL (gzero-hub/scripts/two-replica-test.sh); skips when
+    /// unset.
+    #[test]
+    fn epoch_roll_converges_through_hub() {
+        let Ok(base) = std::env::var("HUB_TEST_URL") else {
+            eprintln!("skipping: HUB_TEST_URL not set");
+            return;
+        };
+        std::env::set_var("CX_HUB_URL", &base);
+        // Dev hub token (.dev.vars); this test targets a local hub only.
+        std::env::set_var("CX_TOKEN", "token");
+        std::env::set_var(
+            "CX_COMMS_BAG",
+            format!(
+                "comms-test-{}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis()
+            ),
+        );
+        let hub = HubChanges::from_env(&comms_bag()).expect("hub config");
+
+        let mut a = store();
+        a.send_message("sess-b", "sess-a", "survives the roll").unwrap();
+        let mut b = CommsStore::in_memory().unwrap();
+        b.store = AutomergeStore::from_bytes(&a.store.save_bytes()).unwrap();
+        let mut cur_b = SyncCursor::default();
+
+        // Roll: the new epoch is pushed inside roll_epoch; truncate is
+        // best-effort against the hub.
+        assert_eq!(a.roll_epoch().unwrap(), 1);
+
+        // B pulls the new epoch and converges on the live data.
+        hub.pull(&mut b.store, &mut cur_b).unwrap();
+        let unread = b.unread_messages("sess-b").unwrap();
+        assert_eq!(unread.len(), 1);
+        assert_eq!(unread[0].text, "survives the roll");
+        assert_eq!(b.epoch_n(), 1);
     }
 
     #[test]

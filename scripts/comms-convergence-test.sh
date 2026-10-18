@@ -93,4 +93,13 @@ echo "A (fresh, startup pull): resolve must show B's broadcast"
 out="$(mcp_as "$tmp/a-comms.ws" comms-sess-a "$resolve_call")"
 echo "$out" | grep -q "$bcast" || { echo "FAIL: A resolve missing broadcast: $out" >&2; exit 1; }
 
+# Epoch roll (GC): with the roll threshold at 1, A's next resolve sees
+# two expired messages (from steps above, now past TTL after backdating
+# is not possible via MCP — so instead drive the roll by volume: send
+# CX_EPOCH_ROLL_THRESHOLD+1 messages, let them expire client-side? No:
+# roll triggers on expired count, which needs old messages. Skip in this
+# script; the unit tests cover the roll (epoch_roll_keeps_live_and_drops_expired)
+# and the hub test covers truncate. The roll's hub push path is exercised
+# by any roll in production.
+
 echo "comms-convergence-test: PASS"

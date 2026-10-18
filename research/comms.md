@@ -87,15 +87,15 @@ No scope column: comms are machine-global, matching today's table shape.
 
 ## Hub integration
 
-- Existing per-bag change endpoints: expected to work as-is for bag
-  `comms` (verify; auth is the same `CX_TOKEN`).
-- New endpoint: truncate/epoch — `POST /bags/{bag}/truncate {before_seq}`
-  (or epoch-marker form). Deletes D1 change rows with `seq < before_seq`.
-  Auth: same token. Safety: idempotent; truncating below a replica's pull
-  cursor is that replica's problem to re-sync (documented behavior).
+- **[built]** Existing per-bag change endpoints work as-is for bag
+  `comms`; auth is the same `CX_TOKEN`.
+- **[built]** New endpoint: `POST /bag/{name}/truncate {"before": N}` in
+  gzero-hub — deletes change rows with seq < `before`, count-truthful and
+  idempotent, `nextSeq` untouched so pushes keep their position. The one
+  sanctioned deletion in the append-only log.
 - Live push (DO websockets) stays a separate, later item — needed for
-  real-time delivery under any storage choice. v1 delivery: push immediately
-  after send (already the pattern), pull at `resolve` and on session start.
+  real-time delivery under any storage choice. v1 delivery: sync at
+  session start and best-effort after every write, pull at `resolve`.
 
 ## Implementation (built)
 
