@@ -99,7 +99,7 @@ Dev (live-linked to a checkout, picks up every change on pi restart):
 
 ```sh
 mkdir -p ~/.pi/agent/extensions
-ln -s "$(pwd)/pi-gzero-plugin" ~/.pi/agent/extensions/gzero
+ln -s "$(pwd)/gzero-plugin" ~/.pi/agent/extensions/gzero
 ```
 
 Blessed (export a snapshot of whichever checkout you run it from —

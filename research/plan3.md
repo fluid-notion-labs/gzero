@@ -21,7 +21,7 @@ Everything lives in this repo (`nursery/gzero`), crate
 | hub client (`CX_HUB_URL`/`CX_TOKEN`: post_events, fetch_snapshot) | `src/hub.rs` (127) | live |
 | CLI: add / rm / rm-source / harvest / tags / sync / pull | `src/main.rs` (431) | live; no ws verbs yet |
 | MCP tools: resolve, search, add, remove, tags, harvest, ws_* | `src/bin/mcp.rs` | live, 15 tests |
-| pi plugin: per-turn injection, `/context` tier browser, review hook, skills, workstyles | `pi-gzero-plugin/*.ts` | live; `EXPECTED_TOOLS` gate = resolve/search/add/remove/tags |
+| pi plugin: per-turn injection, `/context` tier browser, review hook, skills, workstyles | `gzero-plugin/*.ts` | live; `EXPECTED_TOOLS` gate = resolve/search/add/remove/tags |
 | global floor content, compiled in, reconciled at startup | `seeds/global.md` | live |
 | hub (deployed Worker + DO) | **not in this repo** | source location unknown — find before D1 |
 | bagflow (DFIR + lattices reference prototype) | `nursery/bagflow` | unrenamed, no code dependency |
@@ -220,7 +220,7 @@ session tree after that. The MCP surface stays stable throughout.
       graph/tree view (child_of data exists; `cx item graph` deferred),
       priority-based `assignee` capacity policy (W4).
 - [x] W3: plan-task injection + skill-activation seed atom + plan tab
-      — the workflow pane shipped (`pi-gzero-plugin/items-pane.ts`):
+      — the workflow pane shipped (`gzero-plugin/items-pane.ts`):
       non-capturing top-right overlay, data via `cx item list --json`,
       glyphs ○/●/✓ plus ⊘ for blocked, refreshed on session start +
       agent_end + `/items refresh`; auto-hides when empty, terminal < 100

@@ -6,7 +6,7 @@ a scratch dir; never base code work on this branch.
 ## 1. Code
 ```sh
 jj git clone git@github.com:fluid-notion-labs/gzero.git gzero
-cd gzero           # main has src/, research/, pi-gzero-plugin/
+cd gzero           # main has src/, research/, gzero-plugin/
 ```
 (this hacks/sync branch only carries context: `context.md`, `sync/`)
 
@@ -20,12 +20,12 @@ Verify: `cx tags | head`
 ## 3. Plugin
 ```sh
 mkdir -p ~/.pi/agent/extensions
-ln -s ~/projects/explorations/nursery/gzero/pi-gzero-plugin \
+ln -s ~/projects/explorations/nursery/gzero/gzero-plugin \
       ~/.pi/agent/extensions/gzero
 # package.json has no deps — only recreate the pi-tui symlink:
-# mkdir -p pi-gzero-plugin/node_modules/@earendil-works
+# mkdir -p gzero-plugin/node_modules/@earendil-works
 # ln -s ~/.pi/agent/install/releases/*/node_modules/@earendil-works/pi-tui \
-#       pi-gzero-plugin/node_modules/@earendil-works/pi-tui
+#       gzero-plugin/node_modules/@earendil-works/pi-tui
 # ```
 # (no node_modules in git; npm install is NOT needed)
 
@@ -45,7 +45,7 @@ cx item ready
 ```
 Restart pi; the plugin adds the workflow pane (right side), Ctrl+W sections
 viewer, `/workflow` command. Typecheck plugin after edits:
-`npx -y -p typescript tsc --noEmit` (run inside pi-gzero-plugin/).
+`npx -y -p typescript tsc --noEmit` (run inside gzero-plugin/).
 
 ## Env
 - `CX_DB` default `~/.pi/agent/context.db`; `CX_WS_DB` default `~/.pi/agent/context.ws`

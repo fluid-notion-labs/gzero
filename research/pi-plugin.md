@@ -1,7 +1,7 @@
 # Contextual — pi plugin spec
 
 *The plugin: pi extension that connects the context system to pi sessions.
-Code: `pi-gzero-plugin/` (pi extension, blessed snapshot at
+Code: `gzero-plugin/` (pi extension, blessed snapshot at
 `~/.pi/agent/extensions/gzero`). Companions: the ws `architecture`
 section (components, resolution model), `old/plan.md`, `old/sync.md`
 (transport history). Supersedes M3's "decide the consumption path": the path is
@@ -204,7 +204,7 @@ descriptions and the injection preamble).
 
 ## Milestones
 
-1. **P1 — wire-up (done).** Code in `pi-gzero-plugin/`. Install detection + offer (background
+1. **P1 — wire-up (done).** Code in `gzero-plugin/`. Install detection + offer (background
    `cargo install --git`, notified on completion), `registerMcpServer`,
    first-prompt injection as a `<context>` section (with the curation
    preamble from `curation.md`), offline degradation. Verified: injection

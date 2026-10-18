@@ -41,7 +41,7 @@ resolve as `mcp__context__*`).
 ## Repo map
 
 - `src/` — the Rust core: atom store, workflow store, MCP server, CLI
-- `pi-gzero-plugin/` — the pi extension (blessed to
+- `gzero-plugin/` — the pi extension (blessed to
   `~/.pi/agent/extensions/gzero`; plain pi runs that snapshot)
 - `sync/` — hub sync setup and exported atom snapshots
 - `tools/` — skills pipeline, session tooling, dev helpers
@@ -54,7 +54,7 @@ resolve as `mcp__context__*`).
 
 - Rust: `cargo build`, `cargo test`
 - Plugin: `npm test` and `tools/typecheck.sh` in
-  `pi-gzero-plugin/` (`tools/bless-plugin.sh` refreshes the
+  `gzero-plugin/` (`tools/bless-plugin.sh` refreshes the
   snapshot after merging)
 - Workflow: jj workspaces per task (`.jj/workspaces/<feature>`),
   conventional commits, merge to `main`, push

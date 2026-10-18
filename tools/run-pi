@@ -24,9 +24,9 @@
 # plain `pi` session; this script is for iterating on it.
 set -e
 root="$(cd "$(dirname "$0")/.." && pwd)"
-[ -f "$root/pi-gzero-plugin/index.ts" ] || {
-	echo "no plugin at $root/pi-gzero-plugin" >&2
+[ -f "$root/gzero-plugin/index.ts" ] || {
+	echo "no plugin at $root/gzero-plugin" >&2
 	exit 1
 }
 exec pi --no-extensions -e builtin:mcp -e builtin:codemode \
-	-e "$root/pi-gzero-plugin" "$@"
+	-e "$root/gzero-plugin" "$@"
