@@ -55,6 +55,8 @@ gzero #tag ...       default plus tagged atoms
 gzero add file.md    import context markdown (per-source sync; re-run after edits)
 gzero harvest [dir]  import agent-instruction files (AGENTS.md, CLAUDE.md, GEMINI.md,
                   .cursorrules, .windsurfrules, copilot-instructions) as project context
+gzero migrate-db     import context.db atoms + tombstones into the workspace doc
+                  (per-source provenance preserved; idempotent)
 gzero export file    write this machine's snapshot (merge unit)
 gzero absorb file... merge other machines' snapshots into the local store
 gzero sync           push+pull the workspace store through the hub change log (CX_HUB_URL,
@@ -248,6 +250,42 @@ fn main() {
                 snap.atoms.len(),
                 snap.tombstones.len()
             );
+        }
+        "migrate-db" => {
+            let mut legacy = open_store();
+            let mut doc = open_ws();
+            let stats = gzero::migrate_db_to_doc(&mut legacy, &mut doc)
+                .unwrap_or_else(|e| panic!("gzero migrate-db: {e}"));
+            // Verification: every legacy alive text must exist in the doc.
+            let legacy_texts: BTreeSet<String> = gzero::alive(&legacy)
+                .unwrap_or_else(|e| panic!("gzero migrate-db: {e}"))
+                .into_iter()
+                .map(|(t, _)| t)
+                .collect();
+            let doc_texts: BTreeSet<String> = gzero::alive(&doc)
+                .unwrap_or_else(|e| panic!("gzero migrate-db: {e}"))
+                .into_iter()
+                .map(|(t, _)| t)
+                .collect();
+            let missing: Vec<&String> = legacy_texts.difference(&doc_texts).collect();
+            println!(
+                "migrated {} atoms ({} sources, {} unchanged), {} tombstones; \
+                 legacy {} texts, doc {} texts{}",
+                stats.atoms,
+                stats.sources_synced,
+                stats.sources_skipped,
+                stats.tombstones,
+                legacy_texts.len(),
+                doc_texts.len(),
+                if missing.is_empty() {
+                    String::new()
+                } else {
+                    format!(" ({} MISSING)", missing.len())
+                }
+            );
+            if !missing.is_empty() {
+                exit(1);
+            }
         }
         "export" => {
             if args.len() != 2 {

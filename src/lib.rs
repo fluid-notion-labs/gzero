@@ -639,6 +639,78 @@ pub fn tag_counts(store: &dyn Storage) -> Result<Vec<(String, usize)>> {
     Ok(counts.into_iter().collect())
 }
 
+/// What [`migrate_db_to_doc`] moved.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct MigrationStats {
+    pub sources_synced: usize,
+    pub sources_skipped: usize,
+    pub atoms: usize,
+    pub tombstones: usize,
+}
+
+/// Deterministic hash over a source's atom set (FNV-1a over a
+/// canonical encoding) — the idempotence key for migration re-runs.
+fn atoms_hash(atoms: &[ParsedAtom]) -> String {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut feed = |bytes: &[u8]| {
+        for byte in bytes {
+            hash ^= u64::from(*byte);
+            hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    };
+    for a in atoms {
+        feed(a.text.as_bytes());
+        feed(&[1u8]);
+        feed(a.scope.as_bytes());
+        feed(&[1u8]);
+        feed(a.node.as_bytes());
+        feed(&[1u8]);
+        for t in &a.tags {
+            feed(t.as_bytes());
+            feed(&[2u8]);
+        }
+        feed(&[3u8]);
+    }
+    format!("{hash:016x}")
+}
+
+/// One-time import: copy every alive atom (grouped by its original
+/// source, preserving provenance) and all tombstones from `legacy`
+/// into `doc`. Idempotent: a source whose atoms are unchanged since
+/// the last run is skipped via the target's source-hash; tombstones
+/// are write-if-absent. Sources emptied in `legacy` after a previous
+/// migration are not retracted — retract via the normal sync flow.
+pub fn migrate_db_to_doc(
+    legacy: &mut dyn Storage,
+    doc: &mut dyn Storage,
+) -> Result<MigrationStats> {
+    let mut by_source: BTreeMap<String, Vec<ParsedAtom>> = BTreeMap::new();
+    for r in legacy.all()? {
+        by_source.entry(r.source).or_default().push(ParsedAtom {
+            text: r.text,
+            scope: r.scope,
+            node: r.node,
+            tags: r.tags,
+        });
+    }
+    let mut stats = MigrationStats::default();
+    for (source, atoms) in &by_source {
+        let hash = atoms_hash(atoms);
+        if doc.source_hash(source)? == Some(hash.clone()) {
+            stats.sources_skipped += 1;
+            continue;
+        }
+        doc.sync_source(source, atoms)?;
+        doc.set_source_hash(source, Some(&hash))?;
+        stats.sources_synced += 1;
+        stats.atoms += atoms.len();
+    }
+    let tombs = legacy.tombstones()?;
+    doc.tombstone(&tombs)?;
+    stats.tombstones = tombs.len();
+    Ok(stats)
+}
+
 /// Per-source assertion counts.
 pub fn source_counts(store: &dyn Storage) -> Result<Vec<(String, usize)>> {
     let mut counts: HashMap<String, usize> = HashMap::new();
@@ -1184,5 +1256,61 @@ mod tests {
         absorb_snapshot(&mut b, "hub", &snap).unwrap();
         assert!(b.all().unwrap().is_empty());
         assert!(alive(&b).unwrap().is_empty());
+    }
+
+    #[test]
+    fn migrate_db_to_doc_preserves_sources_and_tombstones() {
+        let mut legacy = mem();
+        add_doc(&mut legacy, "a.md", "## n\n- shared\n- only-a\n").unwrap();
+        add_doc(&mut legacy, "b.md", "## n\n- shared [tag-b]\n- only-b\n").unwrap();
+        legacy.remove_matching("only-b").unwrap();
+
+        let mut doc = AutomergeStore::in_memory().unwrap();
+        let stats = migrate_db_to_doc(&mut legacy, &mut doc).unwrap();
+        assert_eq!(stats.sources_synced, 2);
+        assert_eq!(stats.atoms, 3); // shared, only-a, shared[tag-b]
+        assert_eq!(stats.tombstones, 1);
+
+        // Every legacy alive text exists in the doc, per source.
+        let legacy_texts: BTreeSet<String> = alive(&legacy)
+            .unwrap()
+            .into_iter()
+            .map(|(t, _)| t)
+            .collect();
+        let doc_texts: BTreeSet<String> =
+            alive(&doc).unwrap().into_iter().map(|(t, _)| t).collect();
+        assert_eq!(legacy_texts, doc_texts);
+        let doc_rows = doc.all().unwrap();
+        assert!(doc_rows
+            .iter()
+            .any(|r| r.text.contains("shared") && r.source == "b.md"));
+        assert!(doc_rows
+            .iter()
+            .any(|r| r.text.contains("only-a") && r.source == "a.md"));
+        // Tombstones carried over and hidden.
+        assert_eq!(doc.tombstones().unwrap().len(), 1);
+        assert!(!doc_texts.iter().any(|t| t.contains("only-b")));
+
+        // Idempotent re-run: everything skipped, no atoms moved.
+        let stats2 = migrate_db_to_doc(&mut legacy, &mut doc).unwrap();
+        assert_eq!(stats2.sources_synced, 0);
+        assert_eq!(stats2.sources_skipped, 2);
+        assert_eq!(stats2.atoms, 0);
+    }
+
+    #[test]
+    fn migrate_db_to_doc_detects_changed_sources() {
+        let mut legacy = mem();
+        add_doc(&mut legacy, "a.md", "## n\n- one\n").unwrap();
+        let mut doc = AutomergeStore::in_memory().unwrap();
+        migrate_db_to_doc(&mut legacy, &mut doc).unwrap();
+        // Source changes after migration → re-synced on next run.
+        add_doc(&mut legacy, "a.md", "## n\n- one\n- two\n").unwrap();
+        let stats = migrate_db_to_doc(&mut legacy, &mut doc).unwrap();
+        assert_eq!(stats.sources_synced, 1);
+        assert_eq!(stats.atoms, 2);
+        let doc_texts: BTreeSet<String> =
+            alive(&doc).unwrap().into_iter().map(|(t, _)| t).collect();
+        assert!(doc_texts.contains("two"));
     }
 }
