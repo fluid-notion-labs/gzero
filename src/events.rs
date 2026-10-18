@@ -9,7 +9,7 @@
 //! calls all flow identically.
 //!
 //! Scope: the ws doc only — items and sections. Atom changes ride sqlite
-//! and are already covered by the plugin's bagStamp staleness check.
+//! and are already covered by the plugin's storeStamp staleness check.
 //!
 //! Object model (items.rs / sections.rs):
 //!
