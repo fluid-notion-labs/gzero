@@ -57,6 +57,8 @@ gzero harvest [dir]  import agent-instruction files (AGENTS.md, CLAUDE.md, GEMIN
                   .cursorrules, .windsurfrules, copilot-instructions) as project context
 gzero export file    write this machine's snapshot (merge unit)
 gzero absorb file... merge other machines' snapshots into the local store
+gzero sync           push+pull the workspace store through the hub change log (CX_HUB_URL,
+                  CX_TOKEN; bag CX_BAG, default 'context')
 gzero pull           fetch merged snapshot from the hub (CX_HUB_URL) and absorb
 gzero push           post this store's atoms + tombstones to the hub as events
 gzero sources        per-source assertion counts
@@ -193,6 +195,25 @@ fn main() {
                     .collect();
                 try_post_events(&events);
             }
+        }
+        "sync" => {
+            let bag = std::env::var("CX_BAG").unwrap_or_else(|_| "context".into());
+            let hub = gzero::hub_changes::HubChanges::from_env(&bag).unwrap_or_else(|| {
+                eprintln!("gzero sync: set CX_HUB_URL and CX_TOKEN");
+                exit(2);
+            });
+            let path = gzero::sections::default_ws_path();
+            let mut store = AutomergeStore::open(Some(&path))
+                .unwrap_or_else(|e| panic!("gzero: open {}: {e}", path.display()));
+            let sidecar = gzero::hub_changes::sidecar_path(&path);
+            let mut cursor = gzero::hub_changes::SyncCursor::load(&sidecar, &bag)
+                .unwrap_or_else(|e| panic!("gzero sync: {e}"));
+            let (pushed, pulled) = gzero::hub_changes::sync_once(&mut store, &hub, &mut cursor)
+                .unwrap_or_else(|e| panic!("gzero sync: {e}"));
+            cursor
+                .save(&sidecar, &bag)
+                .unwrap_or_else(|e| panic!("gzero sync: {e}"));
+            println!("sync {bag}: pushed {pushed}, pulled {pulled}");
         }
         "pull" => {
             let hub = Hub::from_env().unwrap_or_else(|| {

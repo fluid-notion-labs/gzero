@@ -56,12 +56,12 @@ impl AutomergeStore {
             hashes: BTreeMap::new(),
             subscribers: Vec::new(),
         };
-        if !store.has(&ROOT, "atoms") {
-            store.doc.put_object(ROOT, "atoms", ObjType::Map)?;
-            store.doc.put_object(ROOT, "tombs", ObjType::Map)?;
-            store.doc.put_object(ROOT, "sections", ObjType::Map)?;
-            store.doc.commit();
-        } else if !store.has(&ROOT, "sections") {
+        // Root objects are created lazily (ensure_schema): a cold
+        // replica that syncs before writing should adopt the peer's
+        // schema from the change log instead of creating its own and
+        // losing the concurrent-creation LWW race. Legacy docs (atoms
+        // but no sections) still get their sections map here.
+        if store.has(&ROOT, "atoms") && !store.has(&ROOT, "sections") {
             store.doc.put_object(ROOT, "sections", ObjType::Map)?;
             store.doc.commit();
         }
@@ -103,7 +103,9 @@ impl AutomergeStore {
     /// Merge `other`'s changes in (convergence is automerge's job).
     /// Returns the change hashes we didn't have before.
     pub fn merge(&mut self, other: &mut Self) -> Result<Vec<ChangeHash>> {
-        Ok(self.doc.merge(&mut other.doc)?)
+        let hashes = self.doc.merge(&mut other.doc)?;
+        self.reconcile_roots()?;
+        Ok(hashes)
     }
 
     /// The doc's heads — change-transport cursor for the hub (step 3).
@@ -115,7 +117,78 @@ impl AutomergeStore {
     /// Apply changes fetched from another replica (step 3 transport).
     pub fn apply_changes(&mut self, changes: Vec<automerge::Change>) -> Result<()> {
         self.doc.apply_changes(changes)?;
+        self.reconcile_roots()?;
         self.flush()
+    }
+
+    /// Create any missing root objects. Called before local writes;
+    /// never before a sync that may deliver a peer's schema.
+    fn ensure_schema(&mut self) -> Result<()> {
+        if !self.has(&ROOT, "atoms") {
+            self.doc.put_object(ROOT, "atoms", ObjType::Map)?;
+        }
+        if !self.has(&ROOT, "tombs") {
+            self.doc.put_object(ROOT, "tombs", ObjType::Map)?;
+        }
+        if !self.has(&ROOT, "sections") {
+            self.doc.put_object(ROOT, "sections", ObjType::Map)?;
+        }
+        self.doc.commit();
+        Ok(())
+    }
+
+    /// After applying external changes, resolve concurrent root-object
+    /// creation: if a root key holds several conflicting objects (two
+    /// replicas that both initialized before first contact), fold every
+    /// loser's contents into the winner. The winner is deterministic
+    /// (automerge LWW over the merged change graph), so every replica
+    /// folds into the same object and the stores converge to a union.
+    fn reconcile_roots(&mut self) -> Result<()> {
+        for key in ["atoms", "tombs", "sections"] {
+            let conflicts = self.doc.get_all(ROOT, key)?;
+            if conflicts.len() <= 1 {
+                continue;
+            }
+            let winner = match self.doc.get(ROOT, key)? {
+                Some((_, id)) => id,
+                None => continue,
+            };
+            let losers: Vec<ObjId> = conflicts
+                .iter()
+                .map(|(_, id)| id.clone())
+                .filter(|id| *id != winner)
+                .collect();
+            for id in losers {
+                self.deep_merge(&id, &winner)?;
+            }
+        }
+        self.doc.commit();
+        Ok(())
+    }
+
+    /// Merge every key of `src` into `dst` that `dst` lacks (maps
+    /// recursively, scalars verbatim). Existing `dst` values win —
+    /// matching the store's same-key LWW semantics.
+    fn deep_merge(&mut self, src: &ObjId, dst: &ObjId) -> Result<()> {
+        for k in self.doc.keys(src).collect::<Vec<_>>() {
+            let srcv = self.doc.get(src, &k)?;
+            let dstv = self.doc.get(dst, &k)?;
+            match (dstv, srcv) {
+                (Some((Value::Object(_), d)), Some((Value::Object(_), s))) => {
+                    self.deep_merge(&s, &d)?;
+                }
+                (None, Some((Value::Object(ObjType::Map), s))) => {
+                    let n = self.doc.put_object(dst, &k, ObjType::Map)?;
+                    self.deep_merge(&s, &n)?;
+                }
+                (None, Some((Value::Scalar(s), _))) => {
+                    let v = s.into_owned();
+                    self.doc.put(dst, &k, v)?;
+                }
+                _ => {}
+            }
+        }
+        Ok(())
     }
 
     /// Changes the other replica is missing, given its heads.
@@ -141,34 +214,24 @@ impl AutomergeStore {
 
     // ---- doc accessors ----
 
-    fn atoms_id(&self) -> ObjId {
-        self.doc
-            .get(ROOT, "atoms")
-            .ok()
-            .flatten()
-            .expect("atoms object")
-            .1
+    fn atoms_id(&self) -> Option<ObjId> {
+        self.doc.get(ROOT, "atoms").ok().flatten().map(|(_, id)| id)
     }
 
-    fn tombs_id(&self) -> ObjId {
-        self.doc
-            .get(ROOT, "tombs")
-            .ok()
-            .flatten()
-            .expect("tombs object")
-            .1
+    fn tombs_id(&self) -> Option<ObjId> {
+        self.doc.get(ROOT, "tombs").ok().flatten().map(|(_, id)| id)
     }
 
     fn texts(&self) -> Vec<String> {
-        self.doc.keys(self.atoms_id()).collect()
+        match self.atoms_id() {
+            Some(id) => self.doc.keys(&id).collect(),
+            None => Vec::new(),
+        }
     }
 
     fn rec_id(&self, text: &str) -> Option<ObjId> {
-        self.doc
-            .get(self.atoms_id(), text)
-            .ok()
-            .flatten()
-            .map(|(_, id)| id)
+        let atoms = self.atoms_id()?;
+        self.doc.get(&atoms, text).ok().flatten().map(|(_, id)| id)
     }
 
     fn sources_id(&self, rec: &ObjId) -> Option<ObjId> {
@@ -224,7 +287,9 @@ impl AutomergeStore {
 
     /// Add `tombs[text]` if absent (idempotent); returns whether added.
     fn write_tomb(&mut self, atom: &crate::snapshot::Atom) -> Result<bool> {
-        let tombs = self.tombs_id();
+        let Some(tombs) = self.tombs_id() else {
+            return Ok(false);
+        };
         if self.has(&tombs, atom.text.as_str()) {
             return Ok(false);
         }
@@ -241,6 +306,7 @@ impl AutomergeStore {
 
 impl Storage for AutomergeStore {
     fn sync_source(&mut self, source: &str, atoms: &[ParsedAtom]) -> Result<SyncStats> {
+        self.ensure_schema()?;
         // Before: texts this source currently asserts.
         let mut before: HashSet<String> = HashSet::new();
         for text in self.texts() {
@@ -261,17 +327,21 @@ impl Storage for AutomergeStore {
                 let rec = self.rec_id(text).expect("record was just there");
                 let sources = self.sources_id(&rec).expect("sources");
                 self.doc.delete(&sources, source)?;
+                self.doc.delete(&sources, source)?;
             }
         }
 
         // Add/update each atom (records and shadows kept forever).
+        let atoms_obj = self
+            .atoms_id()
+            .expect("ensure_schema created the atoms object");
         for atom in atoms {
             let rec = match self.rec_id(&atom.text) {
                 Some(rec) => rec,
                 None => {
-                    let r =
-                        self.doc
-                            .put_object(self.atoms_id(), atom.text.as_str(), ObjType::Map)?;
+                    let r = self
+                        .doc
+                        .put_object(&atoms_obj, atom.text.as_str(), ObjType::Map)?;
                     self.doc.put_object(&r, "sources", ObjType::Map)?;
                     r
                 }
@@ -336,8 +406,10 @@ impl Storage for AutomergeStore {
     }
 
     fn tombstones(&self) -> Result<Vec<crate::snapshot::Atom>> {
-        let tombs = self.tombs_id();
         let mut out = Vec::new();
+        let Some(tombs) = self.tombs_id() else {
+            return Ok(out);
+        };
         for text in self.doc.keys(&tombs) {
             if let Ok(Some((_, id))) = self.doc.get(&tombs, text.as_str()) {
                 let a = self.read_payload(&id, &text);

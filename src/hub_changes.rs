@@ -13,6 +13,7 @@
 use crate::AutomergeStore;
 use automerge::ChangeHash;
 use base64::Engine;
+use std::path::Path;
 use std::time::Duration;
 
 const TIMEOUT: Duration = Duration::from_secs(10);
@@ -45,12 +46,17 @@ impl HubChanges {
     }
 
     /// Push everything the store has that the hub hasn't seen.
-    /// Returns the hub's new last_seq (0 when there was nothing to push).
-    pub fn push(&self, store: &mut AutomergeStore, cursor: &mut SyncCursor) -> Result<u64, String> {
+    /// Returns the number of changes uploaded (0 when nothing to push).
+    pub fn push(
+        &self,
+        store: &mut AutomergeStore,
+        cursor: &mut SyncCursor,
+    ) -> Result<usize, String> {
         let changes = store.changes_for(&cursor.pushed_heads);
         if changes.is_empty() {
             return Ok(0);
         }
+        let n = changes.len();
         let body = serde_json::json!({
             "changes": changes
                 .iter()
@@ -59,12 +65,11 @@ impl HubChanges {
             "machine_id": machine_id(),
         });
         let resp: serde_json::Value = self.post("/changes", &body)?;
-        let last = resp
-            .get("last_seq")
-            .and_then(|v| v.as_u64())
-            .ok_or_else(|| "hub: missing last_seq in push response".to_string())?;
+        if resp.get("last_seq").and_then(|v| v.as_u64()).is_none() {
+            return Err("hub: missing last_seq in push response".to_string());
+        }
         cursor.pushed_heads = store.heads();
-        Ok(last)
+        Ok(n)
     }
 
     /// Pull everything after `cursor.pulled_seq` and apply it. Returns
@@ -165,6 +170,89 @@ fn parse_json(resp: ureq::Response, path: &str) -> Result<serde_json::Value, Str
         .map_err(|e| format!("hub {path}: {e}"))
 }
 
+/// Pull + push in one round; the canonical `gzero sync` step. Pull
+/// runs first so a cold replica adopts the peer's schema before it
+/// ever creates its own root objects.
+pub fn sync_once(
+    store: &mut AutomergeStore,
+    hub: &HubChanges,
+    cursor: &mut SyncCursor,
+) -> Result<(usize, usize), String> {
+    let pulled = hub.pull(store, cursor)?;
+    let pushed = hub.push(store, cursor)?;
+    Ok((pushed, pulled))
+}
+
+impl SyncCursor {
+    /// Persist to a sidecar JSON keyed by bag, so several bags can
+    /// share one file next to the store.
+    pub fn save(&self, sidecar: &Path, bag: &str) -> Result<(), String> {
+        let mut root = if sidecar.exists() {
+            serde_json::from_str(
+                &std::fs::read_to_string(sidecar)
+                    .map_err(|e| format!("sync cursor: {}: {e}", sidecar.display()))?,
+            )
+            .unwrap_or_else(|_| serde_json::json!({"bags": {}}))
+        } else {
+            serde_json::json!({"bags": {}})
+        };
+        root["bags"][bag] = serde_json::json!({
+            "pushed_heads": self
+                .pushed_heads
+                .iter()
+                .map(|h| hex::encode(h.as_ref()))
+                .collect::<Vec<_>>(),
+            "pulled_seq": self.pulled_seq,
+        });
+        let bytes = serde_json::to_vec_pretty(&root).map_err(|e| format!("sync cursor: {e}"))?;
+        std::fs::write(sidecar, bytes)
+            .map_err(|e| format!("sync cursor: {}: {e}", sidecar.display()))
+    }
+
+    /// Load this bag's cursor from the sidecar (empty when absent).
+    pub fn load(sidecar: &Path, bag: &str) -> Result<SyncCursor, String> {
+        if !sidecar.exists() {
+            return Ok(SyncCursor::default());
+        }
+        let text = std::fs::read_to_string(sidecar)
+            .map_err(|e| format!("sync cursor: {}: {e}", sidecar.display()))?;
+        let root: serde_json::Value =
+            serde_json::from_str(&text).map_err(|e| format!("sync cursor: {e}"))?;
+        let entry = root.get("bags").and_then(|b| b.get(bag));
+        let Some(entry) = entry else {
+            return Ok(SyncCursor::default());
+        };
+        let mut pushed_heads = Vec::new();
+        for h in entry
+            .get("pushed_heads")
+            .and_then(|v| v.as_array())
+            .map(|a| a.as_slice())
+            .unwrap_or(&[])
+        {
+            let s = h.as_str().unwrap_or("");
+            let bytes = hex::decode(s).map_err(|e| format!("sync cursor: bad hash {s:?}: {e}"))?;
+            let arr: [u8; 32] = bytes
+                .try_into()
+                .map_err(|_| format!("sync cursor: bad hash length {s:?}"))?;
+            pushed_heads.push(ChangeHash(arr));
+        }
+        Ok(SyncCursor {
+            pushed_heads,
+            pulled_seq: entry
+                .get("pulled_seq")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0),
+        })
+    }
+}
+
+/// Sidecar path for a store doc: `<doc>.sync.json`.
+pub fn sidecar_path(doc: &Path) -> std::path::PathBuf {
+    let mut s = doc.as_os_str().to_os_string();
+    s.push(".sync.json");
+    std::path::PathBuf::from(s)
+}
+
 /// Stable-per-machine id for the hub's registry (best effort).
 fn machine_id() -> String {
     std::env::var("CX_MACHINE_ID")
@@ -249,5 +337,121 @@ mod tests {
         hub.push(&mut a, &mut cur_a).unwrap();
         let n = hub.pull(&mut b, &mut cur_b).unwrap();
         assert_eq!(n, 0, "unexpected extra changes after convergence");
+    }
+
+    /// The CLI path: two stores with doc files and cursor sidecars,
+    /// driven only by `sync_once` + `SyncCursor::save/load` — exactly
+    /// what `gzero sync` does. Requires HUB_TEST_URL (and ambient
+    /// CX_TOKEN for a real deployment).
+    #[test]
+    fn cli_replicas_converge_through_hub() {
+        let Ok(base) = std::env::var("HUB_TEST_URL") else {
+            eprintln!("skipping: HUB_TEST_URL not set");
+            return;
+        };
+        std::env::set_var("CX_HUB_URL", &base);
+        if std::env::var("CX_TOKEN").map_or(true, |t| t.is_empty()) {
+            std::env::set_var("CX_TOKEN", "token");
+        }
+        let bag = format!(
+            "cli-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        );
+        let hub = HubChanges::from_env(&bag).expect("hub config");
+        let dir = std::env::temp_dir().join(format!("gzero-cli-sync-{}", bag));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (doc_a, doc_b) = (dir.join("a.ws"), dir.join("b.ws"));
+
+        let mut a = AutomergeStore::open(Some(&doc_a)).unwrap();
+        add_doc(&mut a, "a.md", "## n\n- one\n").unwrap();
+        let mut ca = SyncCursor::default();
+        sync_once(&mut a, &hub, &mut ca).unwrap();
+        ca.save(&sidecar_path(&doc_a), &bag).unwrap();
+
+        // B opens cold, syncs from empty, and sees A's atom.
+        let mut b = AutomergeStore::open(Some(&doc_b)).unwrap();
+        let mut cb = SyncCursor::load(&sidecar_path(&doc_b), &bag).unwrap();
+        assert!(cb.pushed_heads.is_empty() && cb.pulled_seq == 0);
+        sync_once(&mut b, &hub, &mut cb).unwrap();
+        cb.save(&sidecar_path(&doc_b), &bag).unwrap();
+        let texts: Vec<String> = alive(&b).unwrap().into_iter().map(|(t, _)| t).collect();
+        assert!(texts.contains(&"one".to_string()), "B missing A's atom");
+
+        // Conflicting concurrent edits, then mutual sync_once rounds.
+        // (Cursors are saved after each round, exactly like `gzero sync`.)
+        add_doc(&mut a, "shared.md", "## n\n- conflict [tag-a]\n").unwrap();
+        add_doc(&mut b, "shared.md", "## n\n- conflict [tag-b]\n").unwrap();
+        sync_once(&mut a, &hub, &mut ca).unwrap();
+        ca.save(&sidecar_path(&doc_a), &bag).unwrap();
+        sync_once(&mut b, &hub, &mut cb).unwrap();
+        cb.save(&sidecar_path(&doc_b), &bag).unwrap();
+        sync_once(&mut a, &hub, &mut ca).unwrap();
+        ca.save(&sidecar_path(&doc_a), &bag).unwrap();
+        sync_once(&mut b, &hub, &mut cb).unwrap();
+        cb.save(&sidecar_path(&doc_b), &bag).unwrap();
+
+        let ta = alive(&a).unwrap();
+        let tb = alive(&b).unwrap();
+        assert_eq!(ta, tb, "replicas diverged");
+
+        // Cursor reload from disk must be lossless.
+        let ca2 = SyncCursor::load(&sidecar_path(&doc_a), &bag).unwrap();
+        assert_eq!(ca2.pulled_seq, ca.pulled_seq);
+        assert_eq!(ca2.pushed_heads.len(), ca.pushed_heads.len());
+
+        // Quiet round.
+        let (p, n) = sync_once(&mut a, &hub, &mut ca).unwrap();
+        assert_eq!((p, n), (0, 0), "unexpected traffic after convergence");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The hard case: two replicas both initialize independently and
+    /// write before first contact. Concurrent root-object creation must
+    /// be reconciled — every replica converges to the winner's union.
+    #[test]
+    fn independently_initialized_replicas_converge() {
+        let Ok(base) = std::env::var("HUB_TEST_URL") else {
+            eprintln!("skipping: HUB_TEST_URL not set");
+            return;
+        };
+        std::env::set_var("CX_HUB_URL", &base);
+        if std::env::var("CX_TOKEN").map_or(true, |t| t.is_empty()) {
+            std::env::set_var("CX_TOKEN", "token");
+        }
+        let bag = format!(
+            "init-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        );
+        let hub = HubChanges::from_env(&bag).expect("hub config");
+        // Two fully independent stores, each with local data.
+        let mut a = AutomergeStore::in_memory().unwrap();
+        let mut b = AutomergeStore::in_memory().unwrap();
+        add_doc(&mut a, "a.md", "## n\n- from-a\n").unwrap();
+        add_doc(&mut b, "b.md", "## n\n- from-b\n").unwrap();
+        let mut ca = SyncCursor::default();
+        let mut cb = SyncCursor::default();
+        // Mutual sync through the hub.
+        sync_once(&mut a, &hub, &mut ca).unwrap();
+        sync_once(&mut b, &hub, &mut cb).unwrap();
+        sync_once(&mut a, &hub, &mut ca).unwrap();
+        sync_once(&mut b, &hub, &mut cb).unwrap();
+        let ta: Vec<String> = alive(&a).unwrap().into_iter().map(|(t, _)| t).collect();
+        let tb: Vec<String> = alive(&b).unwrap().into_iter().map(|(t, _)| t).collect();
+        assert!(ta.contains(&"from-a".to_string()), "A lost its own atom");
+        assert!(ta.contains(&"from-b".to_string()), "A missing B's atom");
+        assert_eq!(ta, tb, "replicas diverged");
+        // A subsequent write stays visible after another sync round.
+        add_doc(&mut a, "a.md", "## n\n- from-a\n- later-a\n").unwrap();
+        sync_once(&mut a, &hub, &mut ca).unwrap();
+        sync_once(&mut b, &hub, &mut cb).unwrap();
+        let tb: Vec<String> = alive(&b).unwrap().into_iter().map(|(t, _)| t).collect();
+        assert!(tb.contains(&"later-a".to_string()), "post-merge write lost");
     }
 }

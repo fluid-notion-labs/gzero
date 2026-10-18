@@ -242,6 +242,7 @@ version = "0.1.0"
 dependencies = [
  "automerge",
  "base64",
+ "hex",
  "rusqlite",
  "serde",
  "serde_json",
