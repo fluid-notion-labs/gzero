@@ -38,7 +38,8 @@ gzero only via MCP — no direct SQLite or hub access.
   idempotent (store dedupes by text); explicitly removed atoms stay
   removed (tombstones). Plain hashtags still type normally — just keep
   typing past the popup. Skill discovery is precached on session start
-- `Ctrl+Q` or `/gzero` toggles the **gzero panel**
+- `Ctrl+Q` toggles the **task panel** (the work items sidebar,
+  same as `/tasks`); the **gzero panel** opens via `/gzero`
   (`/gzero [tasks|context|skills|router|history|documentation]` opens
   directly on a section): a full-height left-tree pane with six
   sections in a top bar — `tasks` (the work-item tree with queue

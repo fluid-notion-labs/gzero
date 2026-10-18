@@ -1,4 +1,4 @@
-// gzero-panel.ts — the unified left-tree pane (ctrl+q / /gzero).
+// gzero-panel.ts — the unified left-tree pane (/gzero).
 //
 // One pane, fresh build (design: work item 2c31). A vertical tree
 // along the left with six top-levels — tasks | context | skills |
@@ -7,9 +7,10 @@
 // tree column itself, so navigation is one cursor over one column.
 //
 // The panel is the primary since the P5 cutover (da36 bindings):
-// ctrl+q toggles, /gzero [section] opens with an optional
-// section, and the retired overlays (ctrl+w viewer, ctrl+b viewer)
-// are gone.
+// /gzero [section] opens with an optional section, and the retired
+// overlays (ctrl+w viewer, ctrl+b viewer) are gone. ctrl+q now
+// toggles the task panel (items-pane); while this panel is open it
+// owns input and still closes on ctrl+q.
 //
 // P0 skeleton: tree interaction (cursor, expand/collapse, top-level
 // jumps) over a static tree. Data wiring (tasks, tiers, ws sections)

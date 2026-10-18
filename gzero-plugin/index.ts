@@ -758,15 +758,15 @@ export default function (pi: ExtensionAPI) {
     itemsPane.shutdown();
   });
 
-  // ctrl+q → toggle the gzero panel (tasks | context |
-  // documentation). While it's open the overlay owns input and closes
-  // on the same ctrl+q (GzeroPanel.handleInput); esc keeps
-  // working. The tasks sidebar stays reachable via /tasks (/items);
-  // the 1-column strip on the right edge is always visible underneath,
+  // ctrl+q → toggle the task panel (the tasks sidebar, items-pane).
+  // The full gzero panel stays reachable via /gzero [section] and the
+  // double-backtick tap (da36); while the panel is open it owns input
+  // and still closes on ctrl+q (GzeroPanel.handleInput). The 1-column
+  // strip on the right edge is always visible underneath,
   // CX_TASKS_STRIP=0 removes it.
   pi.registerShortcut(Key.ctrl("q"), {
-    description: "Toggle the gzero panel (tasks / context / skills / router / history / documentation)",
-    handler: (ctx) => openGzeroPanel(ctx, loadTierSections),
+    description: "Toggle the task panel (work items sidebar)",
+    handler: (ctx) => itemsPane.toggle(ctx),
   });
 
   pi.registerCommand("tasks", {
