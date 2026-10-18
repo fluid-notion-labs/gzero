@@ -5,8 +5,9 @@
 # From anywhere:     curl -fsSL https://raw.githubusercontent.com/fluid-notion-labs/gzero/main/install.sh | sh
 #
 # What it does (idempotent; safe to re-run after pulling updates):
-#   1. locate or clone this repo (GZERO_DIR, default ~/projects/explorations/nursery/gzero)
-#   2. build & install the binaries (gzero, gzero-mcp) via cargo
+#   1. locate or clone this repo (GZERO_DIR, default ~/projects/gzero)
+#   2. build & install the binaries (gzero, gzero-mcp) to
+#      ~/.local/share/gzero/bin, symlinked into ~/.local/bin
 #   3. bless the pi plugin snapshot (when pi is present)
 #   4. check ~/.pi/mcp.json points at gzero-mcp
 #   5. configure hub auth (CX_HUB_URL / CX_TOKEN, token file ~/.config/g/hub-token)
@@ -20,7 +21,10 @@
 set -eu
 
 REPO_URL="https://github.com/fluid-notion-labs/gzero.git"
-default_dir="$HOME/projects/explorations/nursery/gzero"
+# Canonical location: ~/projects/gzero, with gzero-hub as a sibling
+# (the convergence scripts look there). Existing checkouts are found
+# wherever they live.
+default_dir="$HOME/projects/gzero"
 do_plugin=1
 do_migrate=1
 
@@ -32,7 +36,7 @@ gzero installer
   curl -fsSL https://raw.githubusercontent.com/fluid-notion-labs/gzero/main/install.sh | sh
 
 Idempotent — safe to re-run. Steps: locate/clone the repo (GZERO_DIR,
-default ~/projects/explorations/nursery/gzero), cargo-install the
+default ~/projects/gzero), cargo-install the
 gzero and gzero-mcp binaries, bless the pi plugin, check mcp.json,
 set up hub auth (CX_HUB_URL/CX_TOKEN, token file
 ~/.config/gzero/hub-token), migrate legacy SQLite atoms into the
@@ -65,7 +69,7 @@ elif [ -n "${GZERO_DIR:-}" ] && [ -f "$GZERO_DIR/Cargo.toml" ]; then
   repo="$GZERO_DIR"
   say "using checkout at \$GZERO_DIR"
 else
-  for d in "$default_dir" "$HOME/gzero"; do
+  for d in "$default_dir" "$HOME/projects/explorations/nursery/gzero" "$HOME/gzero"; do
     [ -f "$d/Cargo.toml" ] && [ -d "$d/gzero-plugin" ] && { repo="$d"; break; }
   done
 fi
@@ -85,10 +89,24 @@ if ! command -v cargo >/dev/null 2>&1; then
   echo "install.sh: cargo not found — install Rust first: https://rustup.rs" >&2
   exit 1
 fi
-say "installing binaries (gzero, gzero-mcp) — this compiles, takes a bit"
-cargo install --path . --quiet
-command -v gzero >/dev/null && command -v gzero-mcp >/dev/null \
-  || { echo "install.sh: binaries not on PATH after install (is ~/.cargo/bin on PATH?)" >&2; exit 1; }
+say "building binaries (gzero, gzero-mcp) — this compiles, takes a bit"
+cargo build --release --quiet
+bin_dir="$HOME/.local/share/gzero/bin"
+say "installing binaries to $bin_dir (symlinks in ~/.local/bin)"
+mkdir -p "$bin_dir" "$HOME/.local/bin"
+cp -f target/release/gzero target/release/gzero-mcp "$bin_dir/"
+ln -sfn "$bin_dir/gzero" "$HOME/.local/bin/gzero"
+ln -sfn "$bin_dir/gzero-mcp" "$HOME/.local/bin/gzero-mcp"
+[ -x "$bin_dir/gzero" ] && [ -x "$bin_dir/gzero-mcp" ] \
+  || { echo "install.sh: binary install failed" >&2; exit 1; }
+# No cargo-installed copies left behind to shadow these.
+for old in "$HOME/.cargo/bin/gzero" "$HOME/.cargo/bin/gzero-mcp"; do
+  [ -e "$old" ] && rm -f "$old" && say "removed stale $old"
+done
+case ":$PATH:" in
+  *":$HOME/.local/bin:"*) ;;
+  *) warn "~/.local/bin is not on PATH — add it to your shell profile" ;;
+esac
 
 # --- 3. pi plugin ------------------------------------------------------------
 if [ "$do_plugin" = 1 ]; then
