@@ -73,7 +73,7 @@ export function stripGlyph(row: ItemRow, frame: number): { glyph: string; color:
 export function stripLines(
   rows: ItemRow[],
   opts: { frame: number; cap: number },
-): { glyph: string; color: StripColor }[] {
+): { glyph: string; color: StripColor; id: string }[] {
   const ordered = stripOrder(rows);
   let shown = ordered;
   let overflow = false;
@@ -81,9 +81,52 @@ export function stripLines(
     shown = ordered.slice(ordered.length - (Math.max(1, opts.cap) - 1));
     overflow = true;
   }
-  const cells: { glyph: string; color: StripColor }[] = overflow ? [{ glyph: "⋮", color: "dim" }] : [];
-  for (const row of shown) cells.push(stripGlyph(row, opts.frame));
+  const cells: { glyph: string; color: StripColor; id: string }[] = overflow
+    ? [{ glyph: "⋮", color: "dim", id: "" }]
+    : [];
+  for (const row of shown) cells.push({ ...stripGlyph(row, opts.frame), id: row.id });
   return cells;
+}
+
+/** Max visible width reserved for the current-item label. The strip has
+ * exactly two widths — glyph-only (5) and with label (3 + this + 2) — so
+ * the overlays don't churn when the current item's title changes. */
+export const STRIP_LABEL_MAX = 18;
+
+/** Hard-clip plain text to `max` visible columns, "…" marking the cut.
+ * (truncateToWidth is for styled strings — it emits ANSI escapes.) */
+function clipToWidth(text: string, max: number): string {
+  if (visibleWidth(text) <= max) return text;
+  const target = Math.max(0, max - visibleWidth("…"));
+  let w = 0;
+  let out = "";
+  for (const ch of text) {
+    const cw = visibleWidth(ch);
+    if (w + cw > target) break;
+    out += ch;
+    w += cw;
+  }
+  return out + "…";
+}
+
+/** The current item's title as a strip label: first ≤3 words, "…" when
+ * more words remain, clipped to STRIP_LABEL_MAX visible columns. */
+export function stripLabel(title: string): string {
+  const words = title.trim().split(/\s+/).filter(Boolean);
+  let label = words.slice(0, 3).join(" ");
+  if (words.length > 3) label += "…";
+  return clipToWidth(label, STRIP_LABEL_MAX);
+}
+
+/** The strip's current item: first in_progress row in strip order
+ * (oldest first), or null when nothing is in progress. */
+export function stripCurrent(rows: ItemRow[]): ItemRow | null {
+  return stripOrder(rows).find((r) => r.status === "in_progress") ?? null;
+}
+
+/** Total on-screen width of the strip box. */
+export function stripBoxWidth(hasLabel: boolean): number {
+  return hasLabel ? 3 + STRIP_LABEL_MAX + 2 : 5;
 }
 
 /** Startup mode for the tasks overlay; CX_TASKS_STRIP=0 keeps the panel. */
@@ -332,26 +375,39 @@ export class ItemsPane implements Component {
    * are no tasks). Capped at terminal height; overflow drops from the
    * top (past) with ⋮ marking the hidden items.
    */
+  /** The strip's on-screen width for its current rows (controller uses
+   * this to decide whether the overlays need relayouting). */
+  stripWidth(): number {
+    return stripBoxWidth(!this.error && this.rows.length > 0 && stripCurrent(this.rows) !== null);
+  }
+
   private renderStrip(): string[] {
     const theme = this.theme;
     if (!theme) return [];
     const border = (s: string) => theme.fg("borderMuted", s);
+    const current = this.error || this.rows.length === 0 ? null : stripCurrent(this.rows);
+    const label = current ? stripLabel(current.title) : "";
     const cells = this.error
-      ? [{ glyph: "⚠", color: "warning" as StripColor }]
+      ? [{ glyph: "⚠", color: "warning" as StripColor, id: "" }]
       : this.rows.length === 0
-        ? [{ glyph: "·", color: "dim" as StripColor }]
+        ? [{ glyph: "·", color: "dim" as StripColor, id: "" }]
         : stripLines(this.rows, { frame: this.frame, cap: taskRowCap(process.stdout.rows) });
-    const lines = [border("╭───╮")];
+    const inner = label ? 3 + STRIP_LABEL_MAX : 3;
+    const lines = [border("╭" + "─".repeat(inner) + "╮")];
     for (const c of cells) {
       const vw = Math.min(3, visibleWidth(c.glyph));
       const left = Math.floor((3 - vw) / 2);
-      lines.push(
-        border("│") +
-          " ".repeat(left) + theme.fg(c.color, c.glyph) + " ".repeat(3 - vw - left) +
-          border("│"),
-      );
+      let content =
+        " ".repeat(left) + theme.fg(c.color, c.glyph) + " ".repeat(3 - vw - left);
+      if (label && current && c.id === current.id) {
+        // The glyph slot's right padding doubles as the label gap.
+        content += padStyled(theme.fg("accent", label), STRIP_LABEL_MAX);
+      } else {
+        content += " ".repeat(Math.max(0, inner - 3));
+      }
+      lines.push(border("│") + content + border("│"));
     }
-    lines.push(border("╰───╯"));
+    lines.push(border("╰" + "─".repeat(inner) + "╯"));
     return lines;
   }
 
@@ -383,6 +439,10 @@ export class ItemsPaneController {
   private skillsHandle: OverlayHandle | null = null;
   private skillsDone: ((result: undefined) => void) | null = null;
   private opening = false;
+  /** The width the strip overlay was opened at (5, or 5+1+STRIP_LABEL_MAX). */
+  private stripWidth = 5;
+  /** The session context, kept so the strip can relayout when its width changes. */
+  private lastCtx: ExtensionContext | null = null;
   /** Whether the 1-column strip runs at all (CX_TASKS_STRIP=0 disables). */
   private readonly stripOn = initialStripMode() === "strip";
   /** Whether the loaded-skills column runs (CX_SKILLS_STRIP=0 disables). */
@@ -405,8 +465,10 @@ export class ItemsPaneController {
 
   /** Session start: start the always-on strip and skills column (panel stays closed). */
   async start(ctx: ExtensionContext): Promise<void> {
+    this.lastCtx = ctx;
     await this.ensureStrip(ctx);
-    await this.ensureSkillsStrip(ctx);
+    // Skills column sits just left of the rail: 1px margin + rail + 1px gap.
+    await this.ensureSkillsStrip(ctx, this.stripWidth + 2);
   }
 
   /**
@@ -501,6 +563,35 @@ export class ItemsPaneController {
     }
     // The skills column derives from live state on every render; nothing
     // to refresh here.
+    // The strip has two widths (glyph-only / with current-item label).
+    // When it crosses between them, the overlays must be re-opened at
+    // the new width (overlay geometry is fixed at show time) and the
+    // skills column repositioned.
+    const want = this.stripPane ? this.stripPane.stripWidth() : stripBoxWidth(false);
+    if (this.stripPane && want !== this.stripWidth && !this.opening && this.lastCtx) {
+      this.stripWidth = want;
+      await this.relayoutStrips(this.lastCtx);
+    }
+  }
+
+  /** Re-open the strip and skills overlays at the new strip width. */
+  private async relayoutStrips(ctx: ExtensionContext): Promise<void> {
+    // Tear down synchronously (the guards check these fields), then
+    // re-open.
+    this.stripPane?.dispose();
+    const stripDone = this.stripDone;
+    this.stripPane = null;
+    this.stripHandle = null;
+    this.stripDone = null;
+    stripDone?.(undefined);
+    this.skillsPane?.dispose();
+    const skillsDone = this.skillsDone;
+    this.skillsPane = null;
+    this.skillsHandle = null;
+    this.skillsDone = null;
+    skillsDone?.(undefined);
+    await this.ensureStrip(ctx);
+    await this.ensureSkillsStrip(ctx, this.stripWidth + 2);
   }
 
   private async ensureStrip(ctx: ExtensionContext): Promise<void> {
@@ -513,6 +604,8 @@ export class ItemsPaneController {
     } catch {
       // refresh already records errors on the pane itself
     }
+    this.stripWidth = pane.stripWidth();
+    const width = this.stripWidth;
     try {
       await ctx.ui.custom(
         (tui, theme, _keybindings, done) => {
@@ -525,8 +618,8 @@ export class ItemsPaneController {
         {
           overlay: true,
           overlayOptions: () => ({
-            width: 5,
-            minWidth: 5,
+            width,
+            minWidth: width,
             maxHeight: "96%",
             anchor: "top-right",
             margin: { top: 2, right: 1 },
@@ -553,7 +646,10 @@ export class ItemsPaneController {
    * render cycle via `visible`, so loading one makes it appear without
    * any explicit refresh).
    */
-  private async ensureSkillsStrip(ctx: ExtensionContext): Promise<void> {
+  private async ensureSkillsStrip(
+    ctx: ExtensionContext,
+    rightMargin: number = SKILLS_STRIP_RIGHT,
+  ): Promise<void> {
     if (!this.skillsStripOn || this.skillsPane || this.opening || ctx.mode !== "tui" || !ctx.hasUI) return;
     this.opening = true;
     const pane = new SkillsStrip();
@@ -573,7 +669,7 @@ export class ItemsPaneController {
             minWidth: SKILLS_STRIP_WIDTH,
             maxHeight: "96%",
             anchor: "top-right",
-            margin: { top: 2, right: SKILLS_STRIP_RIGHT },
+            margin: { top: 2, right: rightMargin },
             nonCapturing: true,
             visible: (termWidth: number) => termWidth >= 60 && getLoadedSkills().length > 0,
           }),
