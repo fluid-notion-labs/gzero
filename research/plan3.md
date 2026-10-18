@@ -241,8 +241,12 @@ session tree after that. The MCP surface stays stable throughout.
       item_pin, plan_next.
 - [ ] W4: capacity/policy, gates, evidence-ranked scheduler
 - [ ] W5: doc migration into the bag; fix stale references
-- [ ] locate hub Worker source
+- [x] ~~locate hub Worker source~~ — decision 2026-10-18: source is lost;
+      v0 rebuilds the hub as a new repo (`gzero-hub`). Plan + status:
+      `research/hub-v0.md`
 - [ ] later: ai-harness scratch tree (superseded by the doc-store; not this plan)
 - [ ] D1: change-based push/pull; hub as change log; flip default store
+      (plan in `research/hub-v0.md`; client-side change primitives already
+      in `automerge_store.rs`)
 - [ ] D2: multi-machine sync; tombstone TTL
 - [ ] D3: item/section state via hub; multi-repo; templates

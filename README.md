@@ -27,6 +27,8 @@ code and on GitHub. Historical identifier: the MCP server name
   / documentation), the skills picker, and session presence.
 - **Hub sync** — a Cloudflare Worker + Durable Object carries atoms
   across machines; workflow-doc distribution is Track D (deferred).
+  v0 of the hub rebuild is planned in `research/hub-v0.md` (new repo,
+  automerge change log; includes the mobile client plan).
 
 ## Status
 
