@@ -1,8 +1,8 @@
 # Contextual — pi plugin spec
 
 *The plugin: pi extension that connects the context system to pi sessions.
-Code: `pi-contextual-plugin/` (pi extension, blessed snapshot at
-`~/.pi/agent/extensions/contextual`). Companions: the ws `architecture`
+Code: `pi-gzero-plugin/` (pi extension, blessed snapshot at
+`~/.pi/agent/extensions/gzero`). Companions: the ws `architecture`
 section (components, resolution model), `old/plan.md`, `old/sync.md`
 (transport history). Supersedes M3's "decide the consumption path": the path is
 **MCP**, and the split is below.*
@@ -17,12 +17,12 @@ section (components, resolution model), `old/plan.md`, `old/sync.md`
 | **pi plugin**  | session glue: connect server, inject context, UI             | **cx-mcp only**     |
 
 The plugin never reads SQLite and never calls the hub. It is a thin client
-over the MCP surface. Everything that owns data lives in `contextual`.
+over the MCP surface. Everything that owns data lives in `gzero`.
 
 ```mermaid
 flowchart LR
     P["pi plugin\n(TS extension)"] -- "registerMcpServer" --> M["cx-mcp\nstdio"]
-    M -- "pull on start\npush on write" --> H["contexture"]
+    M -- "pull on start\npush on write" --> H["gzero"]
     M --> DB[("SQLite ledger")]
     CX["cx CLI"] --> DB
     CX <--> H
@@ -37,23 +37,23 @@ experience is: detect → offer → install.
 
 - **Detect.** On first session start, check `cx-mcp` (and `cx`) on PATH via
   a lookup, not a spawn.
-- **Offer.** If missing, `ctx.ui.confirm`: "contextual is not installed —
+- **Offer.** If missing, `ctx.ui.confirm`: "gzero is not installed —
   install it now? (provides cx and cx-mcp)".
 - **Install.** On confirmation, run the install command in the background
   and notify on completion (never in the factory — it is long-running):
 
   ```sh
-  cargo install --git https://github.com/fluid-notion-labs/contextual
+  cargo install --git https://github.com/fluid-notion-labs/gzero
   ```
 
-  Note: plain `cargo install contextual` is wrong — the name is taken on
+  Note: plain `cargo install gzero` is wrong — the name is taken on
   crates.io by an unrelated utility crate. If the project later publishes,
   it needs a free crate name (e.g. `contextbag`); until then the `--git`
   form is the install path.
 - **Decline / failure.** Plugin degrades to no injection (same path as
   server-connect failure); warn once, remind via `/context`.
 - **Version check (later, P2+).** Compare plugin's expected tool surface
-  against `tools/list`; a stale binary shows a "update contextual" hint.
+  against `tools/list`; a stale binary shows a "update gzero" hint.
 
 ## Plugin behaviors
 
@@ -147,7 +147,7 @@ just atoms; the pull-in workflow already covers them.
   plugin touching the hub would duplicate transport logic in a second
   language — the drift risk that killed the "reimplement in TS" option.
 - **Tier/repo-identity logic.** `resolve_tiers` + `repo_identity` live in
-  `contextual` (lib.rs). The plugin treats resolve as an opaque projection.
+  `gzero` (lib.rs). The plugin treats resolve as an opaque projection.
 - **Tombstones, per-source sync, merging.** Ledger and snapshot semantics
   stay in the Rust crate; the plugin sees only alive atoms.
 - **Double context.** Once injection works, AGENTS.md files shrink to a
@@ -177,7 +177,7 @@ just atoms; the pull-in workflow already covers them.
 
 ## Trajectory — where this heads
 
-The plugin manages AGENTS today, but contextual is headed for the
+The plugin manages AGENTS today, but gzero is headed for the
 memory/harness role (see `../decision-memory-mcp/findings.md` for the
 hermes/engram/memoryvault survey and the decision-record spec):
 
@@ -192,7 +192,7 @@ hermes/engram/memoryvault survey and the decision-record spec):
    becomes source material the curation loop distills into atoms —
    injection point unchanged, content grows.
 4. **Harness:** the gpui fleet app reads context from and writes history
-   to the same store; contextual becomes the memory layer across agents.
+   to the same store; gzero becomes the memory layer across agents.
 
 Design constraint this buys: the plugin stays a thin transport and the
 injection point stays `before_agent_start` + MCP tools no matter what
@@ -204,7 +204,7 @@ descriptions and the injection preamble).
 
 ## Milestones
 
-1. **P1 — wire-up (done).** Code in `pi-contextual-plugin/`. Install detection + offer (background
+1. **P1 — wire-up (done).** Code in `pi-gzero-plugin/`. Install detection + offer (background
    `cargo install --git`, notified on completion), `registerMcpServer`,
    first-prompt injection as a `<context>` section (with the curation
    preamble from `curation.md`), offline degradation. Verified: injection

@@ -257,7 +257,7 @@ export function registerWorkstyles(
   const open = async (ctx: ExtensionContext) => {
     const cxMcp = await deps.findCxMcp();
     if (!cxMcp) {
-      ctx.ui.notify("cx-mcp not found; workstyles live in contexture", "warning");
+      ctx.ui.notify("cx-mcp not found; workstyles live in gzero", "warning");
       return;
     }
     await openPicker(ctx, cxMcp, deps.mcpCall);

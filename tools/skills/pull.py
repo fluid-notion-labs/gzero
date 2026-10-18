@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pull agent skills from vendored repos into contexture.
+"""Pull agent skills from vendored repos into gzero.
 
 Reads skills.yaml. For each repo: shallow-clone to
 ../vendor/skills/<name> if missing (or use it as-is when `local: true` —
@@ -19,7 +19,7 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parent
-CTX = ROOT.parent.parent  # nursery/contextual
+CTX = ROOT.parent.parent  # nursery/gzero
 VENDOR = CTX / "vendor" / "skills"
 PACKS = CTX / "packs"
 

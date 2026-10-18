@@ -2,7 +2,7 @@
 // search by title/description, enter to read the full SKILL.md, esc to
 // close. The store holds distilled atoms; this is the window onto the depth
 // they point at. Source of truth: the canonical dir
-// ~/.pi/pi-contexture/skills, populated by tools/skills/install.py from
+// ~/.pi/pi-gzero/skills, populated by tools/skills/install.py from
 // the vendor/ clones (CX_SKILLS_DIRS overrides, colon-separated). One
 // location, no cwd or repo-path guessing, so every session sees the same set.
 
@@ -41,7 +41,7 @@ const MAX_VISIBLE = 12;
 function vendorDirs(): string[] {
   const env = process.env.CX_SKILLS_DIRS;
   if (env?.trim()) return env.split(":").filter(Boolean);
-  return [join(homedir(), ".pi", "pi-contexture", "skills")];
+  return [join(homedir(), ".pi", "pi-gzero", "skills")];
 }
 
 /** Recursively collect SKILL.md paths under a root, shallow (skip node_modules/.git). */

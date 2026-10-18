@@ -1,7 +1,7 @@
 #!/bin/sh
 # Run pi against THIS checkout's plugin, skipping the blessed copy.
 #
-# The blessed extension at ~/.pi/agent/extensions/contextual is a
+# The blessed extension at ~/.pi/agent/extensions/gzero is a
 # snapshot: it only changes when tools/bless-plugin.sh runs, so edits
 # made here don't reach a normal `pi` session. This wrapper instead
 # loads the plugin straight from the source tree:
@@ -24,9 +24,9 @@
 # plain `pi` session; this script is for iterating on it.
 set -e
 root="$(cd "$(dirname "$0")/.." && pwd)"
-[ -f "$root/pi-contextual-plugin/index.ts" ] || {
-	echo "no plugin at $root/pi-contextual-plugin" >&2
+[ -f "$root/pi-gzero-plugin/index.ts" ] || {
+	echo "no plugin at $root/pi-gzero-plugin" >&2
 	exit 1
 }
 exec pi --no-extensions -e builtin:mcp -e builtin:codemode \
-	-e "$root/pi-contextual-plugin" "$@"
+	-e "$root/pi-gzero-plugin" "$@"

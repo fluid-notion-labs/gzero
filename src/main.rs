@@ -1,4 +1,4 @@
-//! `cx` — the contexture CLI.
+//! `cx` — the gzero CLI.
 //!
 //! `cx`                 print default context (untagged atoms)
 //! `cx #tag ...`        default plus tagged atoms
@@ -14,11 +14,11 @@ use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::process::exit;
 
-use contextual::hub::{events_for_snapshot, Event, Hub};
-use contextual::items::{EdgeKind, ItemEdit, MoveTarget, NewItem, Status, WorkItem};
-use contextual::sections::{checklist_progress, Section, SectionKind};
-use contextual::snapshot::Atom;
-use contextual::{source_counts, tag_counts, AutomergeStore, ChangeFeed, SqliteStore, Storage};
+use gzero::hub::{events_for_snapshot, Event, Hub};
+use gzero::items::{EdgeKind, ItemEdit, MoveTarget, NewItem, Status, WorkItem};
+use gzero::sections::{checklist_progress, Section, SectionKind};
+use gzero::snapshot::Atom;
+use gzero::{source_counts, tag_counts, AutomergeStore, ChangeFeed, SqliteStore, Storage};
 
 /// Post events to the hub if configured; warn (don't fail) otherwise.
 fn try_post_events(events: &[Event]) {
@@ -34,7 +34,7 @@ fn try_post_events(events: &[Event]) {
 
 /// Atoms in the resolved view matching a needle, as full atoms for events.
 fn matched_atoms(store: &dyn Storage, needle: &str) -> Vec<Atom> {
-    match contextual::alive(store) {
+    match gzero::alive(store) {
         Ok(items) => items
             .into_iter()
             .filter(|(text, _)| text.contains(needle))
@@ -49,7 +49,7 @@ fn matched_atoms(store: &dyn Storage, needle: &str) -> Vec<Atom> {
     }
 }
 
-const USAGE: &str = "cx — contexture
+const USAGE: &str = "cx — gzero
 cx                default context (untagged atoms)
 cx #tag ...       default plus tagged atoms
 cx add file.md    import context markdown (per-source sync; re-run after edits)
@@ -112,7 +112,7 @@ fn main() {
         "scope" => {
             // Print the repo identity used to scope project-tier data —
             // lets script/TS clients match scopes exactly.
-            match contextual::repo_identity() {
+            match gzero::repo_identity() {
                 Some(id) => println!("{id}"),
                 None => {
                     eprintln!("cx: not in a git repository");
@@ -131,14 +131,14 @@ fn main() {
                 );
                 return;
             }
-            let (me, _) = contextual::sessions::session_identity();
+            let (me, _) = gzero::sessions::session_identity();
             if rows.is_empty() {
                 println!("no sessions on record");
                 return;
             }
             for s in rows {
                 let stale =
-                    contextual::sessions::now() - s.last_seen > contextual::PRESENCE_TTL_SECS;
+                    gzero::sessions::now() - s.last_seen > gzero::PRESENCE_TTL_SECS;
                 let marker = if s.session_id == me {
                     " (me)"
                 } else if stale {
@@ -146,7 +146,7 @@ fn main() {
                 } else {
                     ""
                 };
-                let m = (contextual::sessions::now() - s.last_seen) / 60;
+                let m = (gzero::sessions::now() - s.last_seen) / 60;
                 println!(
                     "{}{}  {}  {}  {}  seen {}m ago",
                     &s.session_id[..s.session_id.len().min(12)],
@@ -167,14 +167,14 @@ fn main() {
             for f in &args[1..] {
                 let text = std::fs::read_to_string(f).unwrap_or_else(|e| panic!("cx: {}: {e}", f));
                 let source = source_path(Path::new(f));
-                let stats = contextual::add_doc(&mut store, &source, &text)
+                let stats = gzero::add_doc(&mut store, &source, &text)
                     .unwrap_or_else(|e| panic!("cx: {e}"));
                 println!(
                     "{f}: +{} -{} ={} (kept {})",
                     stats.added, stats.removed, stats.kept, stats.kept
                 );
                 // Post only what this sync added (idempotent on the hub).
-                let events: Vec<Event> = contextual::parse(&text)
+                let events: Vec<Event> = gzero::parse(&text)
                     .into_iter()
                     .map(|a| Event::Put {
                         atom: Atom {
@@ -197,7 +197,7 @@ fn main() {
             let snap = hub
                 .fetch_snapshot()
                 .unwrap_or_else(|e| panic!("cx pull: {e}"));
-            let stats = contextual::absorb_snapshot(&mut store, "hub", &snap)
+            let stats = gzero::absorb_snapshot(&mut store, "hub", &snap)
                 .unwrap_or_else(|e| panic!("cx: {e}"));
             println!(
                 "hub: +{} -{} kept {} ({} tombstones)",
@@ -213,7 +213,7 @@ fn main() {
                 exit(2);
             });
             let store = open_store();
-            let snap = contextual::export_snapshot(&store).unwrap_or_else(|e| panic!("cx: {e}"));
+            let snap = gzero::export_snapshot(&store).unwrap_or_else(|e| panic!("cx: {e}"));
             hub.post_events(&events_for_snapshot(&snap))
                 .unwrap_or_else(|e| panic!("cx push: {e}"));
             println!(
@@ -228,7 +228,7 @@ fn main() {
                 exit(2);
             }
             let store = open_store();
-            let snap = contextual::export_snapshot(&store).unwrap_or_else(|e| panic!("cx: {e}"));
+            let snap = gzero::export_snapshot(&store).unwrap_or_else(|e| panic!("cx: {e}"));
             let bytes = snap.to_json().unwrap_or_else(|e| panic!("cx: {e}"));
             std::fs::write(&args[1], bytes).unwrap_or_else(|e| panic!("cx: {}: {e}", args[1]));
             println!(
@@ -246,10 +246,10 @@ fn main() {
             let mut store = open_store();
             for f in &args[1..] {
                 let bytes = std::fs::read(f).unwrap_or_else(|e| panic!("cx: {}: {e}", f));
-                let snap = contextual::snapshot::Snapshot::from_json(&bytes)
+                let snap = gzero::snapshot::Snapshot::from_json(&bytes)
                     .unwrap_or_else(|e| panic!("cx: {f}: {e}"));
                 let source = source_path(Path::new(f));
-                let stats = contextual::absorb_snapshot(&mut store, &source, &snap)
+                let stats = gzero::absorb_snapshot(&mut store, &source, &snap)
                     .unwrap_or_else(|e| panic!("cx: {e}"));
                 println!(
                     "{f}: +{} -{} kept {} ({} tombstones)",
@@ -298,7 +298,7 @@ fn main() {
             };
             let mut store = open_store();
             if check || take {
-                let result = contextual::reconcile_harvest(&mut store, &dir, take)
+                let result = gzero::reconcile_harvest(&mut store, &dir, take)
                     .unwrap_or_else(|e| panic!("cx: harvest: {e}"));
                 for r in &result.harvested {
                     match &r.stats {
@@ -346,12 +346,12 @@ fn main() {
                 }
                 try_post_events(&events);
             } else {
-                let results = contextual::harvest_dir(&mut store, &dir)
+                let results = gzero::harvest_dir(&mut store, &dir)
                     .unwrap_or_else(|e| panic!("cx: harvest: {e}"));
                 if results.is_empty() {
                     println!(
                         "(no instruction files found: {})",
-                        contextual::HARVEST_FILES.join(", ")
+                        gzero::HARVEST_FILES.join(", ")
                     );
                 }
                 for r in results {
@@ -477,8 +477,8 @@ fn main() {
 fn show(tags: &BTreeSet<String>) {
     let store = open_store();
     let refs: Vec<&str> = tags.iter().map(String::as_str).collect();
-    let project = contextual::repo_identity();
-    let items = contextual::resolve_tiers(&store, project.as_deref(), &refs)
+    let project = gzero::repo_identity();
+    let items = gzero::resolve_tiers(&store, project.as_deref(), &refs)
         .unwrap_or_else(|e| panic!("cx: {e}"));
     if items.is_empty() {
         println!("(no matching context)");
@@ -752,7 +752,7 @@ fn ws_arg(pos: &[String], i: usize, usage: &str) -> String {
 /// Scope for a ws command that omits it: this repo's identity, else `global`.
 fn ws_scope(arg: Option<&String>) -> String {
     arg.cloned()
-        .or_else(contextual::repo_identity)
+        .or_else(gzero::repo_identity)
         .unwrap_or_else(|| "global".to_string())
 }
 
@@ -791,7 +791,7 @@ fn ws_json(s: &Section) -> serde_json::Value {
 }
 
 fn open_ws() -> AutomergeStore {
-    let path = contextual::sections::default_ws_path();
+    let path = gzero::sections::default_ws_path();
     AutomergeStore::open(Some(&path)).unwrap_or_else(|e| panic!("cx: open {}: {e}", path.display()))
 }
 
@@ -801,7 +801,7 @@ fn open_ws() -> AutomergeStore {
 fn watch_loop() {
     use std::io::Write;
     use std::time::{Duration, SystemTime};
-    let _path = contextual::sections::default_ws_path();
+    let _path = gzero::sections::default_ws_path();
     let mut store = open_ws();
     let Some(doc_path) = store.path().map(|p| p.to_path_buf()) else {
         eprintln!("cx: watch needs a doc file (CX_WS_DB)");
@@ -846,7 +846,7 @@ fn item_command(args: &[String]) {
     let scope = flags
         .get("scope")
         .cloned()
-        .or_else(contextual::repo_identity)
+        .or_else(gzero::repo_identity)
         .unwrap_or_else(|| "global".to_string());
     let mut store = open_ws();
 

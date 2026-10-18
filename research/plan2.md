@@ -4,15 +4,15 @@
 
 Superseded by `plan3.md` (2026-10) — kept as reference for the engine
 rationale, record-type schema, and the workflow-content rule. Original
-greeting: productization thread: contextual grows
+greeting: productization thread: gzero grows
 from "bag + CLI" into a fully specified product — doc set, user
 stories, work-item/todo facet, native history — with automerge-rs as
-the engine core behind contextual's `Storage` trait (**elastic** is the
+the engine core behind gzero's `Storage` trait (**elastic** is the
 deferred name for the typed layer once it's a crate). Sits beside
 `plan.md` (memory-layer
-buildout); plan.md's open M4 (contextual↔engine unification) is
+buildout); plan.md's open M4 (gzero↔engine unification) is
 absorbed here as milestone **L1**. Companions: `architecture.md`
-(the contexture umbrella: planes, moving parts),
+(the gzero umbrella: planes, moving parts),
 `lattice.md` (merge math), `findings.md` (concept grounding);
 vendored comparisons: `vendor/beads` (Go), `vendor/beads-rs`
 (delightful-ai), `vendor/beads_rust` (br).
@@ -35,17 +35,17 @@ history is the data, not an afterthought.
 ## Engine packaging: automerge behind `Storage`; elastic deferred
 
 `nursery/bagflow` (own repo, retrieved) stays an unrenamed reference
-prototype — contextual has no code dependency on it, and nothing needs
+prototype — gzero has no code dependency on it, and nothing needs
 a second crate yet:
 
-- **Now:** the engine is **automerge-rs** behind contextual's `Storage`
-  trait, inside contextual (`AutomergeStore`; see §Engine substrate).
+- **Now:** the engine is **automerge-rs** behind gzero's `Storage`
+  trait, inside gzero (`AutomergeStore`; see §Engine substrate).
   Record types, folds, policy, and the derived index start as modules
   there too — Rust makes later crate extraction cheap; premature
   extraction is just workspace friction.
 - **elastic** is the name for the typed layer *if/when* it's extracted
   into its own crate — deferred until a second consumer appears (a
-  non-contextual tool working on the same record types). "elastic": the
+  non-gzero tool working on the same record types). "elastic": the
   lattice stretches to absorb concurrent replicas and always snaps back
   to one state.
 - No rename todo remains: no `nursery/elastic`, no symlink, no
@@ -56,8 +56,8 @@ a second crate yet:
 
 | doc | contents | status |
 |---|---|---|
-| `product.md` | what contextual/contexture does, for whom, overarching ideas, non-goals | to write — markdown now; migrates into the bag (this rule) |
-| `architecture.md` | contexture umbrella (planes, moving parts) — promoted from `architecture2.md`, which is retired | exists — migrates into the bag (this rule) |
+| `product.md` | what gzero/gzero does, for whom, overarching ideas, non-goals | to write — markdown now; migrates into the bag (this rule) |
+| `architecture.md` | gzero umbrella (planes, moving parts) — promoted from `architecture2.md`, which is retired | exists — migrates into the bag (this rule) |
 | `research/old/memory-plane.md` | bag components, resolution model, diagrams | exists (archived) — migrates (this rule) |
 | `stories.md` | user stories / workflows — human and agent personas | to write — markdown now; migrates into the bag (this rule) |
 | `plan2.md` | this | — |
@@ -69,7 +69,7 @@ a second crate yet:
 earlier draft mistook it for a rule name; the idea below is what
 matters.) Once the record types carry it (L2–L3), **none of the
 workflow system's own content lives in repo `.md` files** — it all
-lives in contextual's store, stored/synced via automerge:
+lives in gzero's store, stored/synced via automerge:
 
 - **prose documents** (product description, user stories, the
   architecture essays) → **section records** in the automerge store
@@ -94,7 +94,7 @@ per document (`cx harvest --take` shape).
 ## Work-item facet — decision: native, not adopted
 
 **Do not adopt** beads (Go), beads-rs, or br as tools. Build the facet
-as a contexture record type on elastic. Why: all three capture exactly
+as a gzero record type on elastic. Why: all three capture exactly
 one facet of the goal; their storage/sync machinery (Dolt, SQLite+JSONL
 export, CRDT-on-a-git-ref) duplicates what hub+elastic already provide;
 and their history is either native-by-accident (Dolt) or bolted on
@@ -131,7 +131,7 @@ The earlier hand-roll + `lattices` recommendation is withdrawn: the
 risky part — clocks, causality, tombstones, concurrent-write
 resolution — is exactly what a battle-tested CRDT core already solved.
 Evidence it's the risky part: beads-rs's ongoing CRDT overhaul; br's
-three bolted-on history mechanisms; contextual's own unproven
+three bolted-on history mechanisms; gzero's own unproven
 `absorb_snapshot`. We build only the domain layer nobody else has.
 
 - **Why automerge over yrs (`vendor/y-crdt`, 0.28):** history is
@@ -158,7 +158,7 @@ three bolted-on history mechanisms; contextual's own unproven
   folds (ready/blocked/graph), capacity policy (local eval, never
   merged), a SQLite **derived index** for query/FTS (cache of doc
   state, never truth), MCP/CLI tools — starts as modules inside
-  contextual. `elastic` names the extraction, if it ever happens.
+  gzero. `elastic` names the extraction, if it ever happens.
   bagflow (DFIR) stays a reference prototype.
 - **hydroflow/DFIR, timely:** no — wrong problem. **raft-rs/openraft:**
   no — reaffirms `resident-mcp/replication.md`; a CRDT core makes
@@ -180,13 +180,13 @@ reference reading only.
   reference prototype (own repo, `fluid-notion-labs/bagflow`;
   explorations ignores `nursery/`). Not renamed; no further L0 work.
 - **L1 — automerge behind `Storage`** (= plan.md M4): `AutomergeStore`
-  in contextual — ledger, fold, and absorb ported onto automerge
+  in gzero — ledger, fold, and absorb ported onto automerge
   change application; push/pull switch from snapshot JSON to change
   blobs; hub DO becomes an append-only log of changes. Snapshot JSON
   stays the contract until the L2 atom import. Design (done):
   per-source sync and tombstones mapped onto the automerge doc model —
-  `contextual/research/memory-plane.md` §L1 design.
-- **L2 — record types** (in contextual): typed records beyond atoms;
+  `gzero/research/memory-plane.md` §L1 design.
+- **L2 — record types** (in gzero): typed records beyond atoms;
   per-field merge (LWW registers, OR-sets); tombstones with TTL; write
   stamps; one-time atom import into the automerge doc.
 - **L3 — work items**: the record type above + `cx item` subcommands +
@@ -219,7 +219,7 @@ reference reading only.
 - [ ] write `product.md`
 - [ ] write `stories.md`
 - [x] refresh architecture docs (done: umbrella promoted to
-      `architecture.md`; bag doc is `contextual/research/memory-plane.md`
+      `architecture.md`; bag doc is `gzero/research/memory-plane.md`
       with elastic rows, L1 note; stale architecture2/plan references
       updated everywhere)
 - [x] L1 (store): `AutomergeStore` behind `Storage` — done, tested

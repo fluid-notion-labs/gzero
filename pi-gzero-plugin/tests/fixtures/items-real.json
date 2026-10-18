@@ -12,7 +12,7 @@
     ],
     "notes": {},
     "priority": 5,
-    "scope": "fluid-notion-labs/contextual",
+    "scope": "fluid-notion-labs/gzero",
     "status": "open",
     "title": "later: ai-harness session tree"
   },
@@ -29,7 +29,7 @@
     ],
     "notes": {},
     "priority": 5,
-    "scope": "fluid-notion-labs/contextual",
+    "scope": "fluid-notion-labs/gzero",
     "status": "open",
     "title": "later: resident track (shim → daemon)"
   },
@@ -46,7 +46,7 @@
     ],
     "notes": {},
     "priority": 4,
-    "scope": "fluid-notion-labs/contextual",
+    "scope": "fluid-notion-labs/gzero",
     "status": "open",
     "title": "write stories.md"
   },
@@ -63,7 +63,7 @@
     ],
     "notes": {},
     "priority": 3,
-    "scope": "fluid-notion-labs/contextual",
+    "scope": "fluid-notion-labs/gzero",
     "status": "open",
     "title": "D2: multi-machine sync tests with tombstone TTL"
   },
@@ -80,7 +80,7 @@
     ],
     "notes": {},
     "priority": 3,
-    "scope": "fluid-notion-labs/contextual",
+    "scope": "fluid-notion-labs/gzero",
     "status": "open",
     "title": "write product.md"
   },
@@ -97,7 +97,7 @@
     ],
     "notes": {},
     "priority": 3,
-    "scope": "fluid-notion-labs/contextual",
+    "scope": "fluid-notion-labs/gzero",
     "status": "open",
     "title": "W5: plugin Ctrl+W viewer renders nesting"
   },
@@ -114,7 +114,7 @@
     ],
     "notes": {},
     "priority": 3,
-    "scope": "fluid-notion-labs/contextual",
+    "scope": "fluid-notion-labs/gzero",
     "status": "open",
     "title": "D3: items + sections sync via hub; multi-repo; templates"
   },
@@ -131,7 +131,7 @@
     ],
     "notes": {},
     "priority": 2,
-    "scope": "fluid-notion-labs/contextual",
+    "scope": "fluid-notion-labs/gzero",
     "status": "open",
     "title": "W5: fix stale references (architecture.md → research/old/, plan2.md)"
   },
@@ -148,7 +148,7 @@
     ],
     "notes": {},
     "priority": 2,
-    "scope": "fluid-notion-labs/contextual",
+    "scope": "fluid-notion-labs/gzero",
     "status": "open",
     "title": "W5: files become stubs (architecture.md, plan3.md, product.md, stories.md)"
   },
@@ -167,7 +167,7 @@
     ],
     "notes": {},
     "priority": 1,
-    "scope": "fluid-notion-labs/contextual",
+    "scope": "fluid-notion-labs/gzero",
     "status": "open",
     "title": "D1: change-based push/pull via hub"
   },
@@ -186,7 +186,7 @@
     ],
     "notes": {},
     "priority": 1,
-    "scope": "fluid-notion-labs/contextual",
+    "scope": "fluid-notion-labs/gzero",
     "status": "open",
     "title": "locate hub Worker source"
   },
@@ -203,7 +203,7 @@
     ],
     "notes": {},
     "priority": 4,
-    "scope": "fluid-notion-labs/contextual",
+    "scope": "fluid-notion-labs/gzero",
     "status": "closed",
     "title": "W3: plan_next tool - what's next on demand"
   },
@@ -220,7 +220,7 @@
     ],
     "notes": {},
     "priority": 4,
-    "scope": "fluid-notion-labs/contextual",
+    "scope": "fluid-notion-labs/gzero",
     "status": "closed",
     "title": "W4: capacity, gates, explainable ranking"
   },
@@ -237,7 +237,7 @@
     ],
     "notes": {},
     "priority": 3,
-    "scope": "fluid-notion-labs/contextual",
+    "scope": "fluid-notion-labs/gzero",
     "status": "closed",
     "title": "W3: pinned items in injected context"
   },
@@ -254,7 +254,7 @@
     ],
     "notes": {},
     "priority": 2,
-    "scope": "fluid-notion-labs/contextual",
+    "scope": "fluid-notion-labs/gzero",
     "status": "closed",
     "title": "D1: change-based push/pull via automerge change log"
   },
@@ -271,7 +271,7 @@
     ],
     "notes": {},
     "priority": 2,
-    "scope": "fluid-notion-labs/contextual",
+    "scope": "fluid-notion-labs/gzero",
     "status": "closed",
     "title": "W3: skill-activation seed atom"
   }

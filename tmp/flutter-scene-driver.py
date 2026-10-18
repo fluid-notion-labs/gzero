@@ -141,7 +141,7 @@ for x, nm in [(-3.0, "Hub client — push/pull over HTTP"),
     part(b, "transport." + nm.split(" — ")[0].lower(), "transport", nm.split(" — ")[0], nm, {"kind": "plastic", "spec": "channel"})
 
 # HUB (api server, bottom)
-g, s, Y = slab("HUB — API SERVER", 2.2, "HUB (api server) — contexture Worker",
+g, s, Y = slab("HUB — API SERVER", 2.2, "HUB (api server) — gzero Worker",
     "The deployed Worker + DO replication spine the app speaks to. Nested "
     "plane: the SYNC DO bag-room doing server-side lattice merge.",
     {"kind": "concrete", "spec": "cloudflare"})

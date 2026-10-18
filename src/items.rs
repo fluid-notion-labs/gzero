@@ -16,7 +16,7 @@
 //! fold: an open item whose `blocks`-blockers are all closed (missing
 //! targets count as closed — deletions never wedge the graph).
 //!
-//! Doc shape (inside the contexture doc):
+//! Doc shape (inside the gzero doc):
 //! ```text
 //! root
 //! └─ items: Map<scope -> Map<id -> item>>

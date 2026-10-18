@@ -5,7 +5,7 @@
 // tool (fresh-context subagent for the 32k qwen tier), the /router and
 // /fixfresh commands, and footer status.
 //
-// Design decisions: contexture workflow section `model-router`. The harness
+// Design decisions: gzero workflow section `model-router`. The harness
 // context: /mnt/data/projects/explorations/research/ai-harness-memory/index.md.
 
 import type { ExtensionAPI, ExtensionContext, ExtensionToolContext, ModelRoute, ModelRouteRequest } from "@earendil-works/pi-coding-agent";

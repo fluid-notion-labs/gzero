@@ -1,13 +1,13 @@
-# contextual pi plugin
+# gzero pi plugin
 
 pi extension that connects the context system to pi sessions. Speaks to
-contextual only via MCP — no direct SQLite or hub access.
+gzero only via MCP — no direct SQLite or hub access.
 
 - registers `cx-mcp` so the model gets the `mcp__context__*` tools
 - injects the resolved default context (global + project tiers) into the
   system prompt on every turn
 - plain `/context` shows usage; it no longer opens anything —
-  `/contexture` is the panel. Note the skillbag is *not* sent to the
+  `/gzero` is the panel. Note the skillbag is *not* sent to the
   model — its atoms load only when a tag is pulled or a skill is
   referenced/loaded. The injection refreshes itself: the cache is
   stamped with the store file's mtime, so any change — the model's
@@ -24,7 +24,7 @@ contextual only via MCP — no direct SQLite or hub access.
   detail view loads the skill for the session — its full instructions
   apply to every turn, and it distills into the skillbag on your next
   message.
-  Skill source: the canonical dir `~/.pi/pi-contexture/skills`, installed
+  Skill source: the canonical dir `~/.pi/pi-gzero/skills`, installed
   by `tools/skills/install.py` from the vendored repos (deduped by name);
   `$CX_SKILLS_DIRS` (colon-separated) overrides
 - `#` in the composer autocompletes skills (tab/enter) like `@` does for
@@ -38,8 +38,8 @@ contextual only via MCP — no direct SQLite or hub access.
   idempotent (store dedupes by text); explicitly removed atoms stay
   removed (tombstones). Plain hashtags still type normally — just keep
   typing past the popup. Skill discovery is precached on session start
-- `Ctrl+Q` or `/contexture` toggles the **contexture panel**
-  (`/contexture [tasks|context|documentation]` opens directly on a
+- `Ctrl+Q` or `/gzero` toggles the **gzero panel**
+  (`/gzero [tasks|context|documentation]` opens directly on a
   section): a full-height left-tree pane with three sections in a top
   bar — `tasks` (the work-item tree with queue order, status
   transitions, priority, notes and `m` move mode), `context`
@@ -72,15 +72,15 @@ contextual only via MCP — no direct SQLite or hub access.
   removes the strip and restores panel-only behavior
 - A **loaded-skills column** sits left of the rail: one ✦-marked skill
   name per line for every skill loaded this session. Passive display
-  only — loading happens in the skills picker or the contexture panel's
+  only — loading happens in the skills picker or the gzero panel's
   skills search; the column appears when the first skill is loaded and
   never reaches the chat area. `CX_SKILLS_STRIP=0` removes it
 - warns on a stale `cx-mcp` (missing tools via `tools/list`)
-- offers to install contextual on first run if `cx-mcp` is missing
+- offers to install gzero on first run if `cx-mcp` is missing
 
 - post-turn review: every turn is captured; when `CX_REVIEW_BATCH`
   (default 5) turns are pending, one forked model call — the session's
-  model — reviews the batch and saves durable facts to contexture (scope
+  model — reviews the batch and saves durable facts to gzero (scope
   global for user/environment, project for repo conventions, hashtags
   for on-demand task knowledge). "Nothing to save." is the usual reply;
   saved atoms are announced via notification. Fire-and-forget in
@@ -99,7 +99,7 @@ Dev (live-linked to a checkout, picks up every change on pi restart):
 
 ```sh
 mkdir -p ~/.pi/agent/extensions
-ln -s "$(pwd)/pi-contextual-plugin" ~/.pi/agent/extensions/contextual
+ln -s "$(pwd)/pi-gzero-plugin" ~/.pi/agent/extensions/gzero
 ```
 
 Blessed (export a snapshot of whichever checkout you run it from —
@@ -114,14 +114,14 @@ The blessed copy is standalone: pi resolves `@earendil-works/*`
 imports itself, so no node_modules is shipped.
 
 Requires `cx` and `cx-mcp` (the plugin offers to run
-`cargo install --git https://github.com/fluid-notion-labs/contextual`).
+`cargo install --git https://github.com/fluid-notion-labs/gzero`).
 Hub sync uses `CX_HUB_URL` and `CX_TOKEN`; unset means offline.
 
 ### Dev cx-mcp override
 
 A repo can ship its own locally built server: drop an executable at
 `.pi/dev-cx-mcp` and add a `context` entry to `.pi/mcp.json` (see the
-contextual repo). The plugin's own calls (`/context`, autocomplete)
+gzero repo). The plugin's own calls (`/context`, autocomplete)
 prefer `<cwd>/.pi/dev-cx-mcp` when present, matching the mcp.json
 override pi applies to the model's tools.
 

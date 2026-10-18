@@ -1,6 +1,6 @@
-// contextual pi plugin — connects the context system to pi sessions.
+// gzero pi plugin — connects the context system to pi sessions.
 //
-// Speaks to contextual only via MCP: registers cx-mcp for the model's
+// Speaks to gzero only via MCP: registers cx-mcp for the model's
 // tools, injects the resolved default context (global + project tiers)
 // into the system prompt on every turn, and adds /context commands.
 //
@@ -30,7 +30,7 @@ import {
 } from "./skills.ts";
 import { TapEditor, tapTrigger } from "./panel-taps.ts";
 import {
-  ContexturePanel,
+  GzeroPanel,
   docsToNodes,
   itemsToNodes,
   skillsToNodes,
@@ -40,7 +40,7 @@ import {
   type PanelActions,
   type PanelNode,
   type PanelSkills,
-} from "./contexture-panel.ts";
+} from "./gzero-panel.ts";
 import { ItemsPaneController, run as runProc } from "./items-pane.ts";
 import { messageText, registerReview, type ReviewDeps } from "./review.ts";
 import {
@@ -56,7 +56,7 @@ import { stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-const REPO = "https://github.com/fluid-notion-labs/contextual";
+const REPO = "https://github.com/fluid-notion-labs/gzero";
 const INSTALL_CMD = `cargo install --git ${REPO}`;
 
 /** Tools every cx-mcp must expose; a stale install warns instead of failing. */
@@ -236,10 +236,10 @@ export function bucketTiers(rendered: string): TierSection[] {
 }
 
 
-// ---- Contexture panel: the unified tasks / context / documentation pane ----
+// ---- Gzero panel: the unified tasks / context / documentation pane ----
 // Tree logic lives in items-tree.ts, the panel component in
-// contexture-panel.ts (both unit-tested). P5 cutover shipped, then
-// da36 consolidated the bindings: ctrl+q and /contexture are the only
+// gzero-panel.ts (both unit-tested). P5 cutover shipped, then
+// da36 consolidated the bindings: ctrl+q and /gzero are the only
 // openers — the ctrl+w tabbed viewer, alt+c, /panel, /workflow and
 // plain-/context opening are all gone.
 
@@ -304,11 +304,11 @@ function renderChecklist(md: string, kind: string | undefined): string {
   });
 }
 
-/** The contexture panel's tree: tasks (work items), context (the
+/** The gzero panel's tree: tasks (work items), context (the
  * three tiers, plus loaded skills), documentation (ws sections
  * expanded into n-deep heading trees). Failed sources degrade to a
  * placeholder child so the pane still opens. */
-function contextureTree(
+function gzeroTree(
   items: RawItem[] | null,
   tiers: TierSection[] | null,
   loadedSkills: SkillEntry[] | null,
@@ -381,7 +381,7 @@ function panelSkills(): PanelSkills {
   };
 }
 
-/** Presence (S1): label for the contexture panel's top bar. Counts
+/** Presence (S1): label for the gzero panel's top bar. Counts
  * other sessions in this scope seen within the TTL (mirrors
  * PRESENCE_TTL_SECS = 300 on the Rust side). Empty when solo or
  * unavailable — presence must never block the panel. */
@@ -425,17 +425,17 @@ async function projectScope(): Promise<string | null> {
   }
 }
 
-/** The contexture panel: ctrl+q / /contexture. The unified pane
+/** The gzero panel: ctrl+q / /gzero. The unified pane
  * (work item 2c31); the only panel since the P5 cutover. */
-async function openContexturePanel(
+async function openGzeroPanel(
   ctx: ExtensionContext,
   loadTiers: () => Promise<TierSection[]>,
-  /** Open directly on this section (/contexture [section] starts
+  /** Open directly on this section (/gzero [section] starts
    * here). */
   section?: "tasks" | "context" | "documentation",
 ): Promise<void> {
   if (ctx.mode !== "tui") {
-    ctx.ui.notify("The contexture panel needs TUI mode", "warning");
+    ctx.ui.notify("The gzero panel needs TUI mode", "warning");
     return;
   }
   const [itemsRes, tiersRes, skillsRes, docsRes, presenceRes] = await Promise.allSettled([
@@ -447,7 +447,7 @@ async function openContexturePanel(
   ]);
   const unwrap = <T>(r: PromiseSettledResult<T>): T | null =>
     r.status === "fulfilled" ? r.value : null;
-  const nodes = contextureTree(
+  const nodes = gzeroTree(
     unwrap(itemsRes),
     unwrap(tiersRes),
     getLoadedSkills(), // only loaded skills in the tree; catalog is for search
@@ -455,7 +455,7 @@ async function openContexturePanel(
   );
   await ctx.ui.custom(
     (_tui, theme, keybindings, done) => {
-      const panel = new ContexturePanel(
+      const panel = new GzeroPanel(
         nodes,
         theme,
         done,
@@ -570,7 +570,7 @@ export default function (pi: ExtensionAPI) {
 
   const findCxMcp = async (): Promise<string | null> => {
     // Repo-level dev override: a project can ship .pi/dev-cx-mcp (see
-    // .pi/mcp.json in the contextual repo) and dev sessions then use the
+    // .pi/mcp.json in the gzero repo) and dev sessions then use the
     // locally built server for the plugin's own calls too, matching the
     // mcp.json override pi applies for the model's tools.
     const dev = path.join(process.cwd(), ".pi", "dev-cx-mcp");
@@ -604,7 +604,7 @@ export default function (pi: ExtensionAPI) {
     return resolvedBody;
   };
 
-  // Plain /context no longer opens anything (da36): /contexture is the
+  // Plain /context no longer opens anything (da36): /gzero is the
   // panel. A notification shows the resolved context in non-TUI modes.
 
   // The model's MCP tools. Registered in the factory; pi connects the
@@ -642,29 +642,29 @@ export default function (pi: ExtensionAPI) {
       ctx.ui.setEditorComponent(
         (tui, theme, keybindings) =>
           new TapEditor(tui, theme, keybindings, () => {
-            if (uiCtx) void openContexturePanel(uiCtx, loadTierSections);
+            if (uiCtx) void openGzeroPanel(uiCtx, loadTierSections);
           }),
       );
     }
     const cxMcp = await findCxMcp();
     if (!cxMcp) {
       if (!ctx.hasUI) {
-        console.error(`contextual pi plugin: cx-mcp not found; install with: ${INSTALL_CMD}`);
+        console.error(`gzero pi plugin: cx-mcp not found; install with: ${INSTALL_CMD}`);
         return;
       }
       if (!(await which("cargo"))) {
         ctx.ui.notify(
-          `contextual is not installed and cargo is unavailable. Install manually from ${REPO}`,
+          `gzero is not installed and cargo is unavailable. Install manually from ${REPO}`,
           "warning",
         );
         return;
       }
       const ok = await ctx.ui.confirm(
-        "contextual is not installed",
+        "gzero is not installed",
         `Install it now? Runs: ${INSTALL_CMD} (provides cx and cx-mcp).`,
       );
       if (!ok) return;
-      ctx.ui.notify("Installing contextual in the background…", "info");
+      ctx.ui.notify("Installing gzero in the background…", "info");
       // Detached so the install survives the session; notified on completion.
       const child = spawn("cargo", ["install", "--git", REPO], {
         stdio: "ignore",
@@ -673,8 +673,8 @@ export default function (pi: ExtensionAPI) {
       child.on("exit", (code) => {
         ctx.ui.notify(
           code === 0
-            ? "contextual installed — restart pi to connect it"
-            : `contextual install failed (exit ${code})`,
+            ? "gzero installed — restart pi to connect it"
+            : `gzero install failed (exit ${code})`,
           code === 0 ? "info" : "error",
         );
       });
@@ -709,15 +709,15 @@ export default function (pi: ExtensionAPI) {
     itemsPane.shutdown();
   });
 
-  // ctrl+q → toggle the contexture panel (tasks | context |
+  // ctrl+q → toggle the gzero panel (tasks | context |
   // documentation). While it's open the overlay owns input and closes
-  // on the same ctrl+q (ContexturePanel.handleInput); esc keeps
+  // on the same ctrl+q (GzeroPanel.handleInput); esc keeps
   // working. The tasks sidebar stays reachable via /tasks (/items);
   // the 1-column strip on the right edge is always visible underneath,
   // CX_TASKS_STRIP=0 removes it.
   pi.registerShortcut(Key.ctrl("q"), {
-    description: "Toggle the contexture panel (tasks / context / documentation)",
-    handler: (ctx) => openContexturePanel(ctx, loadTierSections),
+    description: "Toggle the gzero panel (tasks / context / documentation)",
+    handler: (ctx) => openGzeroPanel(ctx, loadTierSections),
   });
 
   pi.registerCommand("tasks", {
@@ -748,7 +748,7 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  // ---- the contexture panel (ctrl+q / /contexture) ----
+  // ---- the gzero panel (ctrl+q / /gzero) ----
   // One left-tree pane with tasks / context / documentation
   // (design: work item 2c31); the only panel since the P5 cutover.
   /** Tiers for the panel's context subtree: resolved via the same
@@ -762,14 +762,14 @@ export default function (pi: ExtensionAPI) {
     return bucketTiers(body).filter((s) => s.nodes.length > 0);
   };
 
-  pi.registerCommand("contexture", {
-    description: "Toggle the contexture panel (same as ctrl+q); optional section: /contexture [tasks|context|documentation]",
+  pi.registerCommand("gzero", {
+    description: "Toggle the gzero panel (same as ctrl+q); optional section: /gzero [tasks|context|documentation]",
     handler: async (args: string, ctx: ExtensionCommandContext) => {
       const section = args.trim().split(/\s+/)[0] ?? "";
       if (section === "tasks" || section === "context" || section === "documentation") {
-        await openContexturePanel(ctx, loadTierSections, section);
+        await openGzeroPanel(ctx, loadTierSections, section);
       } else {
-        await openContexturePanel(ctx, loadTierSections);
+        await openGzeroPanel(ctx, loadTierSections);
       }
     },
   });
@@ -890,7 +890,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.registerCommand("context", {
     description:
-      "Context operations: 'reload' re-resolves; 'add <text>' saves an atom; 'local|global <text>' condenses via the model then saves to that tier. Plain /context shows usage — /contexture opens the panel",
+      "Context operations: 'reload' re-resolves; 'add <text>' saves an atom; 'local|global <text>' condenses via the model then saves to that tier. Plain /context shows usage — /gzero opens the panel",
     handler: async (args: string, ctx: ExtensionCommandContext) => {
       const cxMcp = await findCxMcp();
       if (!cxMcp) {
@@ -937,7 +937,7 @@ export default function (pi: ExtensionAPI) {
           return;
         }
         const query =
-          `Rewrite the note below as a single terse, durable instruction atom for contexture. Rules:\n` +
+          `Rewrite the note below as a single terse, durable instruction atom for gzero. Rules:\n` +
           `- one sentence, plain declarative, addressed to a coding agent\n` +
           `- keep concrete details (names, commands, paths); drop filler\n` +
           `- no markdown, no quotes, no hashtags, under 25 words\n` +
@@ -999,12 +999,12 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
-      // Plain /context (da36): no panel opening — /contexture is the
+      // Plain /context (da36): no panel opening — /gzero is the
       // panel. Show usage in TUI mode; non-TUI modes still get the
       // resolved context as a notification (same cache as injection).
       if (ctx.mode === "tui") {
         ctx.ui.notify(
-          "usage: /context [reload | add <text> | local|global <text>] — /contexture opens the panel",
+          "usage: /context [reload | add <text> | local|global <text>] — /gzero opens the panel",
           "info",
         );
         return;

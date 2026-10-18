@@ -4,12 +4,12 @@
 # dist .d.ts files (and @types/node from the vendored tree), run tsc, and
 # remove the generated file. Runtime dep resolution for tests lives in
 # tests/deps.mjs. Pass the plugin directory name to check a different one
-# (default: pi-contextual-plugin).
+# (default: pi-gzero-plugin).
 set -e
 root="$(cd "$(dirname "$0")/.." && pwd)"
 case "${1:-}" in
   /*) plugin="$1" ;;
-  *) plugin="$root/${1:-pi-contextual-plugin}" ;;
+  *) plugin="$root/${1:-pi-gzero-plugin}" ;;
 esac
 pi=""
 d="$root"

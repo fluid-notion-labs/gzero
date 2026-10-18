@@ -1,4 +1,4 @@
-//! Automerge-backed storage for contexture (plan2 L1).
+//! Automerge-backed storage for gzero (plan2 L1).
 //!
 //! Design: `research/memory-plane.md` §L1 design. One automerge
 //! document is the store; atom identity = text (map keys). We never

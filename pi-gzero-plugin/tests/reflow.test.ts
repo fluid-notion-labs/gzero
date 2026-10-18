@@ -1,18 +1,18 @@
 // Tests for reflowMarkdown (reflow.ts): hard-wrapped markdown
 // prose re-flows to the pane width; structural lines keep their shape.
-// textDetail is the contexture panel's use of it (section/tier details).
+// textDetail is the gzero panel's use of it (section/tier details).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { reflowMarkdown } from "../reflow.ts";
-import { textDetail } from "../contexture-panel.ts";
+import { textDetail } from "../gzero-panel.ts";
 import { wrapPlain } from "../window.ts";
 
 test("hard-wrapped prose joins into one paragraph and re-wraps", () => {
-  const md = "The umbrella architecture: the whole\nsystem, of which contexture is\none subsystem.";
+  const md = "The umbrella architecture: the whole\nsystem, of which gzero is\none subsystem.";
   const out = reflowMarkdown(md);
-  assert.equal(out, "The umbrella architecture: the whole system, of which contexture is one subsystem.");
+  assert.equal(out, "The umbrella architecture: the whole system, of which gzero is one subsystem.");
   // at width 40 it re-wraps to multiple lines
-  assert.equal(wrapPlain(out, 40).length, 3);
+  assert.equal(wrapPlain(out, 40).length, 2);
 });
 
 test("headings, lists, and blank lines stay put", () => {

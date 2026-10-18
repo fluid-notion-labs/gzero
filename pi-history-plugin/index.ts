@@ -34,7 +34,7 @@ export default function (pi: ExtensionAPI) {
   };
 
   // ctrl+` is unusable: it decodes as ctrl+space (NUL) in legacy terminal
-  // encoding, which the contextual plugin's workstyles picker owns, and
+  // encoding, which the gzero plugin's workstyles picker owns, and
   // alt+` is the window switcher on the user's desktop. F1 decodes
   // distinctly everywhere and was free in pi and the other plugins.
   pi.registerShortcut("f1", {

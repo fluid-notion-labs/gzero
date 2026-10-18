@@ -1,4 +1,4 @@
-// panel-taps.ts — open the contexture panel by tapping backtick.
+// panel-taps.ts — open the gzero panel by tapping backtick.
 //
 // Backticks are precious (inline code, fences), so the tap counting is
 // a hold-and-flush state machine: each tap is buffered for a short
@@ -80,7 +80,7 @@ export class TapCounter {
 /**
  * The editor component that intercepts backticks for tap counting and
  * forwards everything else untouched. Installed from session_start in
- * TUI mode; the `open` callback opens the contexture panel.
+ * TUI mode; the `open` callback opens the gzero panel.
  */
 export class TapEditor extends CustomEditor {
   private counter: TapCounter;

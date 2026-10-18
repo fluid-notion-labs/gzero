@@ -14,7 +14,7 @@ const rustOutput = `error[E0308]: mismatched types
 warning: unused variable: 'y'
   --> src/sync/hub.rs:88:5
 
-error: could not compile \`contexture\` (bin "cx-mcp") due to 1 previous error`;
+error: could not compile \`gzero\` (bin "cx-mcp") due to 1 previous error`;
 
 test("extractSpans finds rust --> spans with line and column, deduped in order", () => {
   const spans = extractSpans(rustOutput);

@@ -1,11 +1,11 @@
-// Tests for the contexture panel (P0 skeleton): tree flattening,
+// Tests for the gzero panel (P0 skeleton): tree flattening,
 // cursor movement, top-level jumps, expand/collapse, close keys, and
 // the left-tree-with-content two-column render.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 const stripVTControlCodes = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
 import {
-  ContexturePanel,
+  GzeroPanel,
   docsToNodes,
   flattenTree,
   fuzzyScore,
@@ -19,7 +19,7 @@ import {
   type PanelActions,
   type PanelNode,
   type PanelSkills,
-} from "../contexture-panel.ts";
+} from "../gzero-panel.ts";
 import type { RawItem } from "../items-tree.ts";
 
 const item = (over: Partial<RawItem>): RawItem => ({
@@ -73,7 +73,7 @@ const make = (
   nodes: PanelNode[] = tree(),
   onDone: () => void = () => {},
   presence?: string,
-) => new ContexturePanel(nodes, theme as never, onDone, undefined, undefined, undefined, presence);
+) => new GzeroPanel(nodes, theme as never, onDone, undefined, undefined, undefined, presence);
 
 test("flattenTree shows children only under expanded parents", () => {
   const rows = flattenTree(tree());
@@ -172,8 +172,8 @@ test("done fires on escape, q and ctrl+q", () => {
 test("render: sections live in the top bar, tree shows the active section", () => {
   const p = make();
   const out = plain(p.render(100));
-  // After the box border, the contextual top bar: title + three tabs with counts.
-  assert.ok(out[1].includes("contexture"));
+  // After the box border, the gzero top bar: title + three tabs with counts.
+  assert.ok(out[1].includes("gzero"));
   assert.ok(out[1].includes("tasks 1"));
   assert.ok(out[1].includes("context 3"));
   assert.ok(out[1].includes("documentation 1"));
@@ -268,12 +268,12 @@ test("tiersToNodes: local tier shows the scope URL beside it; children stay bare
     {
       label: "local",
       nodes: [
-        { label: "fluid-notion-labs/contexture/notes", text: "a" },
-        { label: "fluid-notion-labs/contexture/skills-pipeline", text: "b" },
+        { label: "fluid-notion-labs/gzero/notes", text: "a" },
+        { label: "fluid-notion-labs/gzero/skills-pipeline", text: "b" },
       ],
     },
   ]);
-  assert.equal(nodes[0].label, "local — fluid-notion-labs/contexture");
+  assert.equal(nodes[0].label, "local — fluid-notion-labs/gzero");
   assert.deepEqual(nodes[0].children!.map((c) => c.label), ["notes", "skills-pipeline"]);
 });
 
@@ -422,10 +422,10 @@ const searchableTree = (): PanelNode[] => [
   ] },
 ];
 
-const get = (p: ContexturePanel, field: string): unknown =>
+const get = (p: GzeroPanel, field: string): unknown =>
   (p as unknown as Record<string, unknown>)[field];
 
-const hits = (p: ContexturePanel): { id: string; category: number }[] =>
+const hits = (p: GzeroPanel): { id: string; category: number }[] =>
   (get(p, "hits") as SearchHit[]).map((h) => ({ id: h.node.id, category: h.category }));
 
 interface SearchHit {
@@ -516,7 +516,7 @@ test("e opens the action menu on a task, not on other nodes", () => {
   p.handleInput("e");
   assert.equal(get(p, "mode"), "tree"); // no item on non-task nodes
 
-  const real = new ContexturePanel(
+  const real = new GzeroPanel(
     [{ id: "tasks", label: "tasks", expanded: true, children: itemsToNodes([item({ id: "t1", title: "do it", status: "open", priority: 1 })]) }],
     theme as never,
     () => {},
@@ -533,7 +533,7 @@ test("e opens the action menu on a task, not on other nodes", () => {
 });
 
 test("action menu reflects current status; closed tasks can reopen", () => {
-  const real = new ContexturePanel(
+  const real = new GzeroPanel(
     [{ id: "tasks", label: "tasks", expanded: true, children: itemsToNodes([item({ id: "t1", title: "done thing", status: "closed", priority: 0 })]) }],
     theme as never,
     () => {},
@@ -565,7 +565,7 @@ async function actionFixture() {
     reloadItems: async () => items,
     moveItem: async () => {},
   };
-  const p = new ContexturePanel(
+  const p = new GzeroPanel(
     [{ id: "tasks", label: "tasks", expanded: true, children: itemsToNodes(items) }],
     theme as never,
     () => {},
@@ -610,7 +610,7 @@ test("add note flow: menu → note input → typed text → enter saves", async 
 
 test("esc from the note input returns to the action menu, not the tree", () => {
   let closed = 0;
-  const p = new ContexturePanel(
+  const p = new GzeroPanel(
     [{ id: "tasks", label: "tasks", expanded: true, children: itemsToNodes([item({ id: "t1", title: "do it", status: "open", priority: 1 })]) }],
     theme as never,
     () => {
@@ -710,7 +710,7 @@ async function moveFixture() {
       order = Object.fromEntries(seq.map((k, i) => [k, i + 1]));
     },
   };
-  const p = new ContexturePanel(
+  const p = new GzeroPanel(
     [{ id: "tasks", label: "tasks", expanded: true, children: itemsToNodes(items()) }],
     theme as never,
     () => {},
@@ -723,7 +723,7 @@ async function moveFixture() {
 const flushMove = () => new Promise((resolve) => setImmediate(resolve));
 
 // Select a node by id within the active section's tree.
-function select(p: InstanceType<typeof ContexturePanel>, id: string): void {
+function select(p: InstanceType<typeof GzeroPanel>, id: string): void {
   const nodes = get(p, "nodes") as PanelNode[];
   const rows = flattenTree(nodes[get(p, "active") as number]?.children ?? []);
   const idx = rows.findIndex((r) => r.node.id === id);
@@ -755,7 +755,7 @@ test("moveStep: sibling swap, then climb to the parent at the edge", () => {
 });
 
 function moveFixtureSync() {
-  const p = new ContexturePanel(moveTree(), theme as never, () => {}, undefined, {
+  const p = new GzeroPanel(moveTree(), theme as never, () => {}, undefined, {
     editItem: async () => {},
     reloadItems: async () => [],
     moveItem: async () => {},
@@ -804,7 +804,7 @@ test("pgup/pgdn/home/end page long detail content; selection resets scroll", () 
       ],
     },
   ];
-  const p = new ContexturePanel(nodes, theme as never, () => {}, undefined);
+  const p = new GzeroPanel(nodes, theme as never, () => {}, undefined);
   p.render(100); // populate the content window
   const win = get(p, "contentWin") as { scrollTop: number; viewport: number };
   const vp = win.viewport;
@@ -862,7 +862,7 @@ async function skillsFixture() {
     },
     { id: "documentation", label: "documentation", children: [] },
   ];
-  const p = new ContexturePanel(nodes, theme as never, () => {}, undefined, undefined, skills);
+  const p = new GzeroPanel(nodes, theme as never, () => {}, undefined, undefined, skills);
   return { p, loaded, skills };
 }
 

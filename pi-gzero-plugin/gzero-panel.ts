@@ -1,4 +1,4 @@
-// contexture-panel.ts — the unified left-tree pane (ctrl+q / /contexture).
+// gzero-panel.ts — the unified left-tree pane (ctrl+q / /gzero).
 //
 // One pane, fresh build (design: work item 2c31). A vertical tree
 // along the left with three top-levels — tasks | context |
@@ -7,7 +7,7 @@
 // tree column itself, so navigation is one cursor over one column.
 //
 // The panel is the primary since the P5 cutover (da36 bindings):
-// ctrl+q toggles, /contexture [section] opens with an optional
+// ctrl+q toggles, /gzero [section] opens with an optional
 // section, and the retired overlays (ctrl+w viewer, ctrl+b viewer)
 // are gone.
 //
@@ -219,7 +219,7 @@ export function tiersToNodes(tiers: TierLike[]): PanelNode[] {
       return i >= 0 ? label.slice(i + 1) : label;
     };
     // The local tier's scope (its header prefix, e.g. the repo identity
-    // "fluid-notion-labs/contexture") is useful context — show it
+    // "fluid-notion-labs/gzero") is useful context — show it
     // beside "local" instead of under every child.
     let label = tier.label;
     if (tier.label === "local") {
@@ -385,7 +385,7 @@ export function docsToNodes(sections: TierLike[]): PanelNode[] {
   return build(root, "");
 }
 
-export class ContexturePanel implements Component, Focusable {
+export class GzeroPanel implements Component, Focusable {
   focused = false;
   private nodes: PanelNode[];
   private theme: Theme;
@@ -547,7 +547,7 @@ export class ContexturePanel implements Component, Focusable {
     if (this.mode === "search") this.runSearch();
   }
 
-  /** Open directly on a section (/contexture context starts here).
+  /** Open directly on a section (/gzero context starts here).
    * Index-based so callers can't depend on labels. */
   showSection(index: number): void {
     const count = this.nodes.length;
@@ -967,7 +967,7 @@ export class ContexturePanel implements Component, Focusable {
    * as the top-level tree rows — headings live here, not in a strip
    * along the top.
    */
-  /** The contextual top bar: title + the three section tabs with counts.
+  /** The gzero top bar: title + the three section tabs with counts.
    * The active tab is highlighted; the left tree navigates inside it. */
   private topBarLine(width: number): string {
     const t = this.theme;
@@ -977,7 +977,7 @@ export class ContexturePanel implements Component, Focusable {
       const label = `${section.label} ${count}`;
       return i === this.active ? t.fg("accent", t.bold(label)) : t.fg("dim", label);
     });
-    const line = `${t.fg("accent", t.bold("contexture"))}${sep}${tabs.join(sep)}`;
+    const line = `${t.fg("accent", t.bold("gzero"))}${sep}${tabs.join(sep)}`;
     if (this.presence) {
       const tag = t.fg("dim", ` ⟨ ${this.presence} ⟩`);
       return truncateToWidth(`${line}${tag}`, width);

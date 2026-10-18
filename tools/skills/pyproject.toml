@@ -1,7 +1,7 @@
 [project]
 name = "skills-pull"
 version = "0.1.0"
-description = "Pull agent skills from vendored repos into contexture, per schema"
+description = "Pull agent skills from vendored repos into gzero, per schema"
 requires-python = ">=3.12"
 dependencies = ["pyyaml>=6"]
 

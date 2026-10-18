@@ -7,7 +7,7 @@
 // "fades upwards" and ↑ walks to older prompts exactly like ctrl+up walks
 // up through the chat history.
 //
-// Standalone copy of the shared keymap pattern (pi-contextual-plugin's
+// Standalone copy of the shared keymap pattern (pi-gzero-plugin's
 // keymap.ts) — plugins are blessed standalone, so no cross-package imports.
 // Standard ids resolve through the injected KeybindingsManager so user
 // rebinds apply; q is a hardcoded extra since plugin-only keys can't be

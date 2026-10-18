@@ -1,6 +1,6 @@
 // reflow.ts — markdown reflow and table rendering for pane-width detail
 // views. Extracted from the retired WorkflowViewer (P5 cutover) so the
-// contexture panel's detail panes get the same prose quality: hard-wrapped
+// gzero panel's detail panes get the same prose quality: hard-wrapped
 // sources re-flowed, markdown tables aligned as plain text.
 
 /**

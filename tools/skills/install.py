@@ -2,7 +2,7 @@
 """Install vendored skills into the canonical plugin skills dir.
 
 Copies every skill (a directory containing SKILL.md) from the vendored
-repos under ../vendor/skills into ~/.pi/pi-contexture/skills/<vendor>/<skill>,
+repos under ../vendor/skills into ~/.pi/pi-gzero/skills/<vendor>/<skill>,
 deduped by skill name (frontmatter `name`, else directory basename) — the
 first occurrence wins. Repo priority follows skills.yaml order, then the
 remaining repos alphabetically, so superpowers' test-driven-development
@@ -26,13 +26,13 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parent
-CTX = ROOT.parent.parent  # nursery/contexture
+CTX = ROOT.parent.parent  # nursery/gzero
 # Vendored clones are untracked, so jj workspaces don't have them; point
 # CX_VENDOR_DIR at the default checkout's vendor/ when running elsewhere.
 VENDOR = Path(
     os.environ.get("CX_VENDOR_DIR") or CTX / "vendor" / "skills"
 )
-DEST = Path.home() / ".pi" / "pi-contexture" / "skills"
+DEST = Path.home() / ".pi" / "pi-gzero" / "skills"
 
 # Skilled subtrees holding deprecated copies of live skill names.
 SKIP_PARTS = {"old"}

@@ -1,4 +1,4 @@
-//! Contexture: a persisted multiset of terse, tagged instruction atoms.
+//! Gzero: a persisted multiset of terse, tagged instruction atoms.
 //!
 //! Spec: `research/context/findings.md` and `plan.md` in
 //! `~/projects/explorations` (the `context` concept).
@@ -135,9 +135,9 @@ pub fn add_doc(store: &mut dyn Storage, source: &str, input: &str) -> Result<Syn
     store.sync_source(source, &parse(input))
 }
 
-/// Agent-instruction files contextual harvests from a repo: written for
+/// Agent-instruction files gzero harvests from a repo: written for
 /// any agent (pi, Claude Code, Cursor, Copilot, …), imported into the one
-/// contexture so every session gets them.
+/// gzero so every session gets them.
 pub const HARVEST_FILES: &[&str] = &[
     "AGENTS.md",
     "CLAUDE.md",

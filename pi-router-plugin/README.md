@@ -3,7 +3,7 @@
 A pi extension that classifies each turn's **work type** with a Clef/Jev
 classifier model and sends the work to the **blessed model** for that type.
 
-Design decisions live in the contexture workflow section `model-router`;
+Design decisions live in the gzero workflow section `model-router`;
 the branch/fork context (brief forks, brief composer, usage ledger) lives
 in `/mnt/data/projects/explorations/research/ai-harness-memory/index.md`.
 

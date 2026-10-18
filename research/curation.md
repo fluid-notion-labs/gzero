@@ -93,9 +93,9 @@ Plus the routing block it shares with the combined prompt:
   "fix it in place when it is wrong: edit the sentence that misled, do not
   append 'UPDATE: actually...' underneath it."
 
-## Mapping to contextual
+## Mapping to gzero
 
-| hermes concept | contextual equivalent |
+| hermes concept | gzero equivalent |
 |---|---|
 | memory (always-on notes) | untagged atoms in `global` / project scope |
 | USER.md vs MEMORY.md routing | `global` scope (user) vs project scope (environment) |
@@ -109,7 +109,7 @@ knowledge to skills so memory stays universal. Contextual routes task
 knowledge to **tagged** atoms so untagged (always-injected) stays universal.
 Same discipline, different mechanism.
 
-## Changes this implies for contextual
+## Changes this implies for gzero
 
 1. **Rewrite the `add` tool description** in the HOW/WHEN/SKIP shape:
    - WHEN: untagged, every-session facts only (who the user is, stable
@@ -117,7 +117,7 @@ Same discipline, different mechanism.
      a tag, so it loads only when pulled.
    - SKIP: trivial/re-discoverable facts, raw dumps, task progress, TODOs.
    - Phrasing: declarative facts, never imperatives to self.
-2. **Batch operations on `add`** (contextual-side change): accept an
+2. **Batch operations on `add`** (gzero-side change): accept an
    `operations` array so one call can add + remove atomically. Replace =
    remove + add in one batch. Today `add` can only append, so "when full,
    swap instead of skip" is impossible.
@@ -152,5 +152,5 @@ Same discipline, different mechanism.
 - ✅ `add`/`remove` tool descriptions rewritten, batch `operations` on
   `add` (remove-first, one `sync_source`), self-healing no-match on
   `remove` (closest entries by word overlap, `closest_matches` in lib.rs)
-- ✅ injection preamble in the plugin (P1 shipped, `pi-contextual-plugin/`)
+- ✅ injection preamble in the plugin (P1 shipped, `pi-gzero-plugin/`)
 - ⬜ post-turn review hook

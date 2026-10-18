@@ -1,12 +1,14 @@
-# contexture
+# gzero
 
 A persisted context system for AI agents: terse, tagged instruction
 atoms plus structured workflow documents — named sections and work
 items — injected into every session and synced across machines. The
 replacement for AGENTS.md-style files and scattered planning docs.
 
-Named `contextual` in code and on GitHub; the rename to `contexture`
-is coming.
+Previously `contextual`, then briefly `contexture`; now `gzero` in
+code and on GitHub. Historical identifiers keep their names: the `cx`
+CLI, the `cx-mcp` binary, and the MCP server name (`context`, so tools
+resolve as `mcp__context__*`).
 
 ## How it works
 
@@ -21,7 +23,7 @@ is coming.
   user stories, …) and work items with priorities, blockers, gates,
   and a WIP limit; `plan_next` ranks what's ready.
 - **pi plugin** — injects global + local context at session start and
-  adds the contexture panel (tasks / context / documentation), the
+  adds the gzero panel (tasks / context / documentation), the
   skills picker, and session presence.
 - **Hub sync** — a Cloudflare Worker + Durable Object carries atoms
   across machines; workflow-doc distribution is Track D (deferred).
@@ -39,8 +41,8 @@ is coming.
 ## Repo map
 
 - `src/` — the Rust core: atom store, workflow store, MCP server, CLI
-- `pi-contextual-plugin/` — the pi extension (blessed to
-  `~/.pi/agent/extensions/contextual`; plain pi runs that snapshot)
+- `pi-gzero-plugin/` — the pi extension (blessed to
+  `~/.pi/agent/extensions/gzero`; plain pi runs that snapshot)
 - `sync/` — hub sync setup and exported atom snapshots
 - `tools/` — skills pipeline, session tooling, dev helpers
 - `packs/`, `seeds/` — generated atom packs and seed atoms
@@ -52,7 +54,7 @@ is coming.
 
 - Rust: `cargo build`, `cargo test`
 - Plugin: `npm test` and `tools/typecheck.sh` in
-  `pi-contextual-plugin/` (`tools/bless-plugin.sh` refreshes the
+  `pi-gzero-plugin/` (`tools/bless-plugin.sh` refreshes the
   snapshot after merging)
 - Workflow: jj workspaces per task (`.jj/workspaces/<feature>`),
   conventional commits, merge to `main`, push

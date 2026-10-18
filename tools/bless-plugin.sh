@@ -1,6 +1,6 @@
 #!/bin/sh
 # Bless a snapshot of THIS checkout's plugin as the live personal
-# extension at ~/.pi/agent/extensions/contextual — a copy, not a link.
+# extension at ~/.pi/agent/extensions/gzero — a copy, not a link.
 #
 # Plain `pi` sessions run the blessed snapshot and never see work-in-
 # progress; the snapshot only changes when this script runs (normally
@@ -18,8 +18,8 @@
 # packages), so the copied files run standalone.
 set -e
 root="$(cd "$(dirname "$0")/.." && pwd)"
-src="$root/pi-contextual-plugin"
-dest="$HOME/.pi/agent/extensions/contextual"
+src="$root/pi-gzero-plugin"
+dest="$HOME/.pi/agent/extensions/gzero"
 
 [ -f "$src/index.ts" ] || { echo "no plugin at $src" >&2; exit 1; }
 

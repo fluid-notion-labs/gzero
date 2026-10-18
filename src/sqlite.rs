@@ -1,4 +1,4 @@
-//! SQLite backend for contexture's local atom store.
+//! SQLite backend for gzero's local atom store.
 //!
 //! One table, WAL mode. Rows are (text, source) assertions; sync replaces
 //! all rows for a source in one transaction. `:memory:` opens an in-memory

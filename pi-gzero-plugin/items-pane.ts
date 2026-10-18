@@ -410,7 +410,7 @@ export class ItemsPaneController {
   }
 
   /** /tasks (/items): toggle the full panel. The strip always runs.
-   * ctrl+q now belongs to the contexture panel (da36). */
+   * ctrl+q now belongs to the gzero panel (da36). */
   async toggle(ctx: ExtensionContext): Promise<void> {
     if (this.active) {
       this.close();

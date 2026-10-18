@@ -2,7 +2,7 @@
 // one per line, sitting just left of the tasks rail (top-right corner).
 //
 // Display only: loading/unloading stays in the skills picker and the
-// contexture panel. The column re-renders when a skill is loaded
+// gzero panel. The column re-renders when a skill is loaded
 // (addLoadedSkill fires the skills-changed listeners registered here).
 // Content is derived live from the loaded-skills map on every render, so
 // there is no cache to invalidate. CX_SKILLS_STRIP=0 disables the column.

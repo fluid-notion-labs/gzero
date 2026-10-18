@@ -1,6 +1,6 @@
 //! Debug: print the section tree of a ws store as nested structure.
 //! Usage: cargo run --example ws_inspect -- [path] [scope]
-use contextual::AutomergeStore;
+use gzero::AutomergeStore;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();

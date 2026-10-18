@@ -1,8 +1,8 @@
-# Contexture — Flutter client (possible app)
+# Gzero — Flutter client (possible app)
 
 Mobile client for testing the distributed layer first: the bag replica
 on a phone, syncing through the hub. Speaks to the api server (the
-contexture Worker + DO hub); no content plane, no resident — just
+gzero Worker + DO hub); no content plane, no resident — just
 Knowledge-plane replication end to end.
 
 3D diagram: [`flutter-client.glb`](flutter-client.glb) (built with
@@ -19,7 +19,7 @@ pulls rise up.
 | **Lattice** (nested) | merge semantics: OR-set union with tombstones; identity = atom text | — |
 | **Local replica** (nested) | device persistence: SQLite keyed by atom text, single-writer WAL | — |
 | **Transport** | hub client (HTTP push/pull), offline queue (retry + backoff), device-token auth | — |
-| **Hub (api server)** | contexture Worker: REST + SSE endpoints | **Sync DO** |
+| **Hub (api server)** | gzero Worker: REST + SSE endpoints | **Sync DO** |
 | **Sync DO** (nested) | Durable Object per bag: authoritative OR-set + tombstones, lattice merge point, machine registry | — |
 
 ```mermaid
@@ -49,7 +49,7 @@ flowchart TB
         AUTH["auth — device token"]
     end
 
-    subgraph HUB["HUB (api server) — contexture Worker"]
+    subgraph HUB["HUB (api server) — gzero Worker"]
         EP["REST + SSE endpoints"]
         subgraph DO["SYNC DO (nested)"]
             ROOM["bag-room DO"]

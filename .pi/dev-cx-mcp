@@ -5,7 +5,7 @@
 #
 # Wired up two ways:
 #   - .pi/mcp.json points pi's MCP client at it (model tools)
-#   - the contextual plugin prefers <cwd>/.pi/dev-cx-mcp for its own
+#   - the gzero plugin prefers <cwd>/.pi/dev-cx-mcp for its own
 #     internal calls (/context commands, autocomplete)
 # Works when pi runs from the repo root (relative command resolves
 # against the session cwd). target/ is not per-workspace, so walk up

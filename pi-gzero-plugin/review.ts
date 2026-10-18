@@ -42,7 +42,7 @@ function summarize(userText: string, assistantText: string, turnIndex: number): 
 }
 
 function buildPrompt(known: string, turns: string[]): string {
-  return `You are a background reviewer for a persistent memory system (contexture): a store of terse, tagged instruction atoms. Review the conversation turns below and decide whether any durable facts should be saved.
+  return `You are a background reviewer for a persistent memory system (gzero): a store of terse, tagged instruction atoms. Review the conversation turns below and decide whether any durable facts should be saved.
 
 A fact belongs in the store only if it applies beyond this task:
 - WHO the user is or how they work → output scope "global"
@@ -155,6 +155,6 @@ async function review(turns: string[], ctx: ExtensionContext, deps: ReviewDeps):
     });
   }
   if (ctx.hasUI) {
-    ctx.ui.notify(`review: saved ${saves.length} fact${saves.length === 1 ? "" : "s"} to contexture`, "info");
+    ctx.ui.notify(`review: saved ${saves.length} fact${saves.length === 1 ? "" : "s"} to gzero`, "info");
   }
 }

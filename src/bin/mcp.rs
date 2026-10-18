@@ -28,11 +28,11 @@
 use std::collections::BTreeSet;
 use std::io::{BufRead, Write};
 
-use contextual::hub::{Event, Hub};
-use contextual::items::{Status, WorkItem};
-use contextual::sections::{Section, SectionKind};
-use contextual::snapshot::Atom;
-use contextual::{
+use gzero::hub::{Event, Hub};
+use gzero::items::{Status, WorkItem};
+use gzero::sections::{Section, SectionKind};
+use gzero::snapshot::Atom;
+use gzero::{
     resolve_tiers, search, tag_counts, AutomergeStore, ParsedAtom, Row, SqliteStore, Storage,
 };
 
@@ -78,7 +78,7 @@ fn pull_from_hub(store: &mut SqliteStore) {
         .map_err(|e| e.to_string())
         .and_then(|snap| {
             let n = snap.atoms.len() + snap.tombstones.len();
-            contextual::absorb_snapshot(store, "hub", &snap)
+            gzero::absorb_snapshot(store, "hub", &snap)
                 .map_err(|e| e.to_string())
                 .map(|_| n)
         }) {
@@ -90,7 +90,7 @@ fn pull_from_hub(store: &mut SqliteStore) {
 /// Best-effort: sync the built-in seeds so the global tier always has its
 /// floor content, even in a freshly wiped store. Never fatal.
 fn seed_on_startup(store: &mut SqliteStore) {
-    if let Err(e) = contextual::reconcile_seeds(store) {
+    if let Err(e) = gzero::reconcile_seeds(store) {
         eprintln!("cx-mcp: seed sync failed: {e}");
     }
 }
@@ -105,7 +105,7 @@ fn reconcile_harvest_on_startup(store: &mut SqliteStore) {
         Ok(d) => d,
         Err(_) => return,
     };
-    let result = match contextual::reconcile_harvest(store, &dir, false) {
+    let result = match gzero::reconcile_harvest(store, &dir, false) {
         Ok(r) => r,
         Err(e) => {
             eprintln!("cx-mcp: harvest reconcile failed: {e}");
@@ -302,12 +302,12 @@ fn tool_resolve(args: &serde_json::Value, store: &SqliteStore) -> Result<String,
     // Browse mode: a scope_prefix (even empty) bypasses tier defaults and
     // returns every atom whose scope starts with it — for inspection UIs.
     if let Some(prefix) = args.get("scope_prefix").and_then(|v| v.as_str()) {
-        let items = contextual::scope_atoms(store, prefix).map_err(|e| e.to_string())?;
+        let items = gzero::scope_atoms(store, prefix).map_err(|e| e.to_string())?;
         return Ok(render(items));
     }
     let tags = arg_tags(args);
     let refs: Vec<&str> = tags.iter().map(String::as_str).collect();
-    let project = contextual::repo_identity();
+    let project = gzero::repo_identity();
     let items = resolve_tiers(store, project.as_deref(), &refs).map_err(|e| e.to_string())?;
     let mut out = render(items);
     // Presence (S1): resolve doubles as the heartbeat — it runs every
@@ -338,9 +338,9 @@ fn tool_resolve(args: &serde_json::Value, store: &SqliteStore) -> Result<String,
 /// delivery (per-session seen state). Also sweeps expired rows. Best-
 /// effort: failures never break resolve.
 fn comms_block(store: &SqliteStore) -> Option<String> {
-    let (me, _) = contextual::sessions::session_identity();
-    let _ = store.sweep_messages(contextual::messages::MESSAGE_TTL_SECS);
-    let _ = store.sweep_broadcasts(contextual::messages::MESSAGE_TTL_SECS);
+    let (me, _) = gzero::sessions::session_identity();
+    let _ = store.sweep_messages(gzero::messages::MESSAGE_TTL_SECS);
+    let _ = store.sweep_broadcasts(gzero::messages::MESSAGE_TTL_SECS);
     let unread = store.unread_messages(&me).ok()?;
     let broadcasts = store.unseen_broadcasts(&me).ok()?;
     if unread.is_empty() && broadcasts.is_empty() {
@@ -374,13 +374,13 @@ fn comms_block(store: &SqliteStore) -> Option<String> {
 /// The dedicated resolve slot for the newest open session handoff in
 /// this scope (S2). Best-effort: failures never break resolve.
 fn handoff_block() -> Option<String> {
-    let path = contextual::sections::default_ws_path();
+    let path = gzero::sections::default_ws_path();
     if !path.exists() {
         return None;
     }
     let ws = AutomergeStore::open(Some(&path)).ok()?;
-    let project = contextual::repo_identity()?;
-    let (me, _) = contextual::sessions::session_identity();
+    let project = gzero::repo_identity()?;
+    let (me, _) = gzero::sessions::session_identity();
     let it = ws.open_handoff(&project).ok()??;
     if it.assignee == me {
         return None; // own handoff: the author doesn't need reminding
@@ -397,13 +397,13 @@ fn handoff_block() -> Option<String> {
 /// here" block when other live sessions share this scope. Presence is
 /// best-effort: failures never break resolve.
 fn presence_block(store: &SqliteStore) -> Option<String> {
-    let project = contextual::repo_identity()?;
-    let (session_id, machine) = contextual::sessions::session_identity();
+    let project = gzero::repo_identity()?;
+    let (session_id, machine) = gzero::sessions::session_identity();
     let cwd = std::env::current_dir()
         .map(|p| p.display().to_string())
         .unwrap_or_default();
-    let workspace = contextual::sessions::current_workspace();
-    let beat = contextual::sessions::SessionInfo {
+    let workspace = gzero::sessions::current_workspace();
+    let beat = gzero::sessions::SessionInfo {
         session_id: session_id.clone(),
         machine,
         scope: project.clone(),
@@ -412,18 +412,18 @@ fn presence_block(store: &SqliteStore) -> Option<String> {
         label: String::new(),
         workspace,
         started_at: 0, // ignored by the upsert on conflict
-        last_seen: contextual::sessions::now(),
+        last_seen: gzero::sessions::now(),
     };
     store.heartbeat(&beat).ok()?;
-    store.sweep_sessions(contextual::PRESENCE_TTL_SECS).ok()?;
+    store.sweep_sessions(gzero::PRESENCE_TTL_SECS).ok()?;
     let peers = store
-        .active_peers(&project, &session_id, contextual::PRESENCE_TTL_SECS)
+        .active_peers(&project, &session_id, gzero::PRESENCE_TTL_SECS)
         .ok()?;
     if peers.is_empty() {
         return None;
     }
     let ago = |seen: i64| {
-        let m = (contextual::sessions::now() - seen) / 60;
+        let m = (gzero::sessions::now() - seen) / 60;
         if m < 1 {
             "<1m".to_string()
         } else {
@@ -451,8 +451,8 @@ fn presence_block(store: &SqliteStore) -> Option<String> {
 /// "put task X in my context". Only explicitly pinned items appear,
 /// so the block never floods; `plan_next` serves the on-demand view.
 fn pinned_block() -> Option<String> {
-    let project = contextual::repo_identity()?;
-    let path = contextual::sections::default_ws_path();
+    let project = gzero::repo_identity()?;
+    let path = gzero::sections::default_ws_path();
     if !path.exists() {
         return None;
     }
@@ -512,7 +512,7 @@ fn tool_search(args: &serde_json::Value, store: &SqliteStore) -> Result<String, 
 /// Full atoms among the alive set whose text contains `needle` — the
 /// exact identity removal events need.
 fn alive_matching(store: &SqliteStore, needle: &str) -> Result<Vec<Atom>, String> {
-    Ok(contextual::alive(store)
+    Ok(gzero::alive(store)
         .map_err(|e| e.to_string())?
         .into_iter()
         .filter(|(text, _)| text.contains(needle))
@@ -606,7 +606,7 @@ fn tool_park_claim(args: &serde_json::Value) -> Result<String, String> {
         .unwrap_or("claim");
     let note = args.get("note").and_then(|n| n.as_str()).unwrap_or("");
     let mut ws = ws_store()?;
-    let scope = contextual::repo_identity().unwrap_or_else(|| "global".to_string());
+    let scope = gzero::repo_identity().unwrap_or_else(|| "global".to_string());
     let it = match action {
         "claim" => ws.claim_repo(&scope, note).map_err(|e| e.to_string())?,
         "park" => ws.park_repo(&scope, note).map_err(|e| e.to_string())?,
@@ -631,11 +631,11 @@ fn tool_harvest(args: &serde_json::Value, store: &mut SqliteStore) -> Result<Str
         Some(p) => std::path::PathBuf::from(p),
         None => std::env::current_dir().map_err(|e| e.to_string())?,
     };
-    let results = contextual::harvest_dir(store, &dir).map_err(|e| e.to_string())?;
+    let results = gzero::harvest_dir(store, &dir).map_err(|e| e.to_string())?;
     if results.is_empty() {
         return Ok(format!(
             "(no instruction files found: {})",
-            contextual::HARVEST_FILES.join(", ")
+            gzero::HARVEST_FILES.join(", ")
         ));
     }
     let mut out = String::new();
@@ -690,7 +690,7 @@ fn tool_add(args: &serde_json::Value, store: &mut SqliteStore) -> Result<String,
                 tags,
             } => {
                 let scope = scope.unwrap_or_else(|| {
-                    contextual::repo_identity().unwrap_or_else(|| FALLBACK_SCOPE.to_string())
+                    gzero::repo_identity().unwrap_or_else(|| FALLBACK_SCOPE.to_string())
                 });
                 let node = node.unwrap_or_else(|| DEFAULT_NODE.to_string());
                 added.push(Atom {
@@ -758,7 +758,7 @@ fn tool_remove(args: &serde_json::Value, store: &mut SqliteStore) -> Result<Stri
     if victims.is_empty() {
         // Self-healing no-match: show the closest entries so the caller can
         // retry with text copied verbatim (hermes' memory-store behavior).
-        let closest = contextual::closest_matches(store, needle, 3).map_err(|e| e.to_string())?;
+        let closest = gzero::closest_matches(store, needle, 3).map_err(|e| e.to_string())?;
         let mut out = format!(
             "No atom matched {needle:?}. Retry with text copied verbatim from the intended entry"
         );
@@ -857,7 +857,7 @@ fn tool_item_add(args: &serde_json::Value, store: &mut AutomergeStore) -> Result
         .filter(|t| !t.is_empty())
         .ok_or("item_add: title is required")?
         .to_string();
-    let n = contextual::items::NewItem {
+    let n = gzero::items::NewItem {
         title,
         priority: args.get("priority").and_then(|p| p.as_i64()).unwrap_or(0),
         assignee: args
@@ -933,7 +933,7 @@ fn tool_session_handoff(
         .map(str::trim)
         .filter(|t| !t.is_empty())
         .ok_or("session_handoff: text is required")?;
-    let (author, _) = contextual::sessions::session_identity();
+    let (author, _) = gzero::sessions::session_identity();
     let it = store
         .create_handoff(&scope, &author, text)
         .map_err(|e| e.to_string())?;
@@ -960,7 +960,7 @@ fn tool_msg_send(args: &serde_json::Value, store: &SqliteStore) -> Result<String
         .map(str::trim)
         .filter(|t| !t.is_empty())
         .ok_or("msg_send: text is required")?;
-    let (me, _) = contextual::sessions::session_identity();
+    let (me, _) = gzero::sessions::session_identity();
     let m = store
         .send_message(to, &me, text)
         .map_err(|e| e.to_string())?;
@@ -973,7 +973,7 @@ fn tool_msg_send(args: &serde_json::Value, store: &SqliteStore) -> Result<String
 /// msg_read (S3): drain this session's unread messages (marks them
 /// read).
 fn tool_msg_read(store: &SqliteStore) -> Result<String, String> {
-    let (me, _) = contextual::sessions::session_identity();
+    let (me, _) = gzero::sessions::session_identity();
     let unread = store.unread_messages(&me).map_err(|e| e.to_string())?;
     if unread.is_empty() {
         return Ok("no unread messages".to_string());
@@ -996,7 +996,7 @@ fn tool_broadcast(args: &serde_json::Value, store: &SqliteStore) -> Result<Strin
         .map(str::trim)
         .filter(|t| !t.is_empty())
         .ok_or("broadcast: text is required")?;
-    let (me, _) = contextual::sessions::session_identity();
+    let (me, _) = gzero::sessions::session_identity();
     let b = store.post_broadcast(&me, text).map_err(|e| e.to_string())?;
     Ok(format!(
         "broadcast {} posted — sessions see it once in resolve; expires in 7 days",
@@ -1125,12 +1125,12 @@ fn tool_item_edit(args: &serde_json::Value, store: &mut AutomergeStore) -> Resul
     };
     let status = match args.get("status").and_then(|s| s.as_str()) {
         Some(s) => Some(
-            contextual::items::Status::parse(s)
+            gzero::items::Status::parse(s)
                 .ok_or("item_edit: status must be open|in_progress|closed")?,
         ),
         None => None,
     };
-    let edit = contextual::items::ItemEdit {
+    let edit = gzero::items::ItemEdit {
         title: args.get("title").and_then(|t| t.as_str()).map(String::from),
         priority: args.get("priority").and_then(|p| p.as_i64()),
         assignee: args
@@ -1196,7 +1196,7 @@ fn tool_item_delete(
 
 /// The ws doc, opened per call (sections are infrequent; D1 unifies stores).
 fn ws_store() -> Result<AutomergeStore, String> {
-    let path = contextual::sections::default_ws_path();
+    let path = gzero::sections::default_ws_path();
     AutomergeStore::open(Some(&path)).map_err(|e| format!("ws: open {}: {e}", path.display()))
 }
 
@@ -1204,7 +1204,7 @@ fn ws_scope_arg(args: &serde_json::Value) -> String {
     args.get("scope")
         .and_then(|s| s.as_str())
         .map(str::to_string)
-        .unwrap_or_else(|| contextual::repo_identity().unwrap_or_else(|| "global".to_string()))
+        .unwrap_or_else(|| gzero::repo_identity().unwrap_or_else(|| "global".to_string()))
 }
 
 fn tool_ws_put(args: &serde_json::Value, store: &mut AutomergeStore) -> Result<String, String> {
@@ -1300,7 +1300,7 @@ fn tool_ws_list(args: &serde_json::Value, store: &AutomergeStore) -> Result<Stri
         .into_iter()
         .map(|s| {
             let prog = if s.kind == SectionKind::Checklist {
-                let (d, t) = contextual::sections::checklist_progress(&s.body);
+                let (d, t) = gzero::sections::checklist_progress(&s.body);
                 format!(" {d}/{t}")
             } else {
                 String::new()
@@ -1435,7 +1435,7 @@ const TOOLS: &str = r#"[
   },
   {
     "name": "harvest",
-    "description": "Import agent-instruction files from the repo into contexture as project context — instructions written for ANY agent (AGENTS.md, CLAUDE.md, GEMINI.md, .cursorrules, .windsurfrules, .github/copilot-instructions.md) become one shared store, injected automatically in that repo from then on. NOTE: this runs automatically at server startup — changes to those files are detected by content hash and mirrored without anyone calling this. Call it only to pick up mid-session edits immediately. Files with no bullets are skipped (pointer stubs are protected). Optional 'path' defaults to the current directory.",
+    "description": "Import agent-instruction files from the repo into gzero as project context — instructions written for ANY agent (AGENTS.md, CLAUDE.md, GEMINI.md, .cursorrules, .windsurfrules, .github/copilot-instructions.md) become one shared store, injected automatically in that repo from then on. NOTE: this runs automatically at server startup — changes to those files are detected by content hash and mirrored without anyone calling this. Call it only to pick up mid-session edits immediately. Files with no bullets are skipped (pointer stubs are protected). Optional 'path' defaults to the current directory.",
     "inputSchema": {
       "type": "object",
       "properties": {

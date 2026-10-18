@@ -1,4 +1,4 @@
-# Contexture — architecture (moved)
+# Gzero — architecture (moved)
 
 The living architecture map is the workflow section `architecture`
 (`ws_get architecture` / `cx ws:`). The 2026-10 umbrella prose (five
