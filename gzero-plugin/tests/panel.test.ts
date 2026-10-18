@@ -4,8 +4,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { HistoryPanel } from "../panel.ts";
-import type { PromptEntry } from "../history.ts";
+import { HistoryPanel } from "../history/panel.ts";
+import type { PromptEntry } from "../history/history.ts";
 
 const ANSI = /\x1b\[[0-9;]*m/g;
 const visibleLen = (s: string) => s.replace(ANSI, "").length;

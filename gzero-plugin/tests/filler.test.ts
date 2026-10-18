@@ -3,7 +3,7 @@
 // stay visible despite looking similar.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { isFiller } from "../filler.ts";
+import { isFiller } from "../history/filler.ts";
 
 const FILTERED = [
   "continue",

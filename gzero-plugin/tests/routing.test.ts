@@ -2,8 +2,8 @@
 // sticky behavior, and the direct-route threshold for the 32k tier.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DEFAULT_CONFIG } from "../config.ts";
-import { decideRoute, estimateTokens } from "../routing.ts";
+import { DEFAULT_CONFIG } from "../router/config.ts";
+import { decideRoute, estimateTokens } from "../router/routing.ts";
 
 const state = { workType: "fix-errors" as const, provider: "cloudflare-workers-ai", id: "@cf/qwen/qwen3-30b-a3b-fp8" };
 

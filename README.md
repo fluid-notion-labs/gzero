@@ -23,8 +23,8 @@ resolve as `mcp__context__*`).
   user stories, …) and work items with priorities, blockers, gates,
   and a WIP limit; `plan_next` ranks what's ready.
 - **pi plugin** — injects global + local context at session start and
-  adds the gzero panel (tasks / context / documentation), the
-  skills picker, and session presence.
+  adds the gzero panel (tasks / context / skills / router / history
+  / documentation), the skills picker, and session presence.
 - **Hub sync** — a Cloudflare Worker + Durable Object carries atoms
   across machines; workflow-doc distribution is Track D (deferred).
 

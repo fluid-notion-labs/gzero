@@ -39,13 +39,18 @@ gzero only via MCP — no direct SQLite or hub access.
   removed (tombstones). Plain hashtags still type normally — just keep
   typing past the popup. Skill discovery is precached on session start
 - `Ctrl+Q` or `/gzero` toggles the **gzero panel**
-  (`/gzero [tasks|context|documentation]` opens directly on a
-  section): a full-height left-tree pane with three sections in a top
-  bar — `tasks` (the work-item tree with queue order, status
-  transitions, priority, notes and `m` move mode), `context`
-  (injection tiers + session-loaded skills; `/` searches the skill
-  catalog to load new ones) and `documentation` (ws sections as
-  heading trees). tab/shift+tab (or ctrl+↑↓) switch sections with
+  (`/gzero [tasks|context|skills|router|history|documentation]` opens
+  directly on a section): a full-height left-tree pane with six
+  sections in a top bar — `tasks` (the work-item tree with queue
+  order, status transitions, priority, notes and `m` move mode),
+  `context` (injection tiers), `skills` (the full catalog grouped by
+  vendor, loaded skills marked ✓; enter loads an unloaded skill and
+  `/` searches the catalog), `router` (work types and their blessed
+  models, pinned type and last classification, the usage ledger),
+  `history` (this project's prompts, newest first, fillers filtered;
+  enter inserts a prompt into the editor) and `documentation` (ws
+  sections as heading trees). tab/shift+tab (or ctrl+↑↓) switch
+  sections with
   per-section cursor memory, ↑↓/j/k move, enter/←→ expand and open
   details, `/` searches the active section (fuzzy, with `is:open`
   / `is:closed` / `is:active` / `status:X` filters), pgup/pgdn page,

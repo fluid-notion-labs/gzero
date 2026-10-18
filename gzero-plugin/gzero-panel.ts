@@ -1,8 +1,8 @@
 // gzero-panel.ts — the unified left-tree pane (ctrl+q / /gzero).
 //
 // One pane, fresh build (design: work item 2c31). A vertical tree
-// along the left with three top-levels — tasks | context |
-// documentation — and a content area to the right. There is no header
+// along the left with six top-levels — tasks | context | skills |
+// router | history | documentation — and a content area to the right. There is no header
 // strip along the top: the title and the section headings live in the
 // tree column itself, so navigation is one cursor over one column.
 //
@@ -24,7 +24,7 @@ import { reflowMarkdown, renderTables } from "./reflow.ts";
 import { keyHint, viewerNav, type ViewerNav } from "./keymap.ts";
 import { buildItemTree, flattenTree as flattenItems, type FlatRow, type RawItem } from "./items-tree.ts";
 
-/** A node in the panel tree. Top-levels are the three sections. */
+/** A node in the panel tree. Top-levels are the six sections. */
 export interface PanelNode {
   /** Stable identity (jump-to-result, tests). */
   id: string;
@@ -37,6 +37,9 @@ export interface PanelNode {
   searchText?: string;
   /** Set on task nodes: enables the edit actions (P4). */
   item?: RawItem;
+  /** Set on history nodes: enter inserts this text into the editor
+   * and closes the panel. */
+  insertText?: string;
 }
 
 /** A single edit to apply to a work item (cx item edit / item note). */
@@ -108,9 +111,10 @@ interface SearchHit {
   /** Set on catalog hits: enter loads this skill instead of jumping. */
   skillId?: string;
 }
-/** Higher is better. */
+/** Higher is better. Category can exceed 2 now (prompts, router), so
+ * the rank clamps below zero instead of inverting the order. */
 function hitRank(hit: SearchHit): number {
-  return (2 - hit.category) * 10000 + hit.score;
+  return Math.max(0, 2 - hit.category) * 10000 + hit.score;
 }
 
 /** Status filter matching: `active` covers open + in_progress. */
@@ -241,21 +245,161 @@ export function tiersToNodes(tiers: TierLike[]): PanelNode[] {
   });
 }
 
+/** Skill card: header line, source, then the SKILL.md body. */
+function skillDetail(entry: SkillLike) {
+  return (width: number, theme: Theme): string[] => {
+    const lines = [
+      theme.fg("accent", theme.bold(entry.name)),
+      theme.fg("dim", `${entry.vendor} · ${entry.file}`),
+      "",
+      ...wrapPlain(renderTables(reflowMarkdown(skillBodyFromFile(entry.file))), width),
+    ];
+    return lines.map((l) => truncateToWidth(l, width));
+  };
+}
+
 /** Loaded skills → PanelNodes (flat list; the tier node holds it). */
 export function skillsToNodes(entries: SkillLike[]): PanelNode[] {
   return entries.map((entry) => ({
     id: skillId(entry),
     label: entry.name,
     searchText: `${entry.description} ${entry.vendor}`,
-    detail: (width: number, theme: Theme): string[] => {
-      const lines = [
-        theme.fg("accent", theme.bold(entry.name)),
-        theme.fg("dim", `${entry.vendor} · ${entry.file}`),
+    detail: skillDetail(entry),
+  }));
+}
+
+/** The skills section: the full catalog grouped by vendor, loaded
+ * skills marked. Enter on an unloaded skill loads it; on a loaded
+ * one it shows the body (leaf detail). */
+export function skillsSectionNodes(catalog: SkillLike[], loaded: SkillLike[]): PanelNode[] {
+  const loadedIds = new Set(loaded.map(skillId));
+  const byVendor = new Map<string, SkillLike[]>();
+  for (const entry of catalog) {
+    const list = byVendor.get(entry.vendor) ?? [];
+    list.push(entry);
+    byVendor.set(entry.vendor, list);
+  }
+  return [...byVendor.entries()].map(([vendor, entries]) => ({
+    id: `vendor-${vendor}`,
+    label: `${vendor} (${entries.length})`,
+    expanded: false,
+    children: entries.map((entry) => ({
+      id: skillId(entry),
+      label: loadedIds.has(skillId(entry)) ? `✓ ${entry.name}` : entry.name,
+      searchText: `${entry.description} ${entry.vendor}`,
+      detail: skillDetail(entry),
+    })),
+  }));
+}
+
+// ---- router section ----
+
+/** Router data for the panel (structural copy of router/state.ts's
+ * RouterSnapshot; kept decoupled so the panel stays testable). */
+export interface RouterSnapshotLike {
+  pinned: string | null;
+  classifier: string;
+  threshold: number;
+  default: string;
+  last: { workType: string | null; confidence: number } | null;
+  blessed: { workType: string; model: string; delegated: boolean }[];
+}
+
+/** Router ledger data for the panel (see router/ledger.ts). */
+export interface LedgerSummaryLike {
+  total: number;
+  byKind: Record<string, number>;
+  routesByType: Record<string, number>;
+  dispatchOk: number;
+  dispatchFailed: number;
+  recent: Record<string, unknown>[];
+}
+
+/** Router section: status, one node per work type, the ledger. */
+export function routerToNodes(
+  snapshot: RouterSnapshotLike,
+  ledgerSummary: LedgerSummaryLike,
+): PanelNode[] {
+  const statusDetail = (width: number, theme: Theme): string[] => {
+    const cls = snapshot.last
+      ? `${snapshot.last.workType ?? "unclassified"} (top p=${snapshot.last.confidence.toFixed(2)})`
+      : "(none yet)";
+    const lines = [
+      `pinned: ${snapshot.pinned ?? "(none)"}`,
+      `classifier: ${snapshot.classifier} (threshold ${snapshot.threshold})`,
+      `last classification: ${cls}`,
+      `default: ${snapshot.default}`,
+    ];
+    return lines.map((l) => truncateToWidth(l, width));
+  };
+  const typeNodes: PanelNode[] = snapshot.blessed.map((b) => ({
+    id: `route-${b.workType}`,
+    label: `${b.workType} → ${b.model}${b.delegated ? " ⤴" : ""}`,
+    detail: (width: number, theme: Theme): string[] =>
+      [
+        theme.fg("accent", theme.bold(b.workType)),
+        `blessed model: ${b.model}`,
+        b.delegated
+          ? "delegated: runs as a fresh-context subagent (delegate_fix)"
+          : "routed in place via the router/auto virtual model",
+      ].map((l) => truncateToWidth(l, width)),
+  }));
+  const ledgerDetail = (width: number, theme: Theme): string[] => {
+    const routes = Object.entries(ledgerSummary.routesByType)
+      .sort((a, b) => b[1] - a[1])
+      .map(([wt, n]) => `${wt}×${n}`)
+      .join(", ");
+    const lines = [
+      theme.fg("accent", theme.bold("ledger")),
+      `${ledgerSummary.total} entries` +
+        (Object.keys(ledgerSummary.byKind).length
+          ? ` — ${Object.entries(ledgerSummary.byKind).map(([k, n]) => `${k}×${n}`).join(", ")}`
+          : ""),
+      routes ? `routes: ${routes}` : "",
+      `dispatches: ${ledgerSummary.dispatchOk} ok, ${ledgerSummary.dispatchFailed} failed`,
+      "",
+      ...ledgerSummary.recent.map((e) => {
+        const ts = typeof e.ts === "string" ? e.ts.slice(11, 19) : "--:--:--";
+        const kind = typeof e.kind === "string" ? e.kind : "?";
+        const what =
+          typeof e.workType === "string" ? e.workType : typeof e.ref === "string" ? e.ref : "";
+        const model = typeof e.model === "string" ? ` → ${e.model}` : "";
+        return theme.fg("dim", truncateToWidth(`${ts} ${kind} ${what}${model}`, width));
+      }),
+    ];
+    return lines.filter((l) => typeof l === "string" && l !== "").map((l) => truncateToWidth(l, width));
+  };
+  return [
+    { id: "router-status", label: "status", detail: statusDetail },
+    { id: "router-types", label: "work types", expanded: true, children: typeNodes },
+    { id: "router-ledger", label: "ledger", detail: ledgerDetail },
+  ];
+}
+
+// ---- history section ----
+
+/** History entry for the panel (structural copy of history.ts's
+ * PromptEntry; kept decoupled so the panel stays testable). */
+export interface PromptEntryLike {
+  text: string;
+  timestamp: string;
+  sessionId: string;
+}
+
+/** History section: this project's prompts, newest first, fillers
+ * filtered. Enter inserts the prompt into the editor (insertText). */
+export function historyToNodes(entries: PromptEntryLike[]): PanelNode[] {
+  return entries.map((entry, i) => ({
+    id: `prompt-${i}`,
+    label: truncateToWidth(entry.text.split("\n")[0].trim() || "(empty)", 72),
+    searchText: entry.text,
+    insertText: entry.text,
+    detail: (width: number, theme: Theme): string[] =>
+      [
+        theme.fg("dim", entry.timestamp + " · " + entry.sessionId.slice(0, 8)),
         "",
-        ...wrapPlain(renderTables(reflowMarkdown(skillBodyFromFile(entry.file))), width),
-      ];
-      return lines.map((l) => truncateToWidth(l, width));
-    },
+        ...wrapPlain(entry.text, width),
+      ].map((l) => truncateToWidth(l, width)),
   }));
 }
 
@@ -420,6 +564,11 @@ export class GzeroPanel implements Component, Focusable {
   /** Presence (S1): prebuilt label like "2 other sessions here"; empty
    * when this session is solo or presence is unavailable. */
   private presence: string;
+  /** Every catalog entry by id (loaded or not) — the skills section's
+   * enter handler checks here to load an unloaded skill. */
+  private catalogById = new Map<string, SkillLike>();
+  /** Wired by the caller: insert a history prompt into the editor. */
+  private onInsertText: ((text: string) => void) | undefined;
 
   constructor(
     nodes: PanelNode[],
@@ -430,6 +579,7 @@ export class GzeroPanel implements Component, Focusable {
     actions?: PanelActions,
     skills?: PanelSkills,
     presence?: string,
+    onInsertText?: (text: string) => void,
   ) {
     this.nodes = nodes;
     this.theme = theme;
@@ -444,6 +594,7 @@ export class GzeroPanel implements Component, Focusable {
     this.nav = viewerNav(keybindings);
     this.skills = skills;
     this.presence = presence ?? "";
+    this.onInsertText = onInsertText;
     this.buildCorpus();
     this.buildCatalog();
   }
@@ -455,6 +606,7 @@ export class GzeroPanel implements Component, Focusable {
       return;
     }
     const loaded = new Set(this.skills.activated().map(skillId));
+    this.catalogById = new Map(this.skills.catalog().map((e) => [skillId(e), e]));
     this.catalog = this.skills
       .catalog()
       .filter((e) => !loaded.has(skillId(e)))
@@ -465,16 +617,32 @@ export class GzeroPanel implements Component, Focusable {
       }));
   }
 
-  /** Searchable entries: tasks, skills, terms — documentation is browsable,
-   * not searchable (the three sources in the design). Category order is
-   * the ranking backbone: task hits always rank above skill hits, etc. */
+  /** True when the node is an unloaded catalog skill (enter loads it). */
+  private pendingSkill(id: string): boolean {
+    return id.startsWith("skill-") && this.catalogById.has(id) && !this.skills?.activated().some((e) => skillId(e) === id);
+  }
+
+  /** Searchable entries: tasks, skills, terms, prompts, router —
+   * documentation is browsable, not searchable. Category order is the
+   * ranking backbone: task hits always rank above skill hits, etc. */
   private buildCorpus(): void {
     this.corpus = [];
     const walk = (nodes: PanelNode[], root: string | null): void => {
       for (const node of nodes) {
         const r = root ?? node.id;
-        const category = r === "tasks" ? 0 : node.id.startsWith("skill-") ? 1 : r === "context" ? 2 : 3;
-        if (category <= 2) {
+        const category =
+          node.id.startsWith("skill-")
+            ? 1
+            : r === "tasks"
+              ? 0
+              : r === "context"
+                ? 2
+                : r === "history"
+                  ? 3
+                  : r === "router"
+                    ? 4
+                    : 5;
+        if (category <= 4) {
           const text = `${node.label} ${node.searchText ?? ""}`.trim();
           if (text) this.corpus.push({ node, category, text, root: r });
         }
@@ -610,7 +778,17 @@ export class GzeroPanel implements Component, Focusable {
     } else if (matchesKey(data, "ctrl+down")) {
       this.switchSection(1);
     } else if (matchesKey(data, "enter") || matchesKey(data, "right")) {
-      this.toggleExpanded();
+      const node = this.selected.node;
+      if (node.insertText && this.onInsertText) {
+        // History pick: fill the editor and close the panel.
+        this.onInsertText(node.insertText);
+        this.done();
+      } else if (this.pendingSkill(node.id)) {
+        // Skills section: enter on an unloaded skill loads it.
+        void this.loadSkill(node.id);
+      } else {
+        this.toggleExpanded();
+      }
     } else if (matchesKey(data, "left")) {
       const node = this.selected.node;
       if (node.children && node.children.length > 0 && node.expanded) this.toggleExpanded();
@@ -808,12 +986,16 @@ export class GzeroPanel implements Component, Focusable {
     }
   }
 
-  /** Rebuild the skills node from the loaded set after an activation. */
+  /** Rebuild the skills section from the catalog after an activation
+   * (loaded marks move, the node's detail becomes the skill body). */
   private async refreshSkills(): Promise<void> {
     if (!this.skills) return;
-    const context = this.nodes.find((n) => n.id === "context");
-    const skillsNode = context?.children?.find((n) => n.id === "skills");
-    if (skillsNode) skillsNode.children = skillsToNodes(this.skills.activated());
+    const skillsNode = this.nodes.find((n) => n.id === "skills");
+    if (skillsNode) {
+      skillsNode.children = skillsSectionNodes(this.skills.catalog(), this.skills.activated());
+      this.rows = flattenTree(this.activeSection?.children ?? []);
+      if (this.cursor >= this.rows.length) this.cursor = Math.max(0, this.rows.length - 1);
+    }
     this.buildCorpus();
     this.buildCatalog();
     if (this.mode === "search") this.runSearch();
@@ -877,6 +1059,7 @@ export class GzeroPanel implements Component, Focusable {
     }
     const root = this.scopedRoot();
     const scored: SearchHit[] = [];
+    const seen = new Set<string>();
     for (const entry of this.corpus) {
       // Scope restricts to one top-level section's subtree.
       if (root && entry.root !== root) continue;
@@ -888,21 +1071,16 @@ export class GzeroPanel implements Component, Focusable {
       }
       const score = fuzzyScore(parsed.text, entry.text);
       if (score !== null) {
-        scored.push({ node: entry.node, category: entry.category, score });
-      }
-    }
-    // Skill catalog (context section only): findable and loadable.
-    if (root === "context") {
-      for (const entry of this.catalog) {
-        const score = fuzzyScore(parsed.text, entry.text);
-        if (score !== null) {
-          scored.push({
-            node: { id: entry.id, label: entry.entry.name },
-            category: 1,
-            score,
-            skillId: entry.id,
-          });
-        }
+        // Unloaded skill nodes load on enter ([skill+] marker);
+        // loaded ones jump to the node as usual.
+        const loadable = this.pendingSkill(entry.node.id);
+        scored.push({
+          node: entry.node,
+          category: entry.category,
+          score,
+          skillId: loadable ? entry.node.id : undefined,
+        });
+        seen.add(entry.node.id);
       }
     }
     // Category dominates (tasks > skills > terms); fuzzy ranks within it.
@@ -963,11 +1141,11 @@ export class GzeroPanel implements Component, Focusable {
 
   /**
    * The left tree column. Row 0 is the pane title, row 1 a rule under
-   * it; the section headings (tasks / context / documentation) follow
-   * as the top-level tree rows — headings live here, not in a strip
-   * along the top.
+   * it; the section headings (tasks / context / skills / router /
+   * history / documentation) follow as the top-level tree rows —
+   * headings live here, not in a strip along the top.
    */
-  /** The gzero top bar: title + the three section tabs with counts.
+  /** The gzero top bar: title + the section tabs with counts.
    * The active tab is highlighted; the left tree navigates inside it. */
   private topBarLine(width: number): string {
     const t = this.theme;
@@ -1048,7 +1226,7 @@ export class GzeroPanel implements Component, Focusable {
       out.push(t.fg("dim", "(no matches)"));
       return out;
     }
-    const tags = ["task", "skill", "term"];
+    const tags = ["task", "skill", "term", "prompt", "router", "doc"];
     this.hits.forEach((hit, i) => {
       const marker = i === this.sel ? t.fg("accent", "▸ ") : "  ";
       // Catalog skills aren't loaded yet: [skill+] means enter loads it.

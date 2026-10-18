@@ -2,8 +2,8 @@
 // capping on line boundaries, and the brief's required sections.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DEFAULT_CONFIG } from "../config.ts";
-import { OUTPUT_CAP, buildSeed, capTail, extractSpans, spanPaths } from "../seed.ts";
+import { DEFAULT_CONFIG } from "../router/config.ts";
+import { OUTPUT_CAP, buildSeed, capTail, extractSpans, spanPaths } from "../router/seed.ts";
 
 const rustOutput = `error[E0308]: mismatched types
   --> src/storage/lattice.rs:214:9

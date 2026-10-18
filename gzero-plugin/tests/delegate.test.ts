@@ -2,9 +2,9 @@
 // runner (no real processes), and the structured result format.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DEFAULT_CONFIG } from "../config.ts";
-import { buildDispatch, dispatchWork, formatDispatchResult, type Runner } from "../delegate.ts";
-import { buildSeed } from "../seed.ts";
+import { DEFAULT_CONFIG } from "../router/config.ts";
+import { buildDispatch, dispatchWork, formatDispatchResult, type Runner } from "../router/delegate.ts";
+import { buildSeed } from "../router/seed.ts";
 
 const SEED = buildSeed({ workType: "fix-errors", recentOutput: "boom", cwd: "/repo", config: DEFAULT_CONFIG });
 

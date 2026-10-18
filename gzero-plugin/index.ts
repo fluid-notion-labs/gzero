@@ -32,17 +32,28 @@ import { TapEditor, tapTrigger } from "./panel-taps.ts";
 import {
   GzeroPanel,
   docsToNodes,
+  historyToNodes,
   itemsToNodes,
+  routerToNodes,
   skillsToNodes,
   skillId,
+  skillsSectionNodes,
   tiersToNodes,
   type ItemPatch,
+  type LedgerSummaryLike,
   type PanelActions,
   type PanelNode,
   type PanelSkills,
+  type PromptEntryLike,
+  type RouterSnapshotLike,
 } from "./gzero-panel.ts";
 import { ItemsPaneController, run as runProc } from "./items-pane.ts";
 import { messageText, registerReview, type ReviewDeps } from "./review.ts";
+import routerSetup from "./router/index.ts";
+import { loadHistory, type PromptEntry } from "./history/history.ts";
+import historySetup from "./history/index.ts";
+import { routerSnapshot } from "./router/state.ts";
+import { summarizeLedger } from "./router/ledger.ts";
 import {
   ensureWorkstyles,
   extractWorkstyleRefs,
@@ -236,7 +247,8 @@ export function bucketTiers(rendered: string): TierSection[] {
 }
 
 
-// ---- Gzero panel: the unified tasks / context / documentation pane ----
+// ---- Gzero panel: the unified tasks / context / skills / router / history /
+// documentation pane ----
 // Tree logic lives in items-tree.ts, the panel component in
 // gzero-panel.ts (both unit-tested). P5 cutover shipped, then
 // da36 consolidated the bindings: ctrl+q and /gzero are the only
@@ -304,15 +316,14 @@ function renderChecklist(md: string, kind: string | undefined): string {
   });
 }
 
-/** The gzero panel's tree: tasks (work items), context (the
- * three tiers, plus loaded skills), documentation (ws sections
- * expanded into n-deep heading trees). Failed sources degrade to a
- * placeholder child so the pane still opens. */
 function gzeroTree(
   items: RawItem[] | null,
   tiers: TierSection[] | null,
   loadedSkills: SkillEntry[] | null,
   docs: TierSection[] | null,
+  catalog: SkillEntry[] | null,
+  router: { snapshot: RouterSnapshotLike; ledger: LedgerSummaryLike } | null,
+  history: PromptEntryLike[] | null,
 ): PanelNode[] {
   const placeholder = (id: string, label: string): PanelNode[] => [{ id, label }];
   const itemsNodes =
@@ -320,22 +331,23 @@ function gzeroTree(
   const tierNodes = tiers
     ? tiersToNodes(tiers)
     : placeholder("tiers-empty", "(nothing resolved)");
-  const skillNodes =
-    loadedSkills && loadedSkills.length > 0
-      ? skillsToNodes(loadedSkills)
-      : placeholder("skills-empty", "(none loaded — / to search and add)");
+  const skillNodes = catalog
+    ? skillsSectionNodes(catalog, loadedSkills ?? [])
+    : placeholder("skills-empty", "(no catalog — discovery warms on session start)");
   const docsNodes = docs && docs.length > 0 ? docsToNodes(docs) : placeholder("docs-empty", "(no ws sections)");
+  const routerNodes = router
+    ? routerToNodes(router.snapshot, router.ledger)
+    : placeholder("router-empty", "(router unavailable)");
+  const historyNodes =
+    history && history.length > 0
+      ? historyToNodes(history)
+      : placeholder("history-empty", "(no prompts yet)");
   return [
     { id: "tasks", label: "tasks", expanded: true, children: itemsNodes },
-    {
-      id: "context",
-      label: "context",
-      expanded: true,
-      children: [
-        ...tierNodes,
-        { id: "skills", label: "skills", children: skillNodes },
-      ],
-    },
+    { id: "context", label: "context", expanded: true, children: tierNodes },
+    { id: "skills", label: "skills", expanded: true, children: skillNodes },
+    { id: "router", label: "router", expanded: true, children: routerNodes },
+    { id: "history", label: "history", expanded: true, children: historyNodes },
     { id: "documentation", label: "documentation", children: docsNodes },
   ];
 }
@@ -425,33 +437,53 @@ async function projectScope(): Promise<string | null> {
   }
 }
 
+/** The gzero panel sections in tab order (/gzero <name> jumps here). */
+export const PANEL_SECTIONS = [
+  "tasks",
+  "context",
+  "skills",
+  "router",
+  "history",
+  "documentation",
+] as const;
+type PanelSection = (typeof PANEL_SECTIONS)[number];
+
 /** The gzero panel: ctrl+q / /gzero. The unified pane
- * (work item 2c31); the only panel since the P5 cutover. */
+ * (work item 2c31); the only panel since the P5 cutover. Skills,
+ * router, and history are panel sections too (the standalone
+ * history overlay keeps its F1 / /history shortcut). */
 async function openGzeroPanel(
   ctx: ExtensionContext,
   loadTiers: () => Promise<TierSection[]>,
   /** Open directly on this section (/gzero [section] starts
    * here). */
-  section?: "tasks" | "context" | "documentation",
+  section?: PanelSection,
 ): Promise<void> {
   if (ctx.mode !== "tui") {
     ctx.ui.notify("The gzero panel needs TUI mode", "warning");
     return;
   }
-  const [itemsRes, tiersRes, skillsRes, docsRes, presenceRes] = await Promise.allSettled([
+  const sessionFile = (ctx as ExtensionCommandContext).sessionManager?.getSessionFile() ?? null;
+  const [itemsRes, tiersRes, skillsRes, docsRes, presenceRes, historyRes] = await Promise.allSettled([
     cxJson(["item", "list", "--json"]) as Promise<RawItem[]>,
     loadTiers(),
     ensureSkills(),
     loadDocSections(),
     presenceLabel(),
+    // Synchronous and local (session files in ~/.pi/agent/sessions).
+    Promise.resolve(sessionFile ? loadHistory(sessionFile) : []),
   ]);
   const unwrap = <T>(r: PromiseSettledResult<T>): T | null =>
     r.status === "fulfilled" ? r.value : null;
+  const router = { snapshot: routerSnapshot(), ledger: summarizeLedger() };
   const nodes = gzeroTree(
     unwrap(itemsRes),
     unwrap(tiersRes),
-    getLoadedSkills(), // only loaded skills in the tree; catalog is for search
+    getLoadedSkills(), // loaded skills get the checkmark in the catalog
     unwrap(docsRes),
+    getSkillsCache(), // full catalog; loaded ones get the checkmark
+    router,
+    unwrap(historyRes),
   );
   await ctx.ui.custom(
     (_tui, theme, keybindings, done) => {
@@ -463,9 +495,18 @@ async function openGzeroPanel(
         panelActions(),
         panelSkills(),
         unwrap(presenceRes) ?? "",
+        (text) => {
+          // History pick: fill the editor, close the panel.
+          try {
+            ctx.ui.setEditorText(text);
+          } catch {
+            // non-TUI contexts can't set editor text
+          }
+          done(undefined);
+        },
       );
       if (section) {
-        const index = ["tasks", "context", "documentation"].indexOf(section);
+        const index = PANEL_SECTIONS.indexOf(section);
         if (index > 0) panel.showSection(index);
       }
       return panel;
@@ -505,6 +546,12 @@ function sessionIdentity(): { sessionId: string; machineId: string } {
 }
 
 export default function (pi: ExtensionAPI) {
+  // The router and history plugins are folded into this extension: the
+  // blessed snapshot is the only thing plain `pi` loads, so they ride
+  // along (their modules live in router/ and history/).
+  routerSetup(pi);
+  historySetup(pi);
+
   const itemsPane = new ItemsPaneController();
 
   // Presence identity: exported for every cx-mcp spawn (the model's MCP
@@ -716,7 +763,7 @@ export default function (pi: ExtensionAPI) {
   // the 1-column strip on the right edge is always visible underneath,
   // CX_TASKS_STRIP=0 removes it.
   pi.registerShortcut(Key.ctrl("q"), {
-    description: "Toggle the gzero panel (tasks / context / documentation)",
+    description: "Toggle the gzero panel (tasks / context / skills / router / history / documentation)",
     handler: (ctx) => openGzeroPanel(ctx, loadTierSections),
   });
 
@@ -749,8 +796,9 @@ export default function (pi: ExtensionAPI) {
   });
 
   // ---- the gzero panel (ctrl+q / /gzero) ----
-  // One left-tree pane with tasks / context / documentation
-  // (design: work item 2c31); the only panel since the P5 cutover.
+  // One left-tree pane with tasks / context / skills / router /
+  // history / documentation (design: work item 2c31); the only panel
+  // since the P5 cutover.
   /** Tiers for the panel's context subtree: resolved via the same
    * cached resolution the injection uses. Empty on failure — the pane
    * shows a placeholder. */
@@ -763,14 +811,14 @@ export default function (pi: ExtensionAPI) {
   };
 
   pi.registerCommand("gzero", {
-    description: "Toggle the gzero panel (same as ctrl+q); optional section: /gzero [tasks|context|documentation]",
+    description: `Toggle the gzero panel (same as ctrl+q); optional section: /gzero [${PANEL_SECTIONS.join("|")}]`,
     handler: async (args: string, ctx: ExtensionCommandContext) => {
       const section = args.trim().split(/\s+/)[0] ?? "";
-      if (section === "tasks" || section === "context" || section === "documentation") {
-        await openGzeroPanel(ctx, loadTierSections, section);
-      } else {
-        await openGzeroPanel(ctx, loadTierSections);
-      }
+      await openGzeroPanel(
+        ctx,
+        loadTierSections,
+        (PANEL_SECTIONS as readonly string[]).includes(section) ? (section as PanelSection) : undefined,
+      );
     },
   });
 

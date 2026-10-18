@@ -1,9 +1,0 @@
-{
-  "name": "pi-router-plugin",
-  "version": "0.1.0",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "node --test --test-timeout=5000 --import ./tests/deps.mjs tests/*.test.ts"
-  }
-}

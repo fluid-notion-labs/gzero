@@ -29,10 +29,13 @@ if [ -L "$dest" ] || [ -e "$dest" ]; then
 fi
 mkdir -p "$(dirname "$dest")"
 
-# The plugin is the root-level TypeScript sources plus its README;
-# tests and editor config are dev-only and stay out of the snapshot.
+# The plugin is the root-level TypeScript sources plus its README and
+# the router/ history/ submodules; tests and editor config are
+# dev-only and stay out of the snapshot.
 mkdir -p "$dest"
 cp "$src"/*.ts "$src/package.json" "$src/README.md" "$dest/"
+rm -rf "$dest/router" "$dest/history"
+cp -R "$src/router" "$src/history" "$dest/"
 
 echo "blessed $src"
 echo "      -> $dest (snapshot: $(git -C "$root" log -1 --format=%h 2>/dev/null || echo '?'))"

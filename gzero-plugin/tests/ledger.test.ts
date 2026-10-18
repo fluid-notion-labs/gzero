@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Ledger, toUsageRecord } from "../ledger.ts";
+import { Ledger, toUsageRecord } from "../router/ledger.ts";
 
 test("append writes one JSON object per line with a timestamp", () => {
   const path = join(mkdtempSync(join(tmpdir(), "ledger-")), "l.jsonl");

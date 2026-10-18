@@ -2,7 +2,7 @@
 // @cf/ payloads with assistant tool-call messages lacking content.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fixAssistantNullContent } from "../compat.ts";
+import { fixAssistantNullContent } from "../router/compat.ts";
 
 const payload = {
   model: "@cf/qwen/qwen3-30b-a3b-fp8",

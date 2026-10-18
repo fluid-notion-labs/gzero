@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { extractPrompts, loadHistory } from "../history.ts";
+import { extractPrompts, loadHistory } from "../history/history.ts";
 
 function session(lines: Array<Record<string, unknown>>): string {
   const dir = mkdtempSync(join(tmpdir(), "hist-"));

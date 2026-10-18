@@ -5,7 +5,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 const stripVTControlCodes = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
 import {
+  skillsSectionNodes,
   GzeroPanel,
+  historyToNodes,
+  routerToNodes,
   docsToNodes,
   flattenTree,
   fuzzyScore,
@@ -851,14 +854,12 @@ async function skillsFixture() {
   };
   const nodes: PanelNode[] = [
     { id: "tasks", label: "tasks", expanded: true, children: [] },
+    { id: "context", label: "context", expanded: true, children: [{ id: "tier-global", label: "global", children: [] }] },
     {
-      id: "context",
-      label: "context",
+      id: "skills",
+      label: "skills",
       expanded: true,
-      children: [
-        { id: "tier-global", label: "global", children: [] },
-        { id: "skills", label: "skills", expanded: true, children: skillsToNodes(skills.activated()) },
-      ],
+      children: skillsSectionNodes(catalog, skills.activated()),
     },
     { id: "documentation", label: "documentation", children: [] },
   ];
@@ -868,9 +869,10 @@ async function skillsFixture() {
 
 const flushSkill = () => new Promise((resolve) => setImmediate(resolve));
 
-test("catalog search in context finds unloaded skills; enter loads them", async () => {
+test("catalog search in the skills section finds unloaded skills; enter loads them", async () => {
   const { p, loaded } = await skillsFixture();
   p.handleInput("\t"); // context section
+  p.handleInput("\t"); // skills section
   p.handleInput("/");
   p.handleInput("unloaded");
   const hitsList = hits(p);
@@ -880,17 +882,17 @@ test("catalog search in context finds unloaded skills; enter loads them", async 
   p.handleInput("\r"); // enter loads the skill
   await flushSkill();
   assert.ok(loaded.has("skill-fn/unloaded-one"), "skill activated");
-  // Now it's in the tree (no + marker) and out of the catalog.
-  const skillsNode = (get(p, "nodes") as PanelNode[])
-    .find((n) => n.id === "context")
-    ?.children?.find((n) => n.id === "skills");
-  assert.ok(skillsNode?.children?.some((c) => c.id === "skill-fn/unloaded-one"));
+  // Now it's in the tree (✓ marker) and out of the loadable set.
+  const skillsNode = (get(p, "nodes") as PanelNode[]).find((n) => n.id === "skills");
+  const hasNode = (ns: PanelNode[] | undefined, id: string): boolean =>
+    (ns ?? []).some((n) => n.id === id || hasNode(n.children, id));
+  assert.ok(hasNode(skillsNode?.children, "skill-fn/unloaded-one"), "loaded skill present in the grouped catalog");
   const after = plain(p.render(100)).join("\n");
-  assert.ok(after.includes("[skill] unloaded-one"), "loaded skills tagged plainly");
+  assert.ok(after.includes("✓ unloaded-one"), "loaded skills tagged with a checkmark");
   assert.ok(!after.includes("[skill+] unloaded-one"), "no loadable hits left for this query");
 });
 
-test("catalog is only searchable in the context section", async () => {
+test("catalog is only searchable in the skills section", async () => {
   const { p } = await skillsFixture();
   p.handleInput("/"); // tasks section active
   p.handleInput("unloaded");
@@ -905,4 +907,140 @@ test("collapsed documentation sections keep the tree short", () => {
   assert.ok(nodes[0].children![0].children!.length >= 0);
   const rows = flattenTree(nodes);
   assert.deepEqual(rows.map((r) => r.node.label), ["arch"]);
+});
+
+// ---- skills / router / history sections (panel integration) ----
+
+test("skillsSectionNodes groups the catalog by vendor, marks loaded with a checkmark", () => {
+  const loaded = skillEntry("loaded-one");
+  const nodes = skillsSectionNodes(
+    [skillEntry("loaded-one"), skillEntry("unloaded-one"), skillEntry("other", "acme")],
+    [loaded],
+  );
+  assert.deepEqual(
+    nodes.map((n) => n.label),
+    ["fn (2)", "acme (1)"],
+  );
+  const fn = nodes[0].children!;
+  assert.equal(fn.find((c) => c.id === skillId(loaded))?.label, "✓ loaded-one");
+  assert.equal(fn.find((c) => c.id === "skill-fn/unloaded-one")?.label, "unloaded-one");
+});
+
+test("enter on an unloaded skill node in the skills section loads it", async () => {
+  const loaded = new Set<string>();
+  const catalog = [skillEntry("loaded-one"), skillEntry("unloaded-one")];
+  const skills: PanelSkills = {
+    catalog: () => catalog,
+    activated: () => catalog.filter((e) => loaded.has(skillId(e))),
+    activate: async (id) => {
+      loaded.add(id);
+    },
+  };
+  const nodes: PanelNode[] = [
+    { id: "tasks", label: "tasks", expanded: true, children: [] },
+    { id: "context", label: "context", expanded: true, children: [] },
+    { id: "skills", label: "skills", expanded: true, children: skillsSectionNodes(catalog, []) },
+    { id: "documentation", label: "documentation", children: [] },
+  ];
+  const p = new GzeroPanel(nodes, theme as never, () => {}, undefined, undefined, skills);
+  p.handleInput("\t"); // context
+  p.handleInput("\t"); // skills section
+  // Expand the vendor node and land on unloaded-one.
+  p.handleInput("\r"); // expand the first vendor group
+  p.handleInput("j"); // loaded-one
+  p.handleInput("j"); // unloaded-one
+  p.handleInput("\r"); // enter on the skill loads it
+  await flushSkill();
+  assert.ok(loaded.has("skill-fn/unloaded-one"), "enter on an unloaded skill activates it");
+});
+
+test("enter on a history prompt inserts its text and closes the panel", () => {
+  // loadHistory returns newest first; historyToNodes preserves order.
+  const entries = [
+    { text: "newer prompt", timestamp: "2026-10-18T02:00:00Z", sessionId: "def67890-xyz" },
+    { text: "first prompt\nsecond line", timestamp: "2026-10-18T01:00:00Z", sessionId: "abc12345-xyz" },
+  ];
+  const nodes: PanelNode[] = [
+    { id: "tasks", label: "tasks", expanded: true, children: [] },
+    { id: "history", label: "history", expanded: true, children: historyToNodes(entries) },
+  ];
+  const inserted: string[] = [];
+  let closed = 0;
+  const p = new GzeroPanel(
+    nodes,
+    theme as never,
+    () => {
+      closed++;
+    },
+    undefined,
+    undefined,
+    undefined,
+    "",
+    (text) => inserted.push(text),
+  );
+  p.handleInput("\t"); // history section
+  p.handleInput("\r"); // enter on the newest prompt
+  assert.deepEqual(inserted, ["newer prompt"], "insertText passes the full prompt text");
+  assert.equal(closed, 1, "panel closes after an insert");
+});
+
+test("historyToNodes labels by first line, searchable by full text", () => {
+  const nodes = historyToNodes([
+    { text: "fix the\nwrapper bug", timestamp: "t", sessionId: "sid" },
+  ]);
+  assert.equal(nodes[0].label, "fix the");
+  const p = new GzeroPanel(
+    [{ id: "history", label: "history", expanded: true, children: nodes }],
+    theme as never,
+    () => {},
+  );
+  p.handleInput("/");
+  p.handleInput("wrapper");
+  assert.equal(hits(p).length, 1, "full prompt text is searchable");
+});
+
+test("routerToNodes: status, one node per work type, ledger summary", () => {
+  const snap = {
+    pinned: "fix-errors",
+    classifier: "cloudflare/clef-flash",
+    threshold: 0.55,
+    default: "cloudflare-workers-ai/@cf/zai-org/glm-5.3-flash",
+    last: { workType: "research", confidence: 0.9 },
+    blessed: [
+      { workType: "plan", model: "glm", delegated: false },
+      { workType: "fix-errors", model: "qwen", delegated: true },
+    ],
+  };
+  const ledger = {
+    total: 3,
+    byKind: { classification: 1, route: 1, dispatch: 1 },
+    routesByType: { research: 1 },
+    dispatchOk: 1,
+    dispatchFailed: 0,
+    recent: [{ ts: "2026-10-18T01:02:03.000Z", kind: "route", workType: "research", ref: "a/b" }],
+  };
+  const nodes = routerToNodes(snap, ledger);
+  assert.deepEqual(
+    nodes.map((n) => n.id),
+    ["router-status", "router-types", "router-ledger"],
+  );
+  const types = nodes[1].children!;
+  assert.deepEqual(
+    types.map((n) => n.label),
+    ["plan → glm", "fix-errors → qwen ⤴"],
+  );
+  const p = new GzeroPanel(
+    [{ id: "router", label: "router", expanded: true, children: nodes }],
+    theme as never,
+    () => {},
+  );
+  const out = plain(p.render(100)).join("\n");
+  assert.ok(out.includes("pinned: fix-errors"), "status shows the pin");
+  // rows: status, work types (+ its 2 children), ledger
+  p.handleInput("j");
+  p.handleInput("j");
+  p.handleInput("j");
+  p.handleInput("j"); // ledger node
+  const ledgerOut = plain(p.render(100)).join("\n");
+  assert.ok(ledgerOut.includes("dispatches: 1 ok, 0 failed"), "ledger summary renders");
 });

@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DEFAULT_CONFIG, DELEGATED_TYPES, WORK_TYPES, loadRouterConfig, mergeConfig, parseConfig } from "../config.ts";
+import { DEFAULT_CONFIG, DELEGATED_TYPES, WORK_TYPES, loadRouterConfig, mergeConfig, parseConfig } from "../router/config.ts";
 
 test("defaults bless glm for the four keep-in-place types and qwen for the delegated types", () => {
   const glm = "cloudflare-workers-ai/@cf/zai-org/glm-5.3-flash";

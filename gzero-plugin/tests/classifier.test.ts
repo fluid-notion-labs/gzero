@@ -6,8 +6,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { ClassifierApi, ClassifierContext, ClassifierModel, ClassifierResult } from "@earendil-works/pi-ai";
 type ClassifierModelForTest = ClassifierModel<ClassifierApi>;
-import { PROMPT_SLICE, TOOL_TAIL_SLICE, WORK_TYPE_QUESTION, buildClassifierState, classifyWorkType } from "../classifier.ts";
-import { WORK_TYPES } from "../config.ts";
+import { PROMPT_SLICE, TOOL_TAIL_SLICE, WORK_TYPE_QUESTION, buildClassifierState, classifyWorkType } from "../router/classifier.ts";
+import { WORK_TYPES } from "../router/config.ts";
 
 function fakeModel() {
   return { provider: "cloudflare-workers-ai", id: "fake-clef", api: "system-one" } as never;

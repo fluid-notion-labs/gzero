@@ -14,8 +14,9 @@ import { Type } from "typebox";
 import { fixAssistantNullContent } from "./compat.ts";
 import { classifyWorkType, buildClassifierState, type ClassifyFn, type WorkClassification } from "./classifier.ts";
 import { DELEGATED_TYPES, loadRouterConfig, WORK_TYPES, type RouterConfig, type WorkType } from "./config.ts";
+import { ledger, routerState } from "./state.ts";
 import { buildDispatch, dispatchWork, formatDispatchResult, spawnRunner } from "./delegate.ts";
-import { DEFAULT_LEDGER_PATH, Ledger, toUsageRecord } from "./ledger.ts";
+import { toUsageRecord } from "./ledger.ts";
 import { buildSeed } from "./seed.ts";
 import { decideRoute, estimateTokens, type RouterState } from "./routing.ts";
 
@@ -55,10 +56,10 @@ export default function (pi: ExtensionAPI) {
   // rejected — replace with "". Applies to parent and subagent alike.
   pi.on("before_provider_request", (event) => fixAssistantNullContent(event.payload));
 
-  let config: RouterConfig = loadRouterConfig().config;
-  let pinnedType: WorkType | null = null;
-  let lastClassification: (WorkClassification & { workType: WorkType | null }) | null = null;
-  const ledger = new Ledger(process.env.PI_ROUTER_LEDGER || DEFAULT_LEDGER_PATH);
+  let config = loadRouterConfig().config;
+  routerState.config = config;
+  routerState.pinned = null;
+  routerState.lastClassification = null;
 
   const setStatus = (ctx: ExtensionContext, text: string) => {
     ctx.ui.setStatus("router", text);
@@ -88,11 +89,11 @@ export default function (pi: ExtensionAPI) {
       }
 
       // User turn: classify (unless pinned).
-      let workType: WorkType | null = pinnedType;
+      let workType: WorkType | null = routerState.pinned;
       if (workType === null) {
         const classifier = ctx.modelRegistry.findOfType("classifier", config.classifier.provider, config.classifier.id);
         if (!classifier) {
-          lastClassification = null;
+          routerState.lastClassification = null;
         } else {
           const state = buildClassifierState({
             prompt: lastUserText(request.messages),
@@ -106,7 +107,7 @@ export default function (pi: ExtensionAPI) {
             threshold: config.classifier.threshold,
             signal: request.signal,
           });
-          lastClassification = result;
+          routerState.lastClassification = result;
           workType = result.workType;
           ledger.append({
             kind: "classification",
@@ -234,11 +235,12 @@ export default function (pi: ExtensionAPI) {
       const arg = args.trim();
       if (arg === "reload") {
         config = loadRouterConfig().config;
+        routerState.config = config;
         ctx.ui.notify("router: config reloaded", "info");
         return;
       }
       if (arg === "clear") {
-        pinnedType = null;
+        routerState.pinned = null;
         ctx.ui.notify("router: pin cleared", "info");
         return;
       }
@@ -247,13 +249,13 @@ export default function (pi: ExtensionAPI) {
           ctx.ui.notify(`router: unknown work type "${arg}" (expected ${WORK_TYPES.join(", ")})`, "error");
           return;
         }
-        pinnedType = arg as WorkType;
-        ctx.ui.notify(`router: pinned to ${pinnedType}`, "info");
+        routerState.pinned = arg as WorkType;
+        ctx.ui.notify(`router: pinned to ${routerState.pinned}`, "info");
         return;
       }
-      const cls = lastClassification;
+      const cls = routerState.lastClassification;
       const lines = [
-        `pinned: ${pinnedType ?? "(none)"}`,
+        `pinned: ${routerState.pinned ?? "(none)"}`,
         `classifier: ${config.classifier.provider}/${config.classifier.id} (threshold ${config.classifier.threshold})`,
         `last classification: ${cls ? `${cls.workType ?? "unclassified"} (top p=${cls.confidence.toFixed(2)})` : "(none yet)"}`,
         `delegation threshold: ${config.delegation.directRouteMaxTokens} tokens`,
@@ -272,7 +274,7 @@ export default function (pi: ExtensionAPI) {
         return;
       }
       // A manual dispatch has no captured tool output; the task statement carries the context.
-      const workType = pinnedType ?? "fix-errors";
+      const workType = routerState.pinned ?? "fix-errors";
       const seed = buildSeed({ workType, recentOutput: "", cwd: ctx.cwd, config, taskStatement: task });
       const plan = buildDispatch({ workType, seed, config, extensionPath: extensionUrl });
       ctx.ui.notify(`router: dispatching to ${plan.model}…`, "info");
