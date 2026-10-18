@@ -17,7 +17,10 @@ code and on GitHub. Historical identifier: the MCP server name
   for shell use (ingest, inspection, sync).
 - **Atom store** — terse instruction atoms, one rule each, tagged with
   hashtags (`#rust`, `#style`). Untagged atoms inject every session;
-  tags pull the rest on demand.
+  tags pull the rest on demand. Since 23c0 the atoms live in the same
+  automerge doc as the workflow system (`CX_WS_DB`, default
+  `~/.pi/agent/context.ws`); the legacy SQLite store (`context.db`)
+  is kept only as a rollback hatch (`CX_LEGACY_DB=1`).
 - **Workflow docs** — an automerge document per scope holding typed,
   named sections (vision, architecture, now, decisions, checklists,
   user stories, …) and work items with priorities, blockers, gates,
@@ -25,10 +28,11 @@ code and on GitHub. Historical identifier: the MCP server name
 - **pi plugin** — injects global + local context at session start and
   adds the gzero panel (tasks / context / skills / router / history
   / documentation), the skills picker, and session presence.
-- **Hub sync** — a Cloudflare Worker + Durable Object carries atoms
-  across machines; workflow-doc distribution is Track D (deferred).
-  v0 of the hub rebuild is planned in `research/hub-v0.md` (new repo,
-  automerge change log; includes the mobile client plan).
+- **Hub sync** — a Cloudflare Worker + D1 change log carries the doc
+  across machines (`gzero sync`; the doc is written per mutation, and
+  sessions pull at startup). The hub is a change log, not a merge
+  engine — automerge on each replica does the merging. v0 hub:
+  `research/hub-v0.md`, repo `gzero-hub`.
 
 ## Status
 
@@ -67,7 +71,10 @@ gzero replaces the old `contexture` install. On each machine:
    or config path, repoint it at gzero's `gzero-mcp`.
 
 Atom stores are compatible — old contexture store data keeps working
-under gzero, so no migration of context content is needed.
+under gzero. Cut over to the automerge doc with `gzero migrate-db`
+(idempotent; the SQLite store stays untouched for rollback), then
+`gzero sync` to share it through the hub. Machines that haven't cut
+over keep working against the hub's legacy endpoints in the meantime.
 
 ## Development
 

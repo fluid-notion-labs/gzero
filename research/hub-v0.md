@@ -8,6 +8,25 @@ concrete v0 scope.*
 
 ## Status (audited 2026-10-18, this checkout)
 
+**D1 shipped (2026-10-19, items 9a8f…23c0): the automerge doc is the
+context store, synced through the hub's D1 change log.**
+
+- gzero-hub v0 is deployed at `https://gzero-hub.nick-hems.workers.dev`
+  (auth via `CX_TOKEN`; prod token in `~/.config/gzero/hub-token`).
+- gzero: `sync_once` (pull-first) + `SyncCursor` sidecar; `migrate-db`
+  imports SQLite atoms into the doc (idempotent, per-source
+  provenance); atoms live in the same doc as sections/items; the MCP
+  server and CLI default to the doc, opening it per call and syncing
+  on every write; `CX_LEGACY_DB=1` is the SQLite rollback hatch.
+- Acceptance: `scripts/mcp-convergence-test.sh` (two MCP processes
+  converge through a local hub); production verified with two cold
+  replicas on one bag. This machine migrated 976 atoms / 28 sources /
+  90 tombstones and pushed them (bag `context`).
+- Still open: second machine cutover (pull, cargo install,
+  migrate-db, sync); legacy hub `/events`+`/snapshot` endpoints and
+  `gzero pull`/`push` remain until it's done — see the
+  `distributed-architecture-debt` ledger.
+
 **Core (Rust, `src/`) — W0–W4 shipped, W5 in progress.**
 
 - Automerge is the engine core: `src/automerge_store.rs` (589 lines)
