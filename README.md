@@ -50,6 +50,23 @@ resolve as `mcp__context__*`).
   and never rewritten. Live documentation lives in the workflow
   system, not here.
 
+## Updating from contexture
+
+gzero replaces the old `contexture` install. On each machine:
+
+1. Pull this repo and `cargo build` (the binary is still named
+   `cx-mcp`).
+2. Remove the old contexture plugin from your pi extensions — delete
+   `~/.pi/agent/extensions/contexture` (and any other directory or
+   symlink pointing at the old plugin).
+3. Install the gzero plugin snapshot: run `tools/bless-plugin.sh`
+   from a checkout of this repo.
+4. If your `.pi/mcp.json` still points at an old `contexture` binary
+   or config path, repoint it at gzero's `cx-mcp`.
+
+Atom stores are compatible — old contexture store data keeps working
+under gzero, so no migration of context content is needed.
+
 ## Development
 
 - Rust: `cargo build`, `cargo test`
