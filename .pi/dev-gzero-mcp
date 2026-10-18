@@ -5,4 +5,4 @@
 #
 # Wired up via .pi/mcp.json ("context" -> this shim). The plugin prefers
 # <cwd>/.pi/dev-gzero-mcp for its own calls too.
-exec -- "$PWD/target/debug/gzero-mcp" "$@"
+exec "$PWD/target/debug/gzero-mcp" "$@"
