@@ -128,6 +128,25 @@ impl HubChanges {
         }
     }
 
+    /// The hub's highest change seq for this bag (epoch GC cursor).
+    pub fn head_seq(&self) -> Result<u64, String> {
+        let resp = self.get("/changes?since=0&limit=1")?;
+        resp.get("last_seq")
+            .and_then(|v| v.as_u64())
+            .ok_or_else(|| "hub: missing last_seq in head_seq".to_string())
+    }
+
+    /// Epoch GC: drop this bag's change rows with seq < `before`.
+    /// Callers must have pushed the new epoch first, with `before`
+    /// set to the first seq of the new epoch's changes.
+    pub fn truncate_before(&self, before: u64) -> Result<(), String> {
+        self.post(
+            "/truncate",
+            &serde_json::json!({ "before": before, "machine_id": machine_id() }),
+        )?;
+        Ok(())
+    }
+
     fn agent() -> ureq::Agent {
         ureq::AgentBuilder::new().timeout(TIMEOUT).build()
     }

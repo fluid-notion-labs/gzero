@@ -47,19 +47,59 @@ const SOURCE: &str = "mcp";
 const FALLBACK_SCOPE: &str = "inbox";
 const DEFAULT_NODE: &str = "notes";
 
-/// Server state. The SQLite handle lives for the whole session
-/// (sessions, messages, broadcasts, presence); the atom store is
-/// opened per call — a long-lived automerge handle would let a save
-/// clobber concurrent CLI writers (same-file whole-save LWW).
+/// Server state. The comms handle lives for the whole session (S1
+/// presence, S3 messages, S3b broadcasts — automerge doc by default,
+/// legacy SQLite under `CX_LEGACY_DB=1`); the atom store is opened per
+/// call — a long-lived automerge handle would let a save clobber
+/// concurrent CLI writers (same-file whole-save LWW).
 struct App {
-    comms: SqliteStore,
+    comms: CommsHandle,
     atoms: Box<dyn Fn() -> Result<Atoms, String> + Send>,
+}
+
+/// Where S1–S3b live. The doc store syncs its own bag through the hub;
+/// the legacy store stays machine-local.
+enum CommsHandle {
+    Doc(gzero::comms::CommsStore),
+    Legacy(SqliteStore),
+}
+
+impl CommsHandle {
+    fn layer(&mut self) -> &mut dyn gzero::comms::CommsLayer {
+        match self {
+            CommsHandle::Doc(s) => s,
+            CommsHandle::Legacy(s) => s,
+        }
+    }
+
+    /// The legacy store doubles as the atom store in legacy mode.
+    fn legacy(&mut self) -> Option<&mut SqliteStore> {
+        match self {
+            CommsHandle::Legacy(s) => Some(s),
+            CommsHandle::Doc(_) => None,
+        }
+    }
+}
+
+fn open_comms() -> CommsHandle {
+    if legacy_db() {
+        return CommsHandle::Legacy(open_store());
+    }
+    match gzero::comms::CommsStore::open(Some(&gzero::comms::comms_db_path())) {
+        Ok(s) => CommsHandle::Doc(s),
+        Err(e) => {
+            // Comms must never take the session down; fall back to the
+            // legacy tables rather than erroring every tool call.
+            eprintln!("gzero-mcp: comms doc unavailable ({e}); using legacy store");
+            CommsHandle::Legacy(open_store())
+        }
+    }
 }
 
 impl App {
     fn new() -> App {
         App {
-            comms: open_store(),
+            comms: open_comms(),
             atoms: Box::new(Atoms::open),
         }
     }
@@ -92,9 +132,10 @@ fn main() {
 fn startup(app: &mut App) {
     if legacy_db() {
         // In legacy mode the comms handle is the atom store.
-        pull_from_hub(&mut app.comms);
-        seed_on_startup(&mut app.comms);
-        reconcile_harvest_on_startup(&mut app.comms);
+        let Some(store) = app.comms.legacy() else { return };
+        pull_from_hub(store);
+        seed_on_startup(store);
+        reconcile_harvest_on_startup(store);
     } else {
         let mut atoms = match app.open_atoms() {
             Ok(a) => a,
@@ -105,6 +146,11 @@ fn startup(app: &mut App) {
         };
         if let Err(e) = atoms.sync() {
             eprintln!("gzero-mcp: hub sync failed: {e}");
+        }
+        // Comms (bag `comms`): pull at session start so unread state
+        // and presence from other machines is visible immediately.
+        if let Err(e) = app.comms.layer().sync() {
+            eprintln!("gzero-mcp: comms sync failed: {e}");
         }
         if let Err(e) = atoms.write(|s| {
             gzero::reconcile_seeds(s)
@@ -278,7 +324,7 @@ fn call_tool(params: &serde_json::Value, app: &mut App) -> Result<serde_json::Va
         "resolve" | "search" | "tags" | "teams" => {
             let mut atoms = app.open_atoms()?;
             match name {
-                "resolve" => tool_resolve(&args, atoms.storage(), &app.comms)?,
+                "resolve" => tool_resolve(&args, atoms.storage(), &mut *app.comms.layer())?,
                 "search" => tool_search(&args, atoms.storage())?,
                 "teams" => gzero::teams::render(
                     &gzero::teams::list_teams(atoms.storage()).map_err(|e| e.to_string())?
@@ -310,9 +356,9 @@ fn call_tool(params: &serde_json::Value, app: &mut App) -> Result<serde_json::Va
             tool_session_handoff(&args, &mut ws)?
         }
         "msg_send" | "msg_read" | "broadcast" => match name {
-            "msg_send" => tool_msg_send(&args, &app.comms)?,
-            "msg_read" => tool_msg_read(&app.comms)?,
-            _ => tool_broadcast(&args, &app.comms)?,
+            "msg_send" => tool_msg_send(&args, &mut *app.comms.layer())?,
+            "msg_read" => tool_msg_read(&mut *app.comms.layer())?,
+            _ => tool_broadcast(&args, &mut *app.comms.layer())?,
         },
         "item_add" | "item_list" | "item_ready" | "item_get" | "item_edit" | "item_note"
         | "item_delete" | "item_pin" | "item_gate" | "item_move" => {
@@ -330,7 +376,7 @@ fn call_tool(params: &serde_json::Value, app: &mut App) -> Result<serde_json::Va
                 _ => tool_item_delete(&args, &mut ws)?,
             }
         }
-        "sessions" => tool_sessions(&app.comms)?,
+        "sessions" => tool_sessions(&mut *app.comms.layer())?,
         "scope" => tool_scope()?,
         "plan_next" => {
             let ws = ws_store()?;
@@ -380,7 +426,7 @@ fn render(items: Vec<(String, Row)>) -> String {
 fn tool_resolve(
     args: &serde_json::Value,
     store: &mut dyn Storage,
-    comms: &SqliteStore,
+    comms: &mut dyn gzero::comms::CommsLayer,
 ) -> Result<String, String> {
     // Browse mode: a scope_prefix (even empty) bypasses tier defaults and
     // returns every atom whose scope starts with it — for inspection UIs.
@@ -420,10 +466,8 @@ fn tool_resolve(
 /// Messages show until read via msg_read; broadcasts drain on this
 /// delivery (per-session seen state). Also sweeps expired rows. Best-
 /// effort: failures never break resolve.
-fn comms_block(store: &SqliteStore) -> Option<String> {
+fn comms_block(store: &mut dyn gzero::comms::CommsLayer) -> Option<String> {
     let (me, _) = gzero::sessions::session_identity();
-    let _ = store.sweep_messages(gzero::messages::MESSAGE_TTL_SECS);
-    let _ = store.sweep_broadcasts(gzero::messages::MESSAGE_TTL_SECS);
     let unread = store.unread_messages(&me).ok()?;
     let broadcasts = store.unseen_broadcasts(&me).ok()?;
     if unread.is_empty() && broadcasts.is_empty() {
@@ -479,7 +523,7 @@ fn handoff_block() -> Option<String> {
 /// Heartbeat this session, sweep expired rows, and return an "also
 /// here" block when other live sessions share this scope. Presence is
 /// best-effort: failures never break resolve.
-fn presence_block(store: &SqliteStore) -> Option<String> {
+fn presence_block(store: &mut dyn gzero::comms::CommsLayer) -> Option<String> {
     let project = gzero::repo_identity()?;
     let (session_id, machine) = gzero::sessions::session_identity();
     let cwd = std::env::current_dir()
@@ -498,7 +542,7 @@ fn presence_block(store: &SqliteStore) -> Option<String> {
         last_seen: gzero::sessions::now(),
     };
     store.heartbeat(&beat).ok()?;
-    store.sweep_sessions(gzero::PRESENCE_TTL_SECS).ok()?;
+    let _ = store.sweep();
     let peers = store
         .active_peers(&project, &session_id, gzero::PRESENCE_TTL_SECS)
         .ok()?;
@@ -1039,7 +1083,10 @@ fn tool_session_handoff(
 /// msg_send (S3): one-to-one conversation between sessions. Sender =
 /// this session's id. Ephemeral: expires by TTL, never stored in the
 /// store.
-fn tool_msg_send(args: &serde_json::Value, store: &SqliteStore) -> Result<String, String> {
+fn tool_msg_send(
+    args: &serde_json::Value,
+    store: &mut dyn gzero::comms::CommsLayer,
+) -> Result<String, String> {
     let to = args
         .get("to")
         .and_then(|t| t.as_str())
@@ -1064,7 +1111,7 @@ fn tool_msg_send(args: &serde_json::Value, store: &SqliteStore) -> Result<String
 
 /// msg_read (S3): drain this session's unread messages (marks them
 /// read).
-fn tool_msg_read(store: &SqliteStore) -> Result<String, String> {
+fn tool_msg_read(store: &mut dyn gzero::comms::CommsLayer) -> Result<String, String> {
     let (me, _) = gzero::sessions::session_identity();
     let unread = store.unread_messages(&me).map_err(|e| e.to_string())?;
     if unread.is_empty() {
@@ -1081,7 +1128,10 @@ fn tool_msg_read(store: &SqliteStore) -> Result<String, String> {
 
 /// broadcast (S3b): post to the shared board. One-to-all, information
 /// not demand; sessions see it once (drained per-session).
-fn tool_broadcast(args: &serde_json::Value, store: &SqliteStore) -> Result<String, String> {
+fn tool_broadcast(
+    args: &serde_json::Value,
+    store: &mut dyn gzero::comms::CommsLayer,
+) -> Result<String, String> {
     let text = args
         .get("text")
         .and_then(|t| t.as_str())
@@ -1247,7 +1297,7 @@ fn tool_item_move(args: &serde_json::Value, store: &mut AutomergeStore) -> Resul
 }
 
 /// Session presence rows as JSON (S1) — inspection and sibling detection.
-fn tool_sessions(store: &SqliteStore) -> Result<String, String> {
+fn tool_sessions(store: &mut dyn gzero::comms::CommsLayer) -> Result<String, String> {
     let rows = store.all_sessions().map_err(|e| e.to_string())?;
     Ok(serde_json::to_string(&rows).unwrap_or_else(|e| format!("sessions: {e}")))
 }
@@ -1894,7 +1944,7 @@ mod tests {
             N.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
         ));
         App {
-            comms: SqliteStore::in_memory().unwrap(),
+            comms: CommsHandle::Legacy(SqliteStore::in_memory().unwrap()),
             atoms: Box::new(move || {
                 let store = AutomergeStore::open(Some(&path)).unwrap();
                 Ok(Atoms::Doc(Box::new(store)))
@@ -1924,7 +1974,7 @@ mod tests {
     fn legacy_app() -> App {
         let path = std::env::temp_dir().join(format!("gzero-mcp-legacy-{}.db", std::process::id()));
         App {
-            comms: SqliteStore::in_memory().unwrap(),
+            comms: CommsHandle::Legacy(SqliteStore::in_memory().unwrap()),
             atoms: Box::new(move || {
                 let store = SqliteStore::open(path.to_str().unwrap()).map_err(|e| e.to_string())?;
                 Ok(Atoms::Legacy(store))

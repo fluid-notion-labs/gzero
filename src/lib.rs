@@ -25,6 +25,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 pub mod automerge_store;
+pub mod comms;
 pub mod events;
 pub mod hub;
 pub mod hub_changes;

@@ -14,6 +14,7 @@ use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::process::exit;
 
+use gzero::comms::CommsLayer;
 use gzero::hub::{events_for_snapshot, Event, Hub};
 use gzero::items::{EdgeKind, ItemEdit, MoveTarget, NewItem, Status, WorkItem};
 use gzero::sections::{checklist_progress, Section, SectionKind};
@@ -132,10 +133,16 @@ fn main() {
         }
         "sessions" => {
             // Inspection view for S1 presence: all rows, stale marked.
-            let store = open_store();
-            let rows = store
-                .all_sessions()
-                .unwrap_or_else(|e| panic!("gzero: {e}"));
+            let rows = if gzero::legacy_db() {
+                open_store()
+                    .all_sessions()
+                    .unwrap_or_else(|e| panic!("gzero: {e}"))
+            } else {
+                gzero::comms::CommsStore::open(Some(&gzero::comms::comms_db_path()))
+                    .unwrap_or_else(|e| panic!("gzero: comms: {e}"))
+                    .all_sessions()
+                    .unwrap_or_else(|e| panic!("gzero: {e}"))
+            };
             if args.iter().any(|a| a == "--json") {
                 println!(
                     "{}",

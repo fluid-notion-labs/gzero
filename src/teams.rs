@@ -201,11 +201,13 @@ mod tests {
         assert_eq!(t.name, "example");
         assert!(!t.purpose.is_empty());
         assert_eq!(t.members.len(), 2);
-        assert_eq!(t.members[0].id, "nick");
-        assert_eq!(t.members[0].kind, "human");
-        assert_eq!(t.members[0].role, "owner");
-        assert_eq!(t.members[1].id, "pair-agent");
-        assert_eq!(t.members[1].kind, "agent");
+        // Members sort by id: grater < nick.
+        assert_eq!(t.members[0].id, "grater");
+        assert_eq!(t.members[0].kind, "agent");
+        assert_eq!(t.members[0].role, "builder");
+        assert_eq!(t.members[1].id, "nick");
+        assert_eq!(t.members[1].kind, "human");
+        assert_eq!(t.members[1].role, "owner");
     }
 
     #[test]
