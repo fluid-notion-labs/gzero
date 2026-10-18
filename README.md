@@ -34,6 +34,30 @@ code and on GitHub. Historical identifier: the MCP server name
   engine — automerge on each replica does the merging. v0 hub:
   `research/hub-v0.md`, repo `gzero-hub`.
 
+## Install
+
+From a checkout (also the upgrade path — pull, then run):
+
+```sh
+./install.sh
+```
+
+Or remotely, npm-style (works once the repo is public; while it's
+private, install from a checkout — the script's clone step uses your
+own git credentials):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/fluid-notion-labs/gzero/main/install.sh | sh
+```
+
+Idempotent; safe to re-run. It locates or clones the repo
+(`GZERO_DIR`, default `~/projects/explorations/nursery/gzero`),
+cargo-installs the `gzero` and `gzero-mcp` binaries, blesses the pi
+plugin, checks `mcp.json`, sets up hub auth (`CX_HUB_URL`/`CX_TOKEN`,
+token file `~/.config/gzero/hub-token`), migrates legacy SQLite atoms
+into the automerge doc (`gzero migrate-db`), and syncs through the
+hub. `--no-plugin` and `--no-migrate` narrow the run.
+
 ## Status
 
 - Shipped: atom store with resolve/search and hub sync; workflow
