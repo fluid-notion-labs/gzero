@@ -194,7 +194,11 @@ mod tests {
             return;
         };
         std::env::set_var("CX_HUB_URL", &base);
-        std::env::set_var("CX_TOKEN", "token");
+        // Local dev hub uses the fake token from .dev.vars; a real
+        // deployment (CX_TOKEN already in env) keeps its secret.
+        if std::env::var("CX_TOKEN").map_or(true, |t| t.is_empty()) {
+            std::env::set_var("CX_TOKEN", "token");
+        }
         // Unique bag per run so reruns start from an empty log.
         let bag = format!(
             "test-{}",
