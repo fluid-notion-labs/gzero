@@ -123,7 +123,9 @@ fn main() {
         "sessions" => {
             // Inspection view for S1 presence: all rows, stale marked.
             let store = open_store();
-            let rows = store.all_sessions().unwrap_or_else(|e| panic!("gzero: {e}"));
+            let rows = store
+                .all_sessions()
+                .unwrap_or_else(|e| panic!("gzero: {e}"));
             if args.iter().any(|a| a == "--json") {
                 println!(
                     "{}",
@@ -137,8 +139,7 @@ fn main() {
                 return;
             }
             for s in rows {
-                let stale =
-                    gzero::sessions::now() - s.last_seen > gzero::PRESENCE_TTL_SECS;
+                let stale = gzero::sessions::now() - s.last_seen > gzero::PRESENCE_TTL_SECS;
                 let marker = if s.session_id == me {
                     " (me)"
                 } else if stale {
@@ -152,7 +153,11 @@ fn main() {
                     &s.session_id[..s.session_id.len().min(12)],
                     marker,
                     s.scope,
-                    if s.workspace.is_empty() { "default" } else { &s.workspace },
+                    if s.workspace.is_empty() {
+                        "default"
+                    } else {
+                        &s.workspace
+                    },
                     if s.cwd.is_empty() { "?" } else { &s.cwd },
                     m
                 );
@@ -165,7 +170,8 @@ fn main() {
             }
             let mut store = open_store();
             for f in &args[1..] {
-                let text = std::fs::read_to_string(f).unwrap_or_else(|e| panic!("gzero: {}: {e}", f));
+                let text =
+                    std::fs::read_to_string(f).unwrap_or_else(|e| panic!("gzero: {}: {e}", f));
                 let source = source_path(Path::new(f));
                 let stats = gzero::add_doc(&mut store, &source, &text)
                     .unwrap_or_else(|e| panic!("gzero: {e}"));
@@ -792,7 +798,8 @@ fn ws_json(s: &Section) -> serde_json::Value {
 
 fn open_ws() -> AutomergeStore {
     let path = gzero::sections::default_ws_path();
-    AutomergeStore::open(Some(&path)).unwrap_or_else(|e| panic!("gzero: open {}: {e}", path.display()))
+    AutomergeStore::open(Some(&path))
+        .unwrap_or_else(|e| panic!("gzero: open {}: {e}", path.display()))
 }
 
 /// `gzero watch` — stream semantic change events (items/sections) as JSON
@@ -825,7 +832,10 @@ fn watch_loop() {
             continue;
         }
         for ev in ChangeFeed::drain_events(&mut store) {
-            if writeln!(out, "{}", ev.to_line()).and_then(|_| out.flush()).is_err() {
+            if writeln!(out, "{}", ev.to_line())
+                .and_then(|_| out.flush())
+                .is_err()
+            {
                 // Reader gone (client closed the pipe) — done.
                 return;
             }
@@ -865,7 +875,9 @@ fn item_command(args: &[String]) {
         "add" => {
             let title = pos[1..].join(" ");
             if title.trim().is_empty() {
-                eprintln!("gzero item: usage: item add \"<title>\" [--labels a,b] [--priority N] ...");
+                eprintln!(
+                    "gzero item: usage: item add \"<title>\" [--labels a,b] [--priority N] ..."
+                );
                 exit(2);
             }
             let n = NewItem {

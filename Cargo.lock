@@ -241,6 +241,7 @@ name = "gzero"
 version = "0.1.0"
 dependencies = [
  "automerge",
+ "base64",
  "rusqlite",
  "serde",
  "serde_json",

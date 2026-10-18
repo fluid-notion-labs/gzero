@@ -90,9 +90,7 @@ pub fn valid_name(name: &str) -> bool {
     !name.is_empty()
         && !name.starts_with('.')
         && !name.ends_with('.')
-        && name
-            .split('.')
-            .all(|seg| !seg.is_empty() && seg != "ch")
+        && name.split('.').all(|seg| !seg.is_empty() && seg != "ch")
         && !name.chars().any(char::is_whitespace)
 }
 
@@ -251,11 +249,7 @@ impl AutomergeStore {
             return Ok(());
         };
         // Legacy keys: every direct key except `ch` that carries a payload.
-        let legacy: Vec<String> = self
-            .doc
-            .keys(&scope_node)
-            .filter(|k| k != "ch")
-            .collect();
+        let legacy: Vec<String> = self.doc.keys(&scope_node).filter(|k| k != "ch").collect();
         let mut migrated = false;
         for name in legacy {
             let Some((_, rec)) = self.doc.get(&scope_node, name.as_str())? else {
@@ -624,7 +618,9 @@ mod tests {
         assert!(!s.section_ensure("sc", "a.b").unwrap());
         assert!(s.section_get("sc", "a.b.c").unwrap().is_none());
         // A section in the created chain lands in place.
-        assert!(!s.section_put(&sec("sc", "a.b", SectionKind::Md, 0)).unwrap());
+        assert!(!s
+            .section_put(&sec("sc", "a.b", SectionKind::Md, 0))
+            .unwrap());
         assert_eq!(s.section_list("sc").unwrap().len(), 1);
         assert!(s.section_ensure("sc", "bad name").is_err());
     }
@@ -663,11 +659,10 @@ mod tests {
         s.section_ensure("sc", "a.b.three").unwrap();
         let kids = s.section_children("sc", "a").unwrap();
         assert_eq!(
-            kids.iter().map(|k| (k.seg.as_str(), k.is_section, k.has_children)).collect::<Vec<_>>(),
-            [
-                ("b", false, true),
-                ("two", true, false)
-            ]
+            kids.iter()
+                .map(|k| (k.seg.as_str(), k.is_section, k.has_children))
+                .collect::<Vec<_>>(),
+            [("b", false, true), ("two", true, false)]
         );
         assert_eq!(s.section_children("sc", "a.b").unwrap().len(), 2);
         assert!(s.section_children("sc", "nope").unwrap().is_empty());
@@ -681,10 +676,7 @@ mod tests {
         // Build the pre-nesting layout by hand: flat dotted key.
         let sections = s.doc.put_object(ROOT, "sections", ObjType::Map).unwrap();
         let scope = s.doc.put_object(&sections, "sc", ObjType::Map).unwrap();
-        let rec = s
-            .doc
-            .put_object(&scope, "a.b", ObjType::Map)
-            .unwrap();
+        let rec = s.doc.put_object(&scope, "a.b", ObjType::Map).unwrap();
         s.doc.put(&rec, "kind", "md").unwrap();
         s.doc.put(&rec, "title", "old").unwrap();
         s.doc.put(&rec, "body", "legacy body").unwrap();

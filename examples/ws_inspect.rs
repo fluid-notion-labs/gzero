@@ -17,12 +17,7 @@ fn main() {
         scope
     };
     println!("scope: {scope} (all: {scopes:?})");
-    fn walk(
-        s: &AutomergeStore,
-        scope: &str,
-        prefix: &str,
-        depth: usize,
-    ) {
+    fn walk(s: &AutomergeStore, scope: &str, prefix: &str, depth: usize) {
         for c in s.section_children(scope, prefix).unwrap() {
             let kind = if c.is_section { "●" } else { "○" };
             println!("{}{kind} {}", "  ".repeat(depth), c.seg);

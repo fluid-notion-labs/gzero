@@ -25,16 +25,17 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 pub mod automerge_store;
-pub mod hub;
-pub mod items;
 pub mod events;
+pub mod hub;
+pub mod hub_changes;
+pub mod items;
 pub mod messages;
 pub mod sections;
 pub mod sessions;
 pub mod snapshot;
 pub mod sqlite;
 pub use automerge_store::AutomergeStore;
-pub use events::{ChangeFeed, ChangeEvent};
+pub use events::{ChangeEvent, ChangeFeed};
 pub use sessions::{SessionInfo, PRESENCE_TTL_SECS};
 pub use sqlite::SqliteStore;
 
@@ -884,10 +885,8 @@ mod tests {
         assert_eq!(stats[0].0, "seed:global");
         assert!(stats[0].1.added > 0);
         let items = resolve_tiers(&store, None, &[]).unwrap();
-        assert!(items
-            .iter()
-            .any(|(t, _)| t.contains("gzero-mcp MCP tools")
-                && t.contains("never a command-line program")));
+        assert!(items.iter().any(|(t, _)| t.contains("gzero-mcp MCP tools")
+            && t.contains("never a command-line program")));
 
         // re-sync: nothing changes, nothing duplicates
         let stats = reconcile_seeds(&mut store).unwrap();

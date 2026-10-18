@@ -1154,9 +1154,15 @@ fn tool_item_move(args: &serde_json::Value, store: &mut AutomergeStore) -> Resul
                 .ok_or("item_move: sibling is required for before/after")?
                 .to_string(),
         ),
-        other => return Err(format!("item_move: rel must be top|bottom|before|after, got {other:?}")),
+        other => {
+            return Err(format!(
+                "item_move: rel must be top|bottom|before|after, got {other:?}"
+            ))
+        }
     };
-    let it = store.item_move(&scope, &id, target).map_err(|e| e.to_string())?;
+    let it = store
+        .item_move(&scope, &id, target)
+        .map_err(|e| e.to_string())?;
     Ok(format!("moved {} [{}] in queue", it.id, it.title))
 }
 

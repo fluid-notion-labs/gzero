@@ -60,7 +60,11 @@ pub fn current_workspace() -> String {
                 .parent()
                 .map(|p| p.to_string_lossy().to_string())
         })
-        .or_else(|| std::env::current_dir().ok().map(|p| p.display().to_string()));
+        .or_else(|| {
+            std::env::current_dir()
+                .ok()
+                .map(|p| p.display().to_string())
+        });
 
     match (ws_root, repo_root) {
         (Some(ws), Some(repo)) if ws == repo => "default".to_string(),

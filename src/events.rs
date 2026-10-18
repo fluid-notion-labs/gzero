@@ -160,7 +160,10 @@ impl AutomergeStore {
         let mut submaps = HashMap::new();
         let mut chmaps: HashMap<ObjId, (String, String)> = HashMap::new();
         // Pass 1: scope maps.
-        for (key, container) in [("items", Container::Items), ("sections", Container::Sections)] {
+        for (key, container) in [
+            ("items", Container::Items),
+            ("sections", Container::Sections),
+        ] {
             let Some((_, map_id)) = self.doc.get(ROOT, key).ok().flatten() else {
                 continue;
             };
@@ -235,7 +238,10 @@ impl AutomergeStore {
                 format!("{prefix}.{seg}")
             };
             if self.has(&node, "kind") {
-                records.insert(node.clone(), (Container::Sections, scope.to_string(), full.clone()));
+                records.insert(
+                    node.clone(),
+                    (Container::Sections, scope.to_string(), full.clone()),
+                );
             }
             if let Some((_, sub)) = self.doc.get(&node.clone(), "ch").ok().flatten() {
                 self.index_sections_node(sub, scope, &full, records, chmaps);
@@ -245,12 +251,7 @@ impl AutomergeStore {
 }
 
 /// An add/remove on a scope map, or a field change on a record/submap.
-fn event_for(
-    container: Container,
-    scope: &str,
-    id: &str,
-    kind: ChangeKind,
-) -> ChangeEvent {
+fn event_for(container: Container, scope: &str, id: &str, kind: ChangeKind) -> ChangeEvent {
     match (container, kind) {
         (Container::Items, ChangeKind::Added) => ChangeEvent::ItemAdded {
             scope: scope.to_string(),
@@ -515,7 +516,12 @@ fn classify(patches: Vec<automerge::Patch>, idx: &DocIndex) -> Vec<ChangeEvent> 
                     } else {
                         format!("{parent}.{key}")
                     };
-                    events.push(event_for(Container::Sections, scope, &name, ChangeKind::Added));
+                    events.push(event_for(
+                        Container::Sections,
+                        scope,
+                        &name,
+                        ChangeKind::Added,
+                    ));
                 } else if let Some((container, scope)) = idx.scope_maps.get(&patch.obj) {
                     // Section scope maps only ever gain their `ch` map.
                     if *container == Container::Items {
@@ -532,7 +538,12 @@ fn classify(patches: Vec<automerge::Patch>, idx: &DocIndex) -> Vec<ChangeEvent> 
                     } else {
                         format!("{parent}.{key}")
                     };
-                    events.push(event_for(Container::Sections, scope, &name, ChangeKind::Removed));
+                    events.push(event_for(
+                        Container::Sections,
+                        scope,
+                        &name,
+                        ChangeKind::Removed,
+                    ));
                 } else if let Some((container, scope)) = idx.scope_maps.get(&patch.obj) {
                     if *container == Container::Items {
                         events.push(event_for(*container, scope, key, ChangeKind::Removed));
@@ -554,4 +565,3 @@ fn classify(patches: Vec<automerge::Patch>, idx: &DocIndex) -> Vec<ChangeEvent> 
     }
     events
 }
-
