@@ -546,7 +546,7 @@ impl AutomergeStore {
             .ok_or_else(|| format!("item: {full} not found"))?;
         if !item.gate.trim().is_empty() && !item.gate_met {
             return Err(format!(
-                "gate not met on {}: {} — mark it met first (`cx item gate {} --met`)",
+                "gate not met on {}: {} — mark it met first (`gzero item gate {} --met`)",
                 full, item.gate, full
             )
             .into());

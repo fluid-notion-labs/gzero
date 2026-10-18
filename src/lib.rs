@@ -886,7 +886,7 @@ mod tests {
         let items = resolve_tiers(&store, None, &[]).unwrap();
         assert!(items
             .iter()
-            .any(|(t, _)| t.contains("cx-mcp MCP tools")
+            .any(|(t, _)| t.contains("gzero-mcp MCP tools")
                 && t.contains("never a command-line program")));
 
         // re-sync: nothing changes, nothing duplicates
@@ -921,7 +921,7 @@ mod tests {
 
     #[test]
     fn harvest_forces_scope_and_syncs() {
-        let dir = std::env::temp_dir().join("cx-harvest-a");
+        let dir = std::env::temp_dir().join("gzero-harvest-a");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
@@ -937,7 +937,7 @@ mod tests {
         // scope falls back to the dir basename (no git repo) and is forced
         // onto the atom regardless of the file's own H1
         let atom = &r.atoms[0];
-        assert_eq!(atom.scope, "cx-harvest-a");
+        assert_eq!(atom.scope, "gzero-harvest-a");
         assert_eq!(atom.text, "run the tests before done");
     }
 
@@ -950,7 +950,7 @@ mod tests {
 
     #[test]
     fn reconcile_detects_edit_ignores_touch_retracts_delete() {
-        let dir = uniq_dir("cx-reconcile-a");
+        let dir = uniq_dir("gzero-reconcile-a");
         let file = dir.join("AGENTS.md");
         std::fs::write(&file, "# Context\n\n## n\n- rule one\n").unwrap();
         let mut store = mem();
@@ -989,7 +989,7 @@ mod tests {
 
     #[test]
     fn reconcile_take_imports_then_removes_without_tombstone() {
-        let dir = uniq_dir("cx-reconcile-take");
+        let dir = uniq_dir("gzero-reconcile-take");
         let file = dir.join("AGENTS.md");
         std::fs::write(&file, "# Context\n\n## n\n- keep me in the store\n").unwrap();
         let mut store = mem();
@@ -1008,7 +1008,7 @@ mod tests {
 
     #[test]
     fn reconcile_protects_stubs_and_skips_unknown_files() {
-        let dir = uniq_dir("cx-reconcile-stub");
+        let dir = uniq_dir("gzero-reconcile-stub");
         // zero-bullet pointer stub: never harvested, no hash recorded
         std::fs::write(
             dir.join("AGENTS.md"),
@@ -1037,7 +1037,7 @@ mod tests {
 
     #[test]
     fn harvest_skips_zero_bullet_files_and_protects_existing_rows() {
-        let dir = std::env::temp_dir().join("cx-harvest-b");
+        let dir = std::env::temp_dir().join("gzero-harvest-b");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         // pointer stub: prose only, no bullets

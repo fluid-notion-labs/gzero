@@ -6,10 +6,9 @@
 // repo has no items or the terminal is too narrow; `/tasks` toggles
 // (/items is an alias).
 //
-// Data comes from the `cx` CLI (`cx item list --json`), which scopes to the
-// session's repo identity by itself.
+// Data comes from MCP: the `item_list` tool in json mode, called with the
+// same server the model uses. The provider is injected by index.ts.
 
-import { execFile } from "node:child_process";
 import type {
   Component,
   OverlayHandle,
@@ -92,15 +91,6 @@ export function initialStripMode(env: NodeJS.ProcessEnv = process.env): "strip" 
   return env.CX_TASKS_STRIP === "0" ? "panel" : "strip";
 }
 
-interface JsonItem {
-  id: string;
-  title: string;
-  priority: number;
-  status: string;
-  blocked_by?: string[];
-  child_of?: string[];
-}
-
 const STATUS_ICON: Record<string, { icon: string; color: "muted" | "accent" | "success" }> = {
   open: { icon: "○", color: "muted" },
   in_progress: { icon: "●", color: "accent" },
@@ -120,18 +110,11 @@ export function taskRowCap(rows: number | undefined): number {
 /** How many recently finished items float at the top of the pane. */
 const RECENT_FINISHED = 3;
 
-export function run(
-  cmd: string,
-  args: string[],
-  timeout = 5000,
-): Promise<{ stdout: string; stderr: string; code: number | null }> {
-  return new Promise((resolve) => {
-    execFile(cmd, args, { timeout, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
-      const codeVal: unknown = (err as { code?: unknown } | null)?.code;
-      const code = typeof codeVal === "number" ? codeVal : err ? 1 : 0;
-      resolve({ stdout, stderr, code });
-    });
-  });
+/** Data source for the pane: returns the scope's items as JSON objects
+ * (MCP item_list, json mode). Installed once by index.ts at startup. */
+let itemsProvider: (() => Promise<RawItem[]>) | null = null;
+export function setItemsProvider(fn: () => Promise<RawItem[]>): void {
+  itemsProvider = fn;
 }
 
 export class ItemsPane implements Component {
@@ -191,10 +174,9 @@ export class ItemsPane implements Component {
 
   /** Fetch items; returns true if the visible data changed. */
   async refresh(): Promise<boolean> {
-    const res = await run("cx", ["item", "list", "--json"]);
-    // Stale cx without the item command: no data, not an error — the
-    // auto-opened pane stays hidden instead of nagging.
-    if (res.code === 2 || /unknown command/.test(res.stderr)) {
+    if (!itemsProvider) {
+      // Provider not installed yet (early startup): no data, not an
+      // error — the auto-opened pane stays hidden instead of nagging.
       if (this.rows.length !== 0 || this.error !== null) {
         this.rows = [];
         this.error = null;
@@ -204,8 +186,23 @@ export class ItemsPane implements Component {
       }
       return false;
     }
-    if (res.code !== 0) {
-      const msg = res.stderr.trim().split("\n")[0] || `cx item failed (${res.code})`;
+    let items: RawItem[];
+    try {
+      items = await itemsProvider();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      // A server without item_list (stale install): no data, not an
+      // error — the auto-opened pane stays hidden instead of nagging.
+      if (/unknown tool|method not found/i.test(msg)) {
+        if (this.rows.length !== 0 || this.error !== null) {
+          this.rows = [];
+          this.error = null;
+          this.invalidate();
+          this.tui?.requestRender();
+          return true;
+        }
+        return false;
+      }
       if (this.error !== msg || this.rows.length !== 0) {
         this.error = msg;
         this.rows = [];
@@ -215,23 +212,10 @@ export class ItemsPane implements Component {
       }
       return false;
     }
-    const raw = res.stdout;
-    let items: JsonItem[];
-    try {
-      const parsed: unknown = JSON.parse(raw);
-      items = Array.isArray(parsed) ? (parsed as JsonItem[]) : [];
-    } catch {
-      if (!this.error) {
-        this.error = "unparseable cx output";
-        this.invalidate();
-        return true;
-      }
-      return false;
-    }
     // Tree order via items-tree: siblings in queue order (Storage-owned;
     // no status/priority sorting). On top, the three most recently
     // finished items float; everything else stays in queue order.
-    const flat = flattenTree(buildItemTree(items as unknown as RawItem[]));
+    const flat = flattenTree(buildItemTree(items));
     const recentFinished = flat
       .filter((f) => f.item.status === "closed" && typeof f.item.closed_at === "number")
       .sort((a, b) => (b.item.closed_at ?? 0) - (a.item.closed_at ?? 0))

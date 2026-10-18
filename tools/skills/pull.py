@@ -5,7 +5,7 @@ Reads skills.yaml. For each repo: shallow-clone to
 ../vendor/skills/<name> if missing (or use it as-is when `local: true` —
 fn-skills has no public GitHub home yet), locate listed skills, distill each SKILL.md into terse atoms
 (summary + section highlights), write a markdown pack, and import it via
-`cx add` (per-source sync: idempotent, and posts hub events if
+`gzero add` (per-source sync: idempotent, and posts hub events if
 configured). The store stays in SQLite via the normal path.
 """
 
@@ -199,7 +199,7 @@ def main() -> int:
         vendor_name = entry.get("pack") or entry.get("dest") or repo.split("/")[-1]
         pack = PACKS / f"skills-{vendor_name}.md"
         pack.write_text(f"# {prefix}/{vendor_name}\n" + "\n".join(sections) + "\n")
-        result = subprocess.run(["cx", "add", str(pack)])
+        result = subprocess.run(["gzero", "add", str(pack)])
         if result.returncode != 0:
             failures += 1
 

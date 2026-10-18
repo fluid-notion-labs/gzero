@@ -7,7 +7,7 @@ license = "MIT"
 readme = "README.md"
 
 [[bin]]
-name = "cx"
+name = "gzero"
 path = "src/main.rs"
 
 [lib]
@@ -22,5 +22,5 @@ serde_json = "1"
 ureq = { version = "2", features = ["json"] }
 
 [[bin]]
-name = "cx-mcp"
+name = "gzero-mcp"
 path = "src/bin/mcp.rs"

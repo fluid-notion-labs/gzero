@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "context": {
-      "command": ".pi/dev-cx-mcp"
+      "command": ".pi/dev-gzero-mcp"
     }
   }
 }

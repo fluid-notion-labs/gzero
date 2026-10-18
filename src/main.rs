@@ -1,13 +1,13 @@
-//! `cx` — the gzero CLI.
+//! `gzero` — the gzero CLI.
 //!
-//! `cx`                 print default context (untagged atoms)
-//! `cx #tag ...`        default plus tagged atoms
-//! `cx add file.md ...` import markdown into the store (per-source sync)
-//! `cx harvest [dir]`   import agent-instruction files (AGENTS.md, CLAUDE.md, …)
-//! `cx sources`         per-source assertion counts
-//! `cx rm <needle>`     remove atoms whose text contains needle
-//! `cx rm-source <src>`  remove a whole source (tombstoned)
-//! `cx tags`            tag vocabulary with counts
+//! `gzero`                 print default context (untagged atoms)
+//! `gzero #tag ...`        default plus tagged atoms
+//! `gzero add file.md ...` import markdown into the store (per-source sync)
+//! `gzero harvest [dir]`   import agent-instruction files (AGENTS.md, CLAUDE.md, …)
+//! `gzero sources`         per-source assertion counts
+//! `gzero rm <needle>`     remove atoms whose text contains needle
+//! `gzero rm-source <src>`  remove a whole source (tombstoned)
+//! `gzero tags`            tag vocabulary with counts
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::IsTerminal;
@@ -27,7 +27,7 @@ fn try_post_events(events: &[Event]) {
     }
     if let Some(hub) = Hub::from_env() {
         if let Err(e) = hub.post_events(events) {
-            eprintln!("cx: hub push failed: {e}");
+            eprintln!("gzero: hub push failed: {e}");
         }
     }
 }
@@ -49,45 +49,45 @@ fn matched_atoms(store: &dyn Storage, needle: &str) -> Vec<Atom> {
     }
 }
 
-const USAGE: &str = "cx — gzero
-cx                default context (untagged atoms)
-cx #tag ...       default plus tagged atoms
-cx add file.md    import context markdown (per-source sync; re-run after edits)
-cx harvest [dir]  import agent-instruction files (AGENTS.md, CLAUDE.md, GEMINI.md,
+const USAGE: &str = "gzero
+gzero                default context (untagged atoms)
+gzero #tag ...       default plus tagged atoms
+gzero add file.md    import context markdown (per-source sync; re-run after edits)
+gzero harvest [dir]  import agent-instruction files (AGENTS.md, CLAUDE.md, GEMINI.md,
                   .cursorrules, .windsurfrules, copilot-instructions) as project context
-cx export file    write this machine's snapshot (merge unit)
-cx absorb file... merge other machines' snapshots into the local store
-cx pull           fetch merged snapshot from the hub (CX_HUB_URL) and absorb
-cx push           post this store's atoms + tombstones to the hub as events
-cx sources        per-source assertion counts
-cx rm <needle>    remove matching atoms (records tombstones)
-cx rm-source <s>  remove one whole source (tombstoned; substring must match exactly one)
-cx tags           tag vocabulary with counts
-cx ws list        workflow sections for this project (vision, plan, checklists, ...)
-cx ws show <name>          print one section (checklists render with boxes + count)
-cx ws set <name> [--title T] [--type md|checklist] [--order N]
+gzero export file    write this machine's snapshot (merge unit)
+gzero absorb file... merge other machines' snapshots into the local store
+gzero pull           fetch merged snapshot from the hub (CX_HUB_URL) and absorb
+gzero push           post this store's atoms + tombstones to the hub as events
+gzero sources        per-source assertion counts
+gzero rm <needle>    remove matching atoms (records tombstones)
+gzero rm-source <s>  remove one whole source (tombstoned; substring must match exactly one)
+gzero tags           tag vocabulary with counts
+gzero ws list        workflow sections for this project (vision, plan, checklists, ...)
+gzero ws show <name>          print one section (checklists render with boxes + count)
+gzero ws set <name> [--title T] [--type md|checklist] [--order N]
                  [--body TEXT | --file F]   create or update a section
                  (body also read from stdin when piped; omit to edit metadata only)
-cx ws rm <name>   delete a section
-cx ws scopes      list scopes that have sections
-cx item add \"<title>\"      create a work item [--labels a,b] [--priority N]
+gzero ws rm <name>   delete a section
+gzero ws scopes      list scopes that have sections
+gzero item add \"<title>\"      create a work item [--labels a,b] [--priority N]
                  [--child-of ID] [--blocks ID] [--design TEXT | --design-file F]
                  [--acceptance TEXT]
-cx item list [--json]      all items: id, status, priority, title, blocked
-cx item ready [--json]     the fold: open items with no open blockers, ranked
-cx item pin|unpin <id>     pin = rides in injected context (resolve) until done
-cx item show <id> [--json] full item incl. notes
-cx item edit <id> [--title T] [--priority N] [--assignee A]
+gzero item list [--json]      all items: id, status, priority, title, blocked
+gzero item ready [--json]     the fold: open items with no open blockers, ranked
+gzero item pin|unpin <id>     pin = rides in injected context (resolve) until done
+gzero item show <id> [--json] full item incl. notes
+gzero item edit <id> [--title T] [--priority N] [--assignee A]
                  [--design TEXT | --design-file F] [--status open|in_progress|closed]
-cx item claim <id> / close <id> / reopen <id>
-cx item note <id> \"<text>\" append a note (append-only)
-cx item gate <id> [--met|--unmet] [\"text\"]  set/satisfy the close gate
-cx item label <id> add|rm <label>
-cx item edge <id> add|rm blocks|child-of|discovered-from <target>
-cx item rm <id>   delete an item
-cx watch          stream ws-doc change events (items/sections) as JSON lines
+gzero item claim <id> / close <id> / reopen <id>
+gzero item note <id> \"<text>\" append a note (append-only)
+gzero item gate <id> [--met|--unmet] [\"text\"]  set/satisfy the close gate
+gzero item label <id> add|rm <label>
+gzero item edge <id> add|rm blocks|child-of|discovered-from <target>
+gzero item rm <id>   delete an item
+gzero watch          stream ws-doc change events (items/sections) as JSON lines
                   until the reader hangs up; polls the doc file (3cd4)
-cx sessions       session presence rows (stale marked; S1 inspection)
+gzero sessions       session presence rows (stale marked; S1 inspection)
 env: CX_DB        atom store location (default ~/.pi/agent/context.db)
 env: CX_WS_DB     workflow doc: sections + items (default ~/.pi/agent/context.ws)";
 
@@ -115,7 +115,7 @@ fn main() {
             match gzero::repo_identity() {
                 Some(id) => println!("{id}"),
                 None => {
-                    eprintln!("cx: not in a git repository");
+                    eprintln!("gzero: not in a git repository");
                     exit(1);
                 }
             }
@@ -123,11 +123,11 @@ fn main() {
         "sessions" => {
             // Inspection view for S1 presence: all rows, stale marked.
             let store = open_store();
-            let rows = store.all_sessions().unwrap_or_else(|e| panic!("cx: {e}"));
+            let rows = store.all_sessions().unwrap_or_else(|e| panic!("gzero: {e}"));
             if args.iter().any(|a| a == "--json") {
                 println!(
                     "{}",
-                    serde_json::to_string(&rows).unwrap_or_else(|e| panic!("cx: {e}"))
+                    serde_json::to_string(&rows).unwrap_or_else(|e| panic!("gzero: {e}"))
                 );
                 return;
             }
@@ -160,15 +160,15 @@ fn main() {
         }
         "add" => {
             if args.len() < 2 {
-                eprintln!("usage: cx add file.md ...");
+                eprintln!("usage: gzero add file.md ...");
                 exit(2);
             }
             let mut store = open_store();
             for f in &args[1..] {
-                let text = std::fs::read_to_string(f).unwrap_or_else(|e| panic!("cx: {}: {e}", f));
+                let text = std::fs::read_to_string(f).unwrap_or_else(|e| panic!("gzero: {}: {e}", f));
                 let source = source_path(Path::new(f));
                 let stats = gzero::add_doc(&mut store, &source, &text)
-                    .unwrap_or_else(|e| panic!("cx: {e}"));
+                    .unwrap_or_else(|e| panic!("gzero: {e}"));
                 println!(
                     "{f}: +{} -{} ={} (kept {})",
                     stats.added, stats.removed, stats.kept, stats.kept
@@ -190,15 +190,15 @@ fn main() {
         }
         "pull" => {
             let hub = Hub::from_env().unwrap_or_else(|| {
-                eprintln!("cx pull: set CX_HUB_URL and CX_TOKEN");
+                eprintln!("gzero pull: set CX_HUB_URL and CX_TOKEN");
                 exit(2);
             });
             let mut store = open_store();
             let snap = hub
                 .fetch_snapshot()
-                .unwrap_or_else(|e| panic!("cx pull: {e}"));
+                .unwrap_or_else(|e| panic!("gzero pull: {e}"));
             let stats = gzero::absorb_snapshot(&mut store, "hub", &snap)
-                .unwrap_or_else(|e| panic!("cx: {e}"));
+                .unwrap_or_else(|e| panic!("gzero: {e}"));
             println!(
                 "hub: +{} -{} kept {} ({} tombstones)",
                 stats.added,
@@ -209,13 +209,13 @@ fn main() {
         }
         "push" => {
             let hub = Hub::from_env().unwrap_or_else(|| {
-                eprintln!("cx push: set CX_HUB_URL and CX_TOKEN");
+                eprintln!("gzero push: set CX_HUB_URL and CX_TOKEN");
                 exit(2);
             });
             let store = open_store();
-            let snap = gzero::export_snapshot(&store).unwrap_or_else(|e| panic!("cx: {e}"));
+            let snap = gzero::export_snapshot(&store).unwrap_or_else(|e| panic!("gzero: {e}"));
             hub.post_events(&events_for_snapshot(&snap))
-                .unwrap_or_else(|e| panic!("cx push: {e}"));
+                .unwrap_or_else(|e| panic!("gzero push: {e}"));
             println!(
                 "pushed {} atoms, {} tombstones to hub",
                 snap.atoms.len(),
@@ -224,13 +224,13 @@ fn main() {
         }
         "export" => {
             if args.len() != 2 {
-                eprintln!("usage: cx export <file>");
+                eprintln!("usage: gzero export <file>");
                 exit(2);
             }
             let store = open_store();
-            let snap = gzero::export_snapshot(&store).unwrap_or_else(|e| panic!("cx: {e}"));
-            let bytes = snap.to_json().unwrap_or_else(|e| panic!("cx: {e}"));
-            std::fs::write(&args[1], bytes).unwrap_or_else(|e| panic!("cx: {}: {e}", args[1]));
+            let snap = gzero::export_snapshot(&store).unwrap_or_else(|e| panic!("gzero: {e}"));
+            let bytes = snap.to_json().unwrap_or_else(|e| panic!("gzero: {e}"));
+            std::fs::write(&args[1], bytes).unwrap_or_else(|e| panic!("gzero: {}: {e}", args[1]));
             println!(
                 "exported {} atoms, {} tombstones -> {}",
                 snap.atoms.len(),
@@ -240,17 +240,17 @@ fn main() {
         }
         "absorb" => {
             if args.len() < 2 {
-                eprintln!("usage: cx absorb <file>...");
+                eprintln!("usage: gzero absorb <file>...");
                 exit(2);
             }
             let mut store = open_store();
             for f in &args[1..] {
-                let bytes = std::fs::read(f).unwrap_or_else(|e| panic!("cx: {}: {e}", f));
+                let bytes = std::fs::read(f).unwrap_or_else(|e| panic!("gzero: {}: {e}", f));
                 let snap = gzero::snapshot::Snapshot::from_json(&bytes)
-                    .unwrap_or_else(|e| panic!("cx: {f}: {e}"));
+                    .unwrap_or_else(|e| panic!("gzero: {f}: {e}"));
                 let source = source_path(Path::new(f));
                 let stats = gzero::absorb_snapshot(&mut store, &source, &snap)
-                    .unwrap_or_else(|e| panic!("cx: {e}"));
+                    .unwrap_or_else(|e| panic!("gzero: {e}"));
                 println!(
                     "{f}: +{} -{} kept {} ({} tombstones)",
                     stats.added,
@@ -262,13 +262,13 @@ fn main() {
         }
         "sources" => {
             let store = open_store();
-            for (source, n) in source_counts(&store).unwrap_or_else(|e| panic!("cx: {e}")) {
+            for (source, n) in source_counts(&store).unwrap_or_else(|e| panic!("gzero: {e}")) {
                 println!("{n}\t{source}");
             }
         }
         "rm" => {
             if args.len() < 2 {
-                eprintln!("usage: cx rm <needle>");
+                eprintln!("usage: gzero rm <needle>");
                 exit(2);
             }
             let needle = args[1..].join(" ");
@@ -285,7 +285,7 @@ fn main() {
                             .collect::<Vec<_>>(),
                     );
                 }
-                Err(e) => panic!("cx: {e}"),
+                Err(e) => panic!("gzero: {e}"),
             }
         }
         "harvest" => {
@@ -294,12 +294,12 @@ fn main() {
             let take = flags.iter().any(|f| f.as_str() == "--take");
             let dir = match args[1..].iter().find(|a| !a.starts_with("--")) {
                 Some(d) => PathBuf::from(d),
-                None => std::env::current_dir().unwrap_or_else(|e| panic!("cx: {e}")),
+                None => std::env::current_dir().unwrap_or_else(|e| panic!("gzero: {e}")),
             };
             let mut store = open_store();
             if check || take {
                 let result = gzero::reconcile_harvest(&mut store, &dir, take)
-                    .unwrap_or_else(|e| panic!("cx: harvest: {e}"));
+                    .unwrap_or_else(|e| panic!("gzero: harvest: {e}"));
                 for r in &result.harvested {
                     match &r.stats {
                         None => println!("{}: no bullets — skipped", r.path.display()),
@@ -347,7 +347,7 @@ fn main() {
                 try_post_events(&events);
             } else {
                 let results = gzero::harvest_dir(&mut store, &dir)
-                    .unwrap_or_else(|e| panic!("cx: harvest: {e}"));
+                    .unwrap_or_else(|e| panic!("gzero: harvest: {e}"));
                 if results.is_empty() {
                     println!(
                         "(no instruction files found: {})",
@@ -387,13 +387,13 @@ fn main() {
         }
         "rm-source" => {
             if args.len() < 2 {
-                eprintln!("usage: cx rm-source <source>  (substring; must match one source)");
+                eprintln!("usage: gzero rm-source <source>  (substring; must match one source)");
                 exit(2);
             }
             let needle = args[1..].join(" ");
             let mut store = open_store();
             let sources: Vec<String> = source_counts(&store)
-                .unwrap_or_else(|e| panic!("cx: {e}"))
+                .unwrap_or_else(|e| panic!("gzero: {e}"))
                 .into_iter()
                 .map(|(s, _)| s)
                 .filter(|s| s.contains(&needle))
@@ -404,7 +404,7 @@ fn main() {
                     // drop the rows (sync with nothing = the source asserts nothing).
                     let victims: Vec<Atom> = store
                         .all()
-                        .unwrap_or_else(|e| panic!("cx: {e}"))
+                        .unwrap_or_else(|e| panic!("gzero: {e}"))
                         .into_iter()
                         .filter(|r| r.source == *source)
                         .map(|r| Atom {
@@ -416,10 +416,10 @@ fn main() {
                         .collect();
                     store
                         .tombstone(&victims)
-                        .unwrap_or_else(|e| panic!("cx: {e}"));
+                        .unwrap_or_else(|e| panic!("gzero: {e}"));
                     let stats = store
                         .sync_source(source, &[])
-                        .unwrap_or_else(|e| panic!("cx: {e}"));
+                        .unwrap_or_else(|e| panic!("gzero: {e}"));
                     println!("{source}: removed {}", stats.removed);
                     try_post_events(
                         &victims
@@ -429,11 +429,11 @@ fn main() {
                     );
                 }
                 [] => {
-                    eprintln!("cx: no source matches {needle:?}");
+                    eprintln!("gzero: no source matches {needle:?}");
                     exit(1);
                 }
                 many => {
-                    eprintln!("cx: {needle:?} is ambiguous:");
+                    eprintln!("gzero: {needle:?} is ambiguous:");
                     for s in many {
                         eprintln!("  {s}");
                     }
@@ -443,7 +443,7 @@ fn main() {
         }
         "tags" => {
             let store = open_store();
-            for (tag, n) in tag_counts(&store).unwrap_or_else(|e| panic!("cx: {e}")) {
+            for (tag, n) in tag_counts(&store).unwrap_or_else(|e| panic!("gzero: {e}")) {
                 println!("#{tag} {n}");
             }
         }
@@ -451,8 +451,8 @@ fn main() {
         "item" => item_command(&args[1..]),
         "claim" | "park" | "release" => guard_command(&args),
         "recommend" => {
-            eprintln!("cx: recommend is gone — packs were dissolved (tagged atoms replace them; see plan.md M4)");
-            eprintln!("pull build/workflow conventions via: cx '#rust' / cx '#npm'");
+            eprintln!("gzero: recommend is gone — packs were dissolved (tagged atoms replace them; see plan.md M4)");
+            eprintln!("pull build/workflow conventions via: gzero '#rust' / gzero '#npm'");
             exit(2);
         }
         other => {
@@ -463,7 +463,7 @@ fn main() {
                         tags.insert(t.to_ascii_lowercase());
                     }
                     _ => {
-                        eprintln!("cx: unknown command or bad tag: {other}");
+                        eprintln!("gzero: unknown command or bad tag: {other}");
                         eprintln!("{USAGE}");
                         exit(2);
                     }
@@ -479,7 +479,7 @@ fn show(tags: &BTreeSet<String>) {
     let refs: Vec<&str> = tags.iter().map(String::as_str).collect();
     let project = gzero::repo_identity();
     let items = gzero::resolve_tiers(&store, project.as_deref(), &refs)
-        .unwrap_or_else(|e| panic!("cx: {e}"));
+        .unwrap_or_else(|e| panic!("gzero: {e}"));
     if items.is_empty() {
         println!("(no matching context)");
         return;
@@ -497,7 +497,7 @@ fn show(tags: &BTreeSet<String>) {
 
 fn open_store() -> SqliteStore {
     SqliteStore::open(store_path().to_str().unwrap_or("context.db"))
-        .unwrap_or_else(|e| panic!("cx: open store: {e}"))
+        .unwrap_or_else(|e| panic!("gzero: open store: {e}"))
 }
 
 fn store_path() -> PathBuf {
@@ -539,7 +539,7 @@ fn split_args_bools(
                         i += 1;
                     }
                     None => {
-                        eprintln!("cx: --{f} needs a value ({cmd})");
+                        eprintln!("gzero: --{f} needs a value ({cmd})");
                         exit(2);
                     }
                 }
@@ -563,7 +563,7 @@ fn ws_command(args: &[String]) {
             let store = open_ws();
             let scopes = store
                 .section_scopes()
-                .unwrap_or_else(|e| panic!("cx ws: {e}"));
+                .unwrap_or_else(|e| panic!("gzero ws: {e}"));
             for s in scopes {
                 println!("{s}");
             }
@@ -573,7 +573,7 @@ fn ws_command(args: &[String]) {
             let store = open_ws();
             let items = store
                 .section_list(&scope)
-                .unwrap_or_else(|e| panic!("cx ws: {e}"));
+                .unwrap_or_else(|e| panic!("gzero ws: {e}"));
             if json {
                 let arr: Vec<_> = items
                     .iter()
@@ -613,9 +613,9 @@ fn ws_command(args: &[String]) {
             let store = open_ws();
             let Some(s) = store
                 .section_get(&scope, &name)
-                .unwrap_or_else(|e| panic!("cx ws: {e}"))
+                .unwrap_or_else(|e| panic!("gzero ws: {e}"))
             else {
-                eprintln!("cx ws: no section {name:?} in {scope:?}");
+                eprintln!("gzero ws: no section {name:?} in {scope:?}");
                 exit(1);
             };
             if json {
@@ -658,25 +658,25 @@ fn ws_command(args: &[String]) {
             let scope = ws_scope(pos.get(2));
             let kind = match flags.get("type") {
                 Some(t) => SectionKind::parse(t).unwrap_or_else(|| {
-                    eprintln!("cx ws: --type must be md or checklist");
+                    eprintln!("gzero ws: --type must be md or checklist");
                     exit(2);
                 }),
                 None => {
                     let store = open_ws();
                     store
                         .section_get(&scope, &name)
-                        .unwrap_or_else(|e| panic!("cx ws: {e}"))
+                        .unwrap_or_else(|e| panic!("gzero ws: {e}"))
                         .map_or(SectionKind::Md, |s| s.kind)
                 }
             };
             let mut store = open_ws();
             let existing = store
                 .section_get(&scope, &name)
-                .unwrap_or_else(|e| panic!("cx ws: {e}"));
+                .unwrap_or_else(|e| panic!("gzero ws: {e}"));
             let body = if let Some(b) = flags.get("body") {
                 b.clone()
             } else if let Some(f) = flags.get("file") {
-                std::fs::read_to_string(f).unwrap_or_else(|e| panic!("cx ws: {}: {e}", f))
+                std::fs::read_to_string(f).unwrap_or_else(|e| panic!("gzero ws: {}: {e}", f))
             } else if !std::io::stdin().is_terminal() {
                 let mut buf = String::new();
                 use std::io::Read;
@@ -691,7 +691,7 @@ fn ws_command(args: &[String]) {
             };
             let order = match flags.get("order") {
                 Some(o) => o.parse::<i64>().unwrap_or_else(|e| {
-                    eprintln!("cx ws: --order must be a number: {e}");
+                    eprintln!("gzero ws: --order must be a number: {e}");
                     exit(2);
                 }),
                 None => existing.as_ref().map_or(0, |s| s.order),
@@ -710,7 +710,7 @@ fn ws_command(args: &[String]) {
             };
             let replaced = store
                 .section_put(&sec)
-                .unwrap_or_else(|e| panic!("cx ws: {e}"));
+                .unwrap_or_else(|e| panic!("gzero ws: {e}"));
             if json {
                 println!("{}", serde_json::to_string_pretty(&ws_json(&sec)).unwrap());
             } else {
@@ -727,16 +727,16 @@ fn ws_command(args: &[String]) {
             let mut store = open_ws();
             let gone = store
                 .section_delete(&scope, &name)
-                .unwrap_or_else(|e| panic!("cx ws: {e}"));
+                .unwrap_or_else(|e| panic!("gzero ws: {e}"));
             if gone {
                 println!("removed {scope}/{name}");
             } else {
-                eprintln!("cx ws: no section {name:?} in {scope:?}");
+                eprintln!("gzero ws: no section {name:?} in {scope:?}");
                 exit(1);
             }
         }
         other => {
-            eprintln!("cx ws: unknown subcommand {other:?} — try list, show, set, rm, scopes");
+            eprintln!("gzero ws: unknown subcommand {other:?} — try list, show, set, rm, scopes");
             exit(2);
         }
     }
@@ -744,7 +744,7 @@ fn ws_command(args: &[String]) {
 
 fn ws_arg(pos: &[String], i: usize, usage: &str) -> String {
     pos.get(i).cloned().unwrap_or_else(|| {
-        eprintln!("cx ws: usage: {usage}");
+        eprintln!("gzero ws: usage: {usage}");
         exit(2);
     })
 }
@@ -756,13 +756,13 @@ fn ws_scope(arg: Option<&String>) -> String {
         .unwrap_or_else(|| "global".to_string())
 }
 
-/// `cx claim|park|release [note]` — the work guard: one pinned claim
+/// `gzero claim|park|release [note]` — the work guard: one pinned claim
 /// item per scope. Claim = actively working (every session sees it via
 /// resolve); park = suspend but keep the guard (may be stale — verify
 /// context freshness before obeying); release = done or verified stale.
 fn guard_command(args: &[String]) {
     if args.is_empty() {
-        eprintln!("cx: usage: cx claim|park|release [note]");
+        eprintln!("gzero: usage: gzero claim|park|release [note]");
         exit(2);
     }
     let sub = args[0].as_str();
@@ -777,7 +777,7 @@ fn guard_command(args: &[String]) {
     match result {
         Ok(it) => println!("{} {} [{}] {}", sub, it.id, it.status.as_str(), it.title),
         Err(e) => {
-            eprintln!("cx {sub}: {e}");
+            eprintln!("gzero {sub}: {e}");
             exit(1);
         }
     }
@@ -792,10 +792,10 @@ fn ws_json(s: &Section) -> serde_json::Value {
 
 fn open_ws() -> AutomergeStore {
     let path = gzero::sections::default_ws_path();
-    AutomergeStore::open(Some(&path)).unwrap_or_else(|e| panic!("cx: open {}: {e}", path.display()))
+    AutomergeStore::open(Some(&path)).unwrap_or_else(|e| panic!("gzero: open {}: {e}", path.display()))
 }
 
-/// `cx watch` — stream semantic change events (items/sections) as JSON
+/// `gzero watch` — stream semantic change events (items/sections) as JSON
 /// lines. Detects external writes by mtime, merges them into a live
 /// doc, and drains the resulting patches; events print one per line.
 fn watch_loop() {
@@ -804,7 +804,7 @@ fn watch_loop() {
     let _path = gzero::sections::default_ws_path();
     let mut store = open_ws();
     let Some(doc_path) = store.path().map(|p| p.to_path_buf()) else {
-        eprintln!("cx: watch needs a doc file (CX_WS_DB)");
+        eprintln!("gzero: watch needs a doc file (CX_WS_DB)");
         exit(1);
     };
     // Baseline: consume the store's initial state as events, discard.
@@ -821,7 +821,7 @@ fn watch_loop() {
         }
         last = m;
         if let Err(e) = store.reload_merge(&doc_path) {
-            eprintln!("cx: watch: {e}");
+            eprintln!("gzero: watch: {e}");
             continue;
         }
         for ev in ChangeFeed::drain_events(&mut store) {
@@ -852,12 +852,12 @@ fn item_command(args: &[String]) {
 
     let id_of = |pos: &[String], i: usize, usage: &str| -> String {
         let arg = pos.get(i).cloned().unwrap_or_else(|| {
-            eprintln!("cx item: usage: {usage}");
+            eprintln!("gzero item: usage: {usage}");
             exit(2);
         });
         store
             .item_resolve(&scope, &arg)
-            .unwrap_or_else(|e| die("cx item", e))
+            .unwrap_or_else(|e| die("gzero item", e))
     };
 
     match sub {
@@ -865,7 +865,7 @@ fn item_command(args: &[String]) {
         "add" => {
             let title = pos[1..].join(" ");
             if title.trim().is_empty() {
-                eprintln!("cx item: usage: item add \"<title>\" [--labels a,b] [--priority N] ...");
+                eprintln!("gzero item: usage: item add \"<title>\" [--labels a,b] [--priority N] ...");
                 exit(2);
             }
             let n = NewItem {
@@ -874,7 +874,7 @@ fn item_command(args: &[String]) {
                     .get("priority")
                     .map(|p| {
                         p.parse::<i64>()
-                            .unwrap_or_else(|e| die("cx item: --priority", e.into()))
+                            .unwrap_or_else(|e| die("gzero item: --priority", e.into()))
                     })
                     .unwrap_or(0),
                 assignee: flags.get("assignee").cloned().unwrap_or_default(),
@@ -888,7 +888,7 @@ fn item_command(args: &[String]) {
             };
             let it = store
                 .item_add(&scope, n)
-                .unwrap_or_else(|e| die("cx item", e));
+                .unwrap_or_else(|e| die("gzero item", e));
             if json {
                 println!("{}", serde_json::to_string_pretty(&item_json(&it)).unwrap());
             } else {
@@ -900,7 +900,7 @@ fn item_command(args: &[String]) {
                 Some(
                     store
                         .item_rank(&scope)
-                        .unwrap_or_else(|e| die("cx item", e)),
+                        .unwrap_or_else(|e| die("gzero item", e)),
                 )
             } else {
                 None
@@ -915,7 +915,7 @@ fn item_command(args: &[String]) {
             } else {
                 let mut items = store
                     .item_list(&scope)
-                    .unwrap_or_else(|e| die("cx item", e));
+                    .unwrap_or_else(|e| die("gzero item", e));
                 items.sort_by(|a, b| {
                     let rank = |s: Status| match s {
                         Status::Closed => 1,
@@ -937,7 +937,7 @@ fn item_command(args: &[String]) {
             if sub == "list" {
                 let all = store
                     .item_list(&scope)
-                    .unwrap_or_else(|e| die("cx item", e));
+                    .unwrap_or_else(|e| die("gzero item", e));
                 let pinned = store.item_pinned_ids(&scope).unwrap_or_default();
                 if json {
                     let arr: Vec<_> = items
@@ -1008,9 +1008,9 @@ fn item_command(args: &[String]) {
             let id = id_of(&pos, 1, "item show <id>");
             let it = store
                 .item_get(&scope, &id)
-                .unwrap_or_else(|e| die("cx item", e));
+                .unwrap_or_else(|e| die("gzero item", e));
             match it {
-                None => die("cx item", format!("no item {id} in {scope}").into()),
+                None => die("gzero item", format!("no item {id} in {scope}").into()),
                 Some(it) => {
                     if json {
                         println!("{}", serde_json::to_string_pretty(&item_json(&it)).unwrap());
@@ -1060,7 +1060,7 @@ fn item_command(args: &[String]) {
             let status = match flags.get("status").map(String::as_str) {
                 Some(s) => Some(Status::parse(s).unwrap_or_else(|| {
                     die(
-                        "cx item: --status",
+                        "gzero item: --status",
                         "must be open|in_progress|closed".into(),
                     )
                 })),
@@ -1070,7 +1070,7 @@ fn item_command(args: &[String]) {
                 title: flags.get("title").cloned(),
                 priority: flags.get("priority").map(|p| {
                     p.parse::<i64>()
-                        .unwrap_or_else(|e| die("cx item: --priority", e.into()))
+                        .unwrap_or_else(|e| die("gzero item: --priority", e.into()))
                 }),
                 assignee: flags.get("assignee").cloned(),
                 design: {
@@ -1084,7 +1084,7 @@ fn item_command(args: &[String]) {
             };
             let it = store
                 .item_edit(&scope, &id, edit)
-                .unwrap_or_else(|e| die("cx item", e));
+                .unwrap_or_else(|e| die("gzero item", e));
             println!("edited {} [{}] -> {}", scope, it.id, it.status.as_str());
         }
         "claim" | "close" | "reopen" => {
@@ -1094,14 +1094,14 @@ fn item_command(args: &[String]) {
                 "close" => store.item_close(&scope, &id),
                 _ => store.item_reopen(&scope, &id),
             }
-            .unwrap_or_else(|e| die("cx item", e));
+            .unwrap_or_else(|e| die("gzero item", e));
             println!("{} {} -> {}", scope, it.id, it.status.as_str());
         }
         "move" => {
             let id = id_of(
                 &pos,
                 1,
-                "cx item move <id> top|bottom|before|after [sibling]",
+                "gzero item move <id> top|bottom|before|after [sibling]",
             );
             let rel = pos.get(2).map(|s| s.to_lowercase()).unwrap_or_default();
             let target = match rel.as_str() {
@@ -1121,11 +1121,11 @@ fn item_command(args: &[String]) {
             };
             let it = store
                 .item_move(&scope, &id, target)
-                .unwrap_or_else(|e| die("cx item", e));
+                .unwrap_or_else(|e| die("gzero item", e));
             println!("moved {} -> queue position {}", it.id, it.order);
         }
         "gate" => {
-            let id = id_of(&pos, 1, "cx item gate <id> [--met|--unmet] [\"text\"]");
+            let id = id_of(&pos, 1, "gzero item gate <id> [--met|--unmet] [\"text\"]");
             let met = if flags.contains_key("met") {
                 Some(true)
             } else if flags.contains_key("unmet") {
@@ -1135,12 +1135,12 @@ fn item_command(args: &[String]) {
             };
             let text = pos.get(2).map(String::as_str);
             if met.is_none() && text.is_none() {
-                eprintln!("cx item: usage: cx item gate <id> [--met|--unmet] [\"text\"]");
+                eprintln!("gzero item: usage: gzero item gate <id> [--met|--unmet] [\"text\"]");
                 exit(2);
             }
             let it = store
                 .item_gate(&scope, &id, text, met)
-                .unwrap_or_else(|e| die("cx item", e));
+                .unwrap_or_else(|e| die("gzero item", e));
             println!(
                 "{}: gate={} met={}",
                 it.id,
@@ -1153,10 +1153,10 @@ fn item_command(args: &[String]) {
             );
         }
         "pin" | "unpin" => {
-            let id = id_of(&pos, 1, "cx item pin|unpin <id>");
+            let id = id_of(&pos, 1, "gzero item pin|unpin <id>");
             let it = store
                 .item_pin(&scope, &id, sub == "pin")
-                .unwrap_or_else(|e| die("cx item", e));
+                .unwrap_or_else(|e| die("gzero item", e));
             if sub == "pin" {
                 println!(
                     "pinned {} — rides in injected context until unpinned or closed",
@@ -1173,12 +1173,12 @@ fn item_command(args: &[String]) {
                 .cloned()
                 .unwrap_or_else(|| pos[2..].join(" "));
             if text.trim().is_empty() {
-                eprintln!("cx item: note text is required");
+                eprintln!("gzero item: note text is required");
                 exit(2);
             }
             let nid = store
                 .item_note(&scope, &id, &text)
-                .unwrap_or_else(|e| die("cx item", e));
+                .unwrap_or_else(|e| die("gzero item", e));
             println!("noted {scope}/{id} [{nid}]");
         }
         "label" => {
@@ -1188,11 +1188,11 @@ fn item_command(args: &[String]) {
             let add = match op {
                 "add" => true,
                 "rm" => false,
-                _ => die("cx item", "usage: item label <id> add|rm <label>".into()),
+                _ => die("gzero item", "usage: item label <id> add|rm <label>".into()),
             };
             store
                 .item_label(&scope, &id, &label, add)
-                .unwrap_or_else(|e| die("cx item", e));
+                .unwrap_or_else(|e| die("gzero item", e));
             println!(
                 "{} {} {} {label}",
                 if add { "labeled" } else { "unlabeled" },
@@ -1212,7 +1212,7 @@ fn item_command(args: &[String]) {
                 Some("child-of") => EdgeKind::ChildOf,
                 Some("discovered-from") => EdgeKind::DiscoveredFrom,
                 _ => die(
-                    "cx item",
+                    "gzero item",
                     "edge kind must be blocks|child-of|discovered-from".into(),
                 ),
             };
@@ -1220,17 +1220,17 @@ fn item_command(args: &[String]) {
                 "add" => true,
                 "rm" => false,
                 _ => die(
-                    "cx item",
+                    "gzero item",
                     "usage: item edge <id> add|rm <kind> <target>".into(),
                 ),
             };
             let target = pos.get(4).cloned().unwrap_or_default();
             let target = store
                 .item_resolve(&scope, &target)
-                .unwrap_or_else(|e| die("cx item", e));
+                .unwrap_or_else(|e| die("gzero item", e));
             store
                 .item_edge(&scope, &id, kind, &target, add)
-                .unwrap_or_else(|e| die("cx item", e));
+                .unwrap_or_else(|e| die("gzero item", e));
             println!(
                 "{} {} {} {} {}",
                 if add { "linked" } else { "unlinked" },
@@ -1244,15 +1244,15 @@ fn item_command(args: &[String]) {
             let id = id_of(&pos, 1, "item rm <id>");
             if store
                 .item_delete(&scope, &id)
-                .unwrap_or_else(|e| die("cx item", e))
+                .unwrap_or_else(|e| die("gzero item", e))
             {
                 println!("deleted {scope}/{id}");
             } else {
-                die("cx item", format!("no item {id} in {scope}").into());
+                die("gzero item", format!("no item {id} in {scope}").into());
             }
         }
         other => {
-            eprintln!("cx item: unknown subcommand {other:?} — see {USAGE}");
+            eprintln!("gzero item: unknown subcommand {other:?} — see {USAGE}");
             exit(2);
         }
     }
@@ -1283,13 +1283,13 @@ fn flag_text(flags: &BTreeMap<String, String>, key: &str, file_key: &str) -> Str
         return t.clone();
     }
     if let Some(f) = flags.get(file_key) {
-        return std::fs::read_to_string(f).unwrap_or_else(|e| die("cx", e.into()));
+        return std::fs::read_to_string(f).unwrap_or_else(|e| die("gzero", e.into()));
     }
     String::new()
 }
 
 fn usage_move() -> ! {
-    eprintln!("cx item move <id> top|bottom|before|after <sibling>");
+    eprintln!("gzero item move <id> top|bottom|before|after <sibling>");
     exit(2);
 }
 

@@ -12,10 +12,10 @@ cd gzero           # main has src/, research/, gzero-plugin/
 
 ## 2. Build & install binaries
 ```sh
-cargo build --release          # bins: cx, cx-mcp
-cargo install --path .         # → ~/.cargo/bin/cx + cx-mcp
+cargo build --release          # bins: gzero, gzero-mcp
+cargo install --path .         # → ~/.cargo/bin/gzero + gzero-mcp
 ```
-Verify: `cx tags | head`
+Verify: `gzero tags | head`
 
 ## 3. Plugin
 ```sh
@@ -31,7 +31,7 @@ ln -s ~/projects/explorations/nursery/gzero/gzero-plugin \
 
 ## 4. Context (the store)
 ```sh
-cx absorb sync/atoms.json            # atoms + tombstones (merge, idempotent)
+gzero absorb sync/atoms.json            # atoms + tombstones (merge, idempotent)
 cp sync/context.ws ~/.pi/agent/context.ws   # workflow doc (sections+items), fresh machine only
 ```
 If ~/.pi/agent/context.ws already exists on this machine, do NOT cp over it —
@@ -39,9 +39,9 @@ ask, then reconcile by hand.
 
 ## 5. Verify
 ```sh
-cx                    # untagged atoms inject below; expect the refresh-test atom
-cx ws list            # vision/architecture/plan/plan-todo(13/31)/now/decisions
-cx item ready
+gzero                # untagged atoms inject below; expect the refresh-test atom
+gzero ws list            # vision/architecture/plan/plan-todo(13/31)/now/decisions
+gzero item ready
 ```
 Restart pi; the plugin adds the workflow pane (right side), Ctrl+W sections
 viewer, `/workflow` command. Typecheck plugin after edits:

@@ -42,7 +42,7 @@ export interface PanelNode {
   insertText?: string;
 }
 
-/** A single edit to apply to a work item (cx item edit / item note). */
+/** A single edit to apply to a work item (item_edit / item_note). */
 export interface ItemPatch {
   status?: string;
   priority?: number;
@@ -50,11 +50,11 @@ export interface ItemPatch {
   note?: string;
 }
 
-/** How the panel mutates work items; wired to the cx CLI by the caller. */
+/** How the panel mutates work items; wired to MCP tools by the caller. */
 export interface PanelActions {
   editItem(id: string, patch: ItemPatch): Promise<void>;
   reloadItems(): Promise<RawItem[]>;
-  /** Reorder in the queue: `id` moves before/after `sibling` (cx item move). */
+  /** Reorder in the queue: `id` moves before/after `sibling` (item_move). */
   moveItem(id: string, rel: "before" | "after", sibling: string): Promise<void>;
 }
 
@@ -479,8 +479,8 @@ export function headingTree(md: string): PanelNode[] {
 }
 
 /** Documentation sections → PanelNodes as a nested tree. Dotted
- * section names nest (cx.doc.tech-dept.cas-document-system becomes
- * cx.doc → tech-dept → cas-document-system); every segment is a level,
+ * section names nest (gzero.doc.tech-dept.cas-document-system becomes
+ * gzero.doc → tech-dept → cas-document-system); every segment is a level,
  * labels show the leaf segment, ids keep the full dotted name. A level
  * that is itself a section renders its heading tree (or a single body
  * leaf) alongside its children; bare group levels just expand. */

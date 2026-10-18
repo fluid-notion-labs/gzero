@@ -1,6 +1,6 @@
 // gzero pi plugin — connects the context system to pi sessions.
 //
-// Speaks to gzero only via MCP: registers cx-mcp for the model's
+// Speaks to gzero only via MCP: registers gzero-mcp for the model's
 // tools, injects the resolved default context (global + project tiers)
 // into the system prompt on every turn, and adds /context commands.
 //
@@ -47,7 +47,7 @@ import {
   type PromptEntryLike,
   type RouterSnapshotLike,
 } from "./gzero-panel.ts";
-import { ItemsPaneController, run as runProc } from "./items-pane.ts";
+import { ItemsPaneController, setItemsProvider } from "./items-pane.ts";
 import { messageText, registerReview, type ReviewDeps } from "./review.ts";
 import routerSetup from "./router/index.ts";
 import { loadHistory, type PromptEntry } from "./history/history.ts";
@@ -70,7 +70,7 @@ import path from "node:path";
 const REPO = "https://github.com/fluid-notion-labs/gzero";
 const INSTALL_CMD = `cargo install --git ${REPO}`;
 
-/** Tools every cx-mcp must expose; a stale install warns instead of failing. */
+/** Tools every gzero-mcp must expose; a stale install warns instead of failing. */
 const EXPECTED_TOOLS = [
   "resolve",
   "search",
@@ -96,7 +96,7 @@ function which(bin: string): Promise<string | null> {
 }
 
 /**
- * One MCP request over a fresh stdio session: spawn cx-mcp, initialize,
+ * One MCP request over a fresh stdio session: spawn gzero-mcp, initialize,
  * send one request, resolve with its result. Needed because event and
  * command handlers get no executeTool — a session of our own is the only
  * way to speak MCP. Same server, same protocol, no logic duplication.
@@ -112,7 +112,7 @@ function mcpRequest(cxMcp: string, method: string, params: unknown, timeoutMs = 
       fn();
     };
     const timer = setTimeout(
-      () => finish(() => reject(new Error(`cx-mcp ${method}: timed out`))),
+      () => finish(() => reject(new Error(`gzero-mcp ${method}: timed out`))),
       timeoutMs,
     );
     child.on("error", (e) => finish(() => reject(e)));
@@ -135,7 +135,7 @@ function mcpRequest(cxMcp: string, method: string, params: unknown, timeoutMs = 
           const m = typeof msg.error === "object" && msg.error !== null && "message" in msg.error
             ? String((msg.error as { message: unknown }).message)
             : JSON.stringify(msg.error);
-          finish(() => reject(new Error(`cx-mcp ${method}: ${m}`)));
+          finish(() => reject(new Error(`gzero-mcp ${method}: ${m}`)));
           return;
         }
         finish(() => resolve(msg.result));
@@ -180,7 +180,7 @@ const PREAMBLE = `The context below is persistent memory: carried across session
  * into the db. -shm is deliberately excluded — readers update its wal-index,
  * so its mtime is not a write signal. This is the "store changed on disk"
  * signal that lets the injected context pick up any writer — the model's
- * MCP add/remove, /context add, cx in a shell, another session, hub sync —
+ * MCP add/remove, /context add, gzero in a shell, another session, hub sync —
  * without needing hooks per writer. 0 when nothing exists yet.
  */
 async function storeStamp(): Promise<number> {
@@ -264,17 +264,39 @@ import {
 
 // ---- workspace sections for the context panel's section tabs ----
 
-/** Fetch JSON from the cx CLI; throws with stderr's first line. */
-async function cxJson(args: string[]): Promise<unknown> {
-  const res = await runProc("cx", args);
-  if (res.code !== 0) {
-    throw new Error(res.stderr.trim().split("\n")[0] || `cx ${args[0]} failed`);
+let resolvedMcpPath: string | null | undefined;
+
+/** The gzero-mcp binary for the plugin's own calls: prefer the repo's
+ * .pi/dev-gzero-mcp shim (matching the mcp.json override pi applies for
+ * the model's tools), else PATH. Resolved once and cached. */
+async function findGzeroMcp(): Promise<string | null> {
+  const dev = path.join(process.cwd(), ".pi", "dev-gzero-mcp");
+  try {
+    if (existsSync(dev) && statSync(dev).mode & 0o111) return dev;
+  } catch {
+    // unreadable/odd entry — fall through to PATH
   }
-  return JSON.parse(res.stdout);
+  if (resolvedMcpPath === undefined) resolvedMcpPath = await which("gzero-mcp");
+  return resolvedMcpPath;
 }
 
+/** Fetch JSON from an MCP tool call; throws on error or unparseable output. */
+async function mcpJson(tool: string, args: Record<string, unknown>): Promise<unknown> {
+  const bin = await findGzeroMcp();
+  if (!bin) throw new Error("gzero-mcp not found");
+  const out = await mcpCall(bin, tool, args);
+  return JSON.parse(out);
+}
+
+/** The scope's items as JSON objects, via MCP item_list (json mode).
+ * Also the tasks pane's data provider. */
+async function fetchItems(): Promise<RawItem[]> {
+  return (await mcpJson("item_list", { json: true })) as RawItem[];
+}
+setItemsProvider(fetchItems);
+
 async function loadDocSections(): Promise<TierSection[]> {
-  const list = (await cxJson(["ws", "list", "--json"])) as {
+  const list = (await mcpJson("ws_list", { json: true })) as {
     name: string;
     kind: string;
     title: string;
@@ -285,7 +307,7 @@ async function loadDocSections(): Promise<TierSection[]> {
   const shows = await Promise.allSettled(
     list.map(
       (s) =>
-        cxJson(["ws", "show", s.name, "--json"]) as Promise<{
+        mcpJson("ws_get", { name: s.name, json: true }) as Promise<{
           title?: string;
           body?: string;
         }>,
@@ -352,28 +374,25 @@ function gzeroTree(
   ];
 }
 
-/** The panel's edit path: cx item edit for patches, cx item note for
- * note appends (separate command). */
+/** The panel's edit path: item_edit for patches, item_note for note
+ * appends (separate call), item_move for queue reordering. */
 function panelActions(): PanelActions {
   const cxEdit = async (id: string, patch: ItemPatch): Promise<void> => {
     if (patch.note) {
-      const res = await runProc("cx", ["item", "note", id, patch.note], 10000);
-      if (res.code !== 0) throw new Error(res.stderr.trim().split("\n")[0] || "cx item note failed");
+      await mcpJson("item_note", { id, text: patch.note });
       return;
     }
-    const args = ["item", "edit", id];
-    if (patch.status) args.push("--status", patch.status);
-    if (patch.priority !== undefined) args.push("--priority", String(patch.priority));
-    if (patch.title) args.push("--title", patch.title);
-    const res = await runProc("cx", args, 10000);
-    if (res.code !== 0) throw new Error(res.stderr.trim().split("\n")[0] || "cx item edit failed");
+    const args: Record<string, unknown> = { id };
+    if (patch.status) args.status = patch.status;
+    if (patch.priority !== undefined) args.priority = patch.priority;
+    if (patch.title) args.title = patch.title;
+    await mcpJson("item_edit", args);
   };
   return {
     editItem: cxEdit,
-    reloadItems: async () => (await cxJson(["item", "list", "--json"])) as RawItem[],
+    reloadItems: fetchItems,
     moveItem: async (id, rel, sibling) => {
-      const res = await runProc("cx", ["item", "move", id, rel, sibling], 10000);
-      if (res.code !== 0) throw new Error(res.stderr.trim().split("\n")[0] || "cx item move failed");
+      await mcpJson("item_move", sibling ? { id, rel, sibling } : { id, rel });
     },
   };
 }
@@ -399,7 +418,7 @@ function panelSkills(): PanelSkills {
  * unavailable — presence must never block the panel. */
 async function presenceLabel(): Promise<string> {
   try {
-    const rows = (await cxJson(["sessions", "--json"])) as Array<{
+    const rows = (await mcpJson("sessions", {})) as Array<{
       session_id: string;
       scope: string;
       workspace: string;
@@ -425,13 +444,12 @@ async function presenceLabel(): Promise<string> {
 }
 
 /** Repo identity, printed by the Rust side so normalization can never
- * drift between here and cx-mcp; null outside a repo (presence is
+ * drift between here and gzero-mcp; null outside a repo (presence is
  * scoped, so no scope means no label). */
 async function projectScope(): Promise<string | null> {
   try {
-    const res = await runProc("cx", ["scope"]);
-    if (res.code !== 0) return null;
-    return res.stdout.trim() || null;
+    const id = (await mcpJson("scope", {})) as string;
+    return typeof id === "string" && id.trim() ? id.trim() : null;
   } catch {
     return null;
   }
@@ -465,7 +483,7 @@ async function openGzeroPanel(
   }
   const sessionFile = (ctx as ExtensionCommandContext).sessionManager?.getSessionFile() ?? null;
   const [itemsRes, tiersRes, skillsRes, docsRes, presenceRes, historyRes] = await Promise.allSettled([
-    cxJson(["item", "list", "--json"]) as Promise<RawItem[]>,
+    fetchItems(),
     loadTiers(),
     ensureSkills(),
     loadDocSections(),
@@ -554,12 +572,11 @@ export default function (pi: ExtensionAPI) {
 
   const itemsPane = new ItemsPaneController();
 
-  // Presence identity: exported for every cx-mcp spawn (the model's MCP
+  // Presence identity: exported for every gzero-mcp spawn (the model's MCP
   // server and the plugin's own internal calls) via process.env.
   const { sessionId, machineId } = sessionIdentity();
   process.env.CX_SESSION_ID = sessionId;
   process.env.CX_MACHINE_ID = machineId;
-  let cxMcpPath: string | null | undefined;
   /** Resolved default context for this session; injected every turn. */
   let resolvedBody: string | null = null;
   /** Newest store-file mtime when resolvedBody was produced (see storeStamp). */
@@ -615,24 +632,9 @@ export default function (pi: ExtensionAPI) {
     }
   };
 
-  const findCxMcp = async (): Promise<string | null> => {
-    // Repo-level dev override: a project can ship .pi/dev-cx-mcp (see
-    // .pi/mcp.json in the gzero repo) and dev sessions then use the
-    // locally built server for the plugin's own calls too, matching the
-    // mcp.json override pi applies for the model's tools.
-    const dev = path.join(process.cwd(), ".pi", "dev-cx-mcp");
-    try {
-      if (existsSync(dev) && statSync(dev).mode & 0o111) return dev;
-    } catch {
-      // unreadable/odd entry — fall through to PATH
-    }
-    if (cxMcpPath === undefined) cxMcpPath = await which("cx-mcp");
-    return cxMcpPath;
-  };
-
   /** Resolve once and cache; returns null when nothing usable came back.
    * Stamps the cache after resolving so our own resolve's store writes
-   * (a fresh cx-mcp pulls from the hub at startup) don't count as changes. */
+   * (a fresh gzero-mcp pulls from the hub at startup) don't count as changes. */
   const resolveContext = async (cxMcp: string): Promise<string | null> => {
     const text = await mcpCall(cxMcp, "resolve", {});
     const body = text.trim();
@@ -658,7 +660,7 @@ export default function (pi: ExtensionAPI) {
   // server when the session starts. A user mcp.json entry named "context"
   // wins — that is the escape hatch for custom flags.
   pi.registerMcpServer("context", {
-    command: "cx-mcp",
+    command: "gzero-mcp",
     env: Object.fromEntries(
       ["CX_DB", "CX_HUB_URL", "CX_TOKEN"]
         .map((k) => [k, process.env[k]])
@@ -693,10 +695,10 @@ export default function (pi: ExtensionAPI) {
           }),
       );
     }
-    const cxMcp = await findCxMcp();
+    const cxMcp = await findGzeroMcp();
     if (!cxMcp) {
       if (!ctx.hasUI) {
-        console.error(`gzero pi plugin: cx-mcp not found; install with: ${INSTALL_CMD}`);
+        console.error(`gzero pi plugin: gzero-mcp not found; install with: ${INSTALL_CMD}`);
         return;
       }
       if (!(await which("cargo"))) {
@@ -708,7 +710,7 @@ export default function (pi: ExtensionAPI) {
       }
       const ok = await ctx.ui.confirm(
         "gzero is not installed",
-        `Install it now? Runs: ${INSTALL_CMD} (provides cx and cx-mcp).`,
+        `Install it now? Runs: ${INSTALL_CMD} (provides gzero and gzero-mcp).`,
       );
       if (!ok) return;
       ctx.ui.notify("Installing gzero in the background…", "info");
@@ -734,7 +736,7 @@ export default function (pi: ExtensionAPI) {
       const missing = EXPECTED_TOOLS.filter((t) => !tools.includes(t));
       if (missing.length > 0) {
         ctx.ui.notify(
-          `cx-mcp is missing tools: ${missing.join(", ")}. Update with: ${INSTALL_CMD}`,
+          `gzero-mcp is missing tools: ${missing.join(", ")}. Update with: ${INSTALL_CMD}`,
           "warning",
         );
       }
@@ -803,7 +805,7 @@ export default function (pi: ExtensionAPI) {
    * cached resolution the injection uses. Empty on failure — the pane
    * shows a placeholder. */
   const loadTierSections = async (): Promise<TierSection[]> => {
-    const cxMcp = await findCxMcp();
+    const cxMcp = await findGzeroMcp();
     if (!cxMcp) return [];
     const body = await cachedResolved(cxMcp);
     if (!body) return [];
@@ -841,9 +843,9 @@ export default function (pi: ExtensionAPI) {
           ctx.ui.notify("The guard needs TUI mode", "warning");
           return;
         }
-        const cxMcp = await findCxMcp();
+        const cxMcp = await findGzeroMcp();
         if (!cxMcp) {
-          ctx.ui.notify("No cx-mcp available — run `cx " + cmd + "` in a shell", "warning");
+          ctx.ui.notify("No gzero-mcp available — run `gzero " + cmd + "` in a shell", "warning");
           return;
         }
         try {
@@ -863,7 +865,7 @@ export default function (pi: ExtensionAPI) {
     // the prompt, the directive text is injected as a section.
     const codeRefs = extractWorkstyleRefs(event.prompt);
     if (codeRefs.length > 0) {
-      const cxMcpForCodes = await findCxMcp();
+      const cxMcpForCodes = await findGzeroMcp();
       if (cxMcpForCodes) {
         try {
           const entries = await ensureWorkstyles(cxMcpForCodes, mcpCall);
@@ -893,7 +895,7 @@ export default function (pi: ExtensionAPI) {
     // (every turn of the session) and referenced as #skill:<name> in the
     // prompt (that turn). Both are injected; both distill into the skillbag.
     const refs = extractSkillRefs(event.prompt);
-    const cxMcp = await findCxMcp();
+    const cxMcp = await findGzeroMcp();
     const loaded = getLoadedSkills();
     if (!cxMcp && refs.length === 0 && loaded.length === 0) {
       return; // offline degradation: no server, AGENTS.md fallback remains
@@ -940,9 +942,9 @@ export default function (pi: ExtensionAPI) {
     description:
       "Context operations: 'reload' re-resolves; 'add <text>' saves an atom; 'local|global <text>' condenses via the model then saves to that tier. Plain /context shows usage — /gzero opens the panel",
     handler: async (args: string, ctx: ExtensionCommandContext) => {
-      const cxMcp = await findCxMcp();
+      const cxMcp = await findGzeroMcp();
       if (!cxMcp) {
-        ctx.ui.notify(`cx-mcp not found. Install with: ${INSTALL_CMD}`, "error");
+        ctx.ui.notify(`gzero-mcp not found. Install with: ${INSTALL_CMD}`, "error");
         return;
       }
       const [sub, ...rest] = args.trim().split(/\s+/);
@@ -1073,6 +1075,6 @@ export default function (pi: ExtensionAPI) {
   });
 
   registerSkills(pi);
-  registerWorkstyles(pi, { findCxMcp, mcpCall });
-  registerReview(pi, { findCxMcp, mcpCall } satisfies ReviewDeps);
+  registerWorkstyles(pi, { findGzeroMcp, mcpCall });
+  registerReview(pi, { findGzeroMcp, mcpCall } satisfies ReviewDeps);
 }

@@ -162,7 +162,7 @@ impl SqliteStore {
             .map_err(Into::into)
     }
 
-    /// All presence rows, stale included — for inspection (`cx sessions`).
+    /// All presence rows, stale included — for inspection (`gzero sessions`).
     pub fn all_sessions(&self) -> Result<Vec<SessionInfo>> {
         let mut stmt = self.conn().prepare(
             "SELECT session_id, machine, scope, cwd, pid, label, workspace, started_at, last_seen

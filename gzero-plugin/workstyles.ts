@@ -250,14 +250,14 @@ async function openPicker(
 export function registerWorkstyles(
   pi: ExtensionAPI,
   deps: {
-    findCxMcp: () => Promise<string | null>;
+    findGzeroMcp: () => Promise<string | null>;
     mcpCall: (cxMcp: string, tool: string, args: unknown) => Promise<string>;
   },
 ): void {
   const open = async (ctx: ExtensionContext) => {
-    const cxMcp = await deps.findCxMcp();
+    const cxMcp = await deps.findGzeroMcp();
     if (!cxMcp) {
-      ctx.ui.notify("cx-mcp not found; workstyles live in gzero", "warning");
+      ctx.ui.notify("gzero-mcp not found; workstyles live in gzero", "warning");
       return;
     }
     await openPicker(ctx, cxMcp, deps.mcpCall);

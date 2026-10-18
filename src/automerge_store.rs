@@ -89,7 +89,7 @@ impl AutomergeStore {
         })
     }
 
-    /// The doc file this store persists to, if any (`cx watch` polls it).
+    /// The doc file this store persists to, if any (`gzero watch` polls it).
     pub fn path(&self) -> Option<&Path> {
         self.path.as_deref()
     }
@@ -533,7 +533,7 @@ mod tests {
     #[test]
     fn persistence_roundtrip() {
         let dir = std::env::temp_dir();
-        let path = dir.join(format!("cx-automerge-test-{}.doc", std::process::id()));
+        let path = dir.join(format!("gzero-automerge-test-{}.doc", std::process::id()));
         let _ = std::fs::remove_file(&path);
         {
             let mut store = AutomergeStore::open(Some(&path)).unwrap();

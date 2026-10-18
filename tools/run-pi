@@ -13,7 +13,7 @@
 #                        the blessed copy, so the plugin isn't loaded twice
 #   -e builtin:mcp       brings back pi's built-in MCP support, which
 #                        --no-extensions also disables; without it the
-#                        project's .pi/mcp.json servers (dev cx-mcp) don't connect
+#                        project's .pi/mcp.json servers (dev gzero-mcp) don't connect
 #   -e builtin:codemode  same for codemode: MCP tools are only reachable
 #                        through it, so without this the context server's
 #                        tools can't be called

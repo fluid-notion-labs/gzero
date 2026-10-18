@@ -6,15 +6,15 @@ items — injected into every session and synced across machines. The
 replacement for AGENTS.md-style files and scattered planning docs.
 
 Previously `contextual`, then briefly `contexture`; now `gzero` in
-code and on GitHub. Historical identifiers keep their names: the `cx`
-CLI, the `cx-mcp` binary, and the MCP server name (`context`, so tools
-resolve as `mcp__context__*`).
+code and on GitHub. Historical identifier: the MCP server name
+(`context`, so tools resolve as `mcp__context__*`). Binaries are
+`gzero` (the CLI) and `gzero-mcp` (the MCP server).
 
 ## How it works
 
-- **cx-mcp** — the MCP server (served to agents as "context"). Atoms
-  and workflow docs are only touched through it; the `cx` CLI is
-  deprecated.
+- **gzero-mcp** — the MCP server (served to agents as "context"). Atoms
+  and workflow docs are only touched through it; the `gzero` CLI stays
+  for shell use (ingest, inspection, sync).
 - **Atom store** — terse instruction atoms, one rule each, tagged with
   hashtags (`#rust`, `#style`). Untagged atoms inject every session;
   tags pull the rest on demand.
@@ -54,15 +54,15 @@ resolve as `mcp__context__*`).
 
 gzero replaces the old `contexture` install. On each machine:
 
-1. Pull this repo and `cargo build` (the binary is still named
-   `cx-mcp`).
+1. Pull this repo and `cargo install --path .` (bins: `gzero`,
+   `gzero-mcp`).
 2. Remove the old contexture plugin from your pi extensions — delete
    `~/.pi/agent/extensions/contexture` (and any other directory or
    symlink pointing at the old plugin).
 3. Install the gzero plugin snapshot: run `tools/bless-plugin.sh`
    from a checkout of this repo.
 4. If your `.pi/mcp.json` still points at an old `contexture` binary
-   or config path, repoint it at gzero's `cx-mcp`.
+   or config path, repoint it at gzero's `gzero-mcp`.
 
 Atom stores are compatible — old contexture store data keeps working
 under gzero, so no migration of context content is needed.

@@ -5,7 +5,7 @@
 # an explicit skill list or nothing (= import every SKILL.md found).
 # Every generated atom gets the entry's tags as hashtags, so `resolve`
 # pulls them from the repository tier. Generated packs land in
-# ../packs/skills-<vendor>.md and are imported via `cx add` (per-source
+# ../packs/skills-<vendor>.md and are imported via `gzero add` (per-source
 # sync — re-running this script is idempotent).
 #
 scope_prefix: skills

@@ -5,7 +5,7 @@
 //! returns path-based patches for ANY document change — local commits,
 //! merges from another process, loads of externally-updated files. One
 //! translation point here turns those patches into the events clients
-//! care about, so local edits, hub sync and a second process's `cx`
+//! care about, so local edits, hub sync and a second process's `gzero`
 //! calls all flow identically.
 //!
 //! Scope: the ws doc only — items and sections. Atom changes ride sqlite
@@ -28,7 +28,7 @@
 //! a section add/remove named by the full dotted path; a patch on a
 //! `kind`-carrying node is a field change.
 //!
-//! Consumers: `cx watch` streams these as JSON lines today; a future
+//! Consumers: `gzero watch` streams these as JSON lines today; a future
 //! embedded client uses `ChangeFeed` directly. Call `drain_events()`
 //! once after opening to establish the baseline cursor without
 //! emitting the store's initial state.
@@ -69,7 +69,7 @@ pub enum ChangeEvent {
 }
 
 impl ChangeEvent {
-    /// Stable JSON line for `cx watch` and log inspection.
+    /// Stable JSON line for `gzero watch` and log inspection.
     pub fn to_line(&self) -> String {
         serde_json::to_string(self).unwrap_or_else(|_| "{}".to_string())
     }
@@ -131,7 +131,7 @@ impl DocIndex {
 
 impl AutomergeStore {
     /// Apply changes from a freshly loaded doc file into this store's
-    /// doc (the `cx watch` path: another process saved the file). The
+    /// doc (the `gzero watch` path: another process saved the file). The
     /// diff cursor survives the merge, so the next drain yields exactly
     /// the incoming changes.
     pub fn reload_merge(&mut self, path: &std::path::Path) -> Result<(), String> {
@@ -439,7 +439,7 @@ mod tests {
         let bytes = store1.save_bytes();
 
         // A second store starts from the same baseline, then we apply
-        // an external update via reload_merge as cx watch would.
+        // an external update via reload_merge as gzero watch would.
         let mut store2 = AutomergeStore::from_bytes(&bytes).unwrap();
         let _ = ChangeFeed::drain_events(&mut store2);
         store1
@@ -487,7 +487,7 @@ impl ChangeFeed for AutomergeStore {
         let events = self.classify_patches(patches);
         if !events.is_empty() {
             // Broadcast to live subscribers; dead ones (consumer gone,
-            // e.g. `cx watch` exited) are dropped.
+            // e.g. `gzero watch` exited) are dropped.
             self.subscribers.retain(|tx| {
                 for ev in &events {
                     if tx.send(ev.clone()).is_err() {

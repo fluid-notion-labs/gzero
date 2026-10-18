@@ -11,7 +11,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 export interface ReviewDeps {
-  findCxMcp: () => Promise<string | null>;
+  findGzeroMcp: () => Promise<string | null>;
   mcpCall: (cxMcp: string, tool: string, args: unknown) => Promise<string>;
 }
 
@@ -124,7 +124,7 @@ export function registerReview(pi: ExtensionAPI, deps: ReviewDeps): void {
 async function review(turns: string[], ctx: ExtensionContext, deps: ReviewDeps): Promise<void> {
   const model = ctx.model;
   if (!model) return;
-  const cxMcp = await deps.findCxMcp();
+  const cxMcp = await deps.findGzeroMcp();
   if (!cxMcp) return;
 
   let known = "";

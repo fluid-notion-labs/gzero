@@ -1,4 +1,4 @@
-//! `cx-mcp` — the context system as an MCP stdio server, so agents (pi,
+//! `gzero-mcp` — the context system as an MCP stdio server, so agents (pi,
 //! and anything speaking MCP) can read and grow context directly.
 //!
 //! Protocol: JSON-RPC 2.0, one message per line on stdin/stdout. No
@@ -29,7 +29,7 @@ use std::collections::BTreeSet;
 use std::io::{BufRead, Write};
 
 use gzero::hub::{Event, Hub};
-use gzero::items::{Status, WorkItem};
+use gzero::items::{MoveTarget, Status, WorkItem};
 use gzero::sections::{Section, SectionKind};
 use gzero::snapshot::Atom;
 use gzero::{
@@ -53,8 +53,8 @@ fn main() {
             continue;
         }
         if let Some(response) = handle_line(&line, &mut store) {
-            writeln!(out, "{response}").expect("cx-mcp: stdout closed");
-            out.flush().expect("cx-mcp: flush failed");
+            writeln!(out, "{response}").expect("gzero-mcp: stdout closed");
+            out.flush().expect("gzero-mcp: flush failed");
         }
     }
 }
@@ -63,10 +63,10 @@ fn open_store() -> SqliteStore {
     let path = std::env::var("CX_DB").unwrap_or_else(|_| {
         format!(
             "{}/.pi/agent/context.db",
-            std::env::var("HOME").expect("cx-mcp: no HOME")
+            std::env::var("HOME").expect("gzero-mcp: no HOME")
         )
     });
-    SqliteStore::open(&path).expect("cx-mcp: cannot open atom store")
+    SqliteStore::open(&path).expect("gzero-mcp: cannot open atom store")
 }
 
 /// Best-effort: absorb the hub's merged snapshot so this session sees
@@ -82,8 +82,8 @@ fn pull_from_hub(store: &mut SqliteStore) {
                 .map_err(|e| e.to_string())
                 .map(|_| n)
         }) {
-        Ok(n) => eprintln!("cx-mcp: hub sync ({n} entries)"),
-        Err(e) => eprintln!("cx-mcp: hub sync failed: {e}"),
+        Ok(n) => eprintln!("gzero-mcp: hub sync ({n} entries)"),
+        Err(e) => eprintln!("gzero-mcp: hub sync failed: {e}"),
     }
 }
 
@@ -91,7 +91,7 @@ fn pull_from_hub(store: &mut SqliteStore) {
 /// floor content, even in a freshly wiped store. Never fatal.
 fn seed_on_startup(store: &mut SqliteStore) {
     if let Err(e) = gzero::reconcile_seeds(store) {
-        eprintln!("cx-mcp: seed sync failed: {e}");
+        eprintln!("gzero-mcp: seed sync failed: {e}");
     }
 }
 
@@ -108,7 +108,7 @@ fn reconcile_harvest_on_startup(store: &mut SqliteStore) {
     let result = match gzero::reconcile_harvest(store, &dir, false) {
         Ok(r) => r,
         Err(e) => {
-            eprintln!("cx-mcp: harvest reconcile failed: {e}");
+            eprintln!("gzero-mcp: harvest reconcile failed: {e}");
             return;
         }
     };
@@ -136,7 +136,7 @@ fn reconcile_harvest_on_startup(store: &mut SqliteStore) {
         }
     }
     eprintln!(
-        "cx-mcp: harvest reconcile ({} reimported, {} removed, {} unchanged)",
+        "gzero-mcp: harvest reconcile ({} reimported, {} removed, {} unchanged)",
         result.harvested.len(),
         result.removed.len(),
         result.unchanged
@@ -151,7 +151,7 @@ fn try_post(events: Vec<Event>) {
     }
     if let Some(hub) = Hub::from_env() {
         if let Err(e) = hub.post_events(&events) {
-            eprintln!("cx-mcp: hub post failed: {e}");
+            eprintln!("gzero-mcp: hub post failed: {e}");
         }
     }
 }
@@ -183,7 +183,7 @@ fn handle_line(line: &str, store: &mut SqliteStore) -> Option<String> {
         "ping" => Ok(serde_json::json!({})),
         "tools/list" => Ok(serde_json::json!({
             "tools": serde_json::from_str::<serde_json::Value>(TOOLS)
-                .expect("cx-mcp: TOOLS literal is not valid JSON")
+                .expect("gzero-mcp: TOOLS literal is not valid JSON")
         })),
         "tools/call" => call_tool(&params, store),
         _ => Err(format!("method not found: {method}")),
@@ -239,7 +239,7 @@ fn call_tool(
             _ => tool_broadcast(&args, store)?,
         },
         "item_add" | "item_list" | "item_ready" | "item_get" | "item_edit" | "item_note"
-        | "item_delete" | "item_pin" | "item_gate" => {
+        | "item_delete" | "item_pin" | "item_gate" | "item_move" => {
             let mut ws = ws_store()?;
             match name {
                 "item_add" => tool_item_add(&args, &mut ws)?,
@@ -250,9 +250,12 @@ fn call_tool(
                 "item_note" => tool_item_note(&args, &mut ws)?,
                 "item_pin" => tool_item_pin(&args, &mut ws)?,
                 "item_gate" => tool_item_gate(&args, &mut ws)?,
+                "item_move" => tool_item_move(&args, &mut ws)?,
                 _ => tool_item_delete(&args, &mut ws)?,
             }
         }
+        "sessions" => tool_sessions(store)?,
+        "scope" => tool_scope()?,
         "plan_next" => {
             let ws = ws_store()?;
             tool_plan_next(&args, &ws)?
@@ -839,6 +842,7 @@ fn item_json(it: &WorkItem) -> serde_json::Value {
         "scope": it.scope, "id": it.id, "title": it.title,
         "priority": it.priority, "status": it.status.as_str(),
         "assignee": it.assignee, "created": it.created,
+        "order": it.order, "closed_at": it.closed_at,
         "labels": it.labels.iter().collect::<Vec<_>>(),
         "notes": it.notes,
         "blocks": it.blocks.iter().collect::<Vec<_>>(),
@@ -846,6 +850,14 @@ fn item_json(it: &WorkItem) -> serde_json::Value {
         "discovered_from": it.discovered_from.iter().collect::<Vec<_>>(),
         "gate": it.gate, "gate_met": it.gate_met,
     })
+}
+
+/// Open blockers per item, keyed by id, from the full item list.
+fn open_blockers(it: &WorkItem, all: &[WorkItem]) -> Vec<String> {
+    all.iter()
+        .filter(|o| o.blocks.contains(&it.id) && o.status != Status::Closed)
+        .map(|o| o.id.clone())
+        .collect()
 }
 
 fn tool_item_add(args: &serde_json::Value, store: &mut AutomergeStore) -> Result<String, String> {
@@ -1015,6 +1027,17 @@ fn tool_item_list(args: &serde_json::Value, store: &AutomergeStore) -> Result<St
             .then(a.id.cmp(&b.id))
     });
     let all = items.clone();
+    if args.get("json").and_then(|v| v.as_bool()).unwrap_or(false) {
+        let arr: Vec<_> = items
+            .iter()
+            .map(|it| {
+                let mut o = item_json(it);
+                o["blocked_by"] = serde_json::json!(open_blockers(it, &all));
+                o
+            })
+            .collect();
+        return Ok(serde_json::to_string_pretty(&arr).unwrap());
+    }
     Ok(item_lines(&scope, &items, &all))
 }
 
@@ -1108,6 +1131,48 @@ fn tool_item_gate(args: &serde_json::Value, store: &mut AutomergeStore) -> Resul
         },
         it.gate_met
     ))
+}
+
+fn tool_item_move(args: &serde_json::Value, store: &mut AutomergeStore) -> Result<String, String> {
+    let (scope, id) = item_id_arg(args, store, "item_move")?;
+    let rel = args
+        .get("rel")
+        .and_then(|v| v.as_str())
+        .ok_or("item_move: rel is required (top|bottom|before|after)")?;
+    let target = match rel {
+        "top" => MoveTarget::Top,
+        "bottom" => MoveTarget::Bottom,
+        "before" => MoveTarget::Before(
+            args.get("sibling")
+                .and_then(|v| v.as_str())
+                .ok_or("item_move: sibling is required for before/after")?
+                .to_string(),
+        ),
+        "after" => MoveTarget::After(
+            args.get("sibling")
+                .and_then(|v| v.as_str())
+                .ok_or("item_move: sibling is required for before/after")?
+                .to_string(),
+        ),
+        other => return Err(format!("item_move: rel must be top|bottom|before|after, got {other:?}")),
+    };
+    let it = store.item_move(&scope, &id, target).map_err(|e| e.to_string())?;
+    Ok(format!("moved {} [{}] in queue", it.id, it.title))
+}
+
+/// Session presence rows as JSON (S1) — inspection and sibling detection.
+fn tool_sessions(store: &SqliteStore) -> Result<String, String> {
+    let rows = store.all_sessions().map_err(|e| e.to_string())?;
+    Ok(serde_json::to_string(&rows).unwrap_or_else(|e| format!("sessions: {e}")))
+}
+
+/// The repo identity used to scope project-tier data, so script/TS
+/// clients can match scopes exactly without duplicating normalization.
+fn tool_scope() -> Result<String, String> {
+    match gzero::repo_identity() {
+        Some(id) => Ok(id),
+        None => Err("scope: not in a git repository".into()),
+    }
 }
 
 fn tool_item_get(args: &serde_json::Value, store: &AutomergeStore) -> Result<String, String> {
@@ -1270,7 +1335,16 @@ fn tool_ws_get(args: &serde_json::Value, store: &AutomergeStore) -> Result<Strin
         .ok_or("ws_get: name is required")?;
     let scope = ws_scope_arg(args);
     match store.section_get(&scope, name).map_err(|e| e.to_string())? {
-        Some(s) => Ok(s.body),
+        Some(s) => {
+            if args.get("json").and_then(|v| v.as_bool()).unwrap_or(false) {
+                return Ok(serde_json::to_string_pretty(&serde_json::json!({
+                    "scope": s.scope, "name": s.name, "kind": s.kind.as_str(),
+                    "title": s.title, "body": s.body, "order": s.order,
+                }))
+                .unwrap());
+            }
+            Ok(s.body)
+        }
         None => {
             let names: Vec<String> = store
                 .section_list(&scope)
@@ -1295,6 +1369,18 @@ fn tool_ws_list(args: &serde_json::Value, store: &AutomergeStore) -> Result<Stri
     let items = store.section_list(&scope).map_err(|e| e.to_string())?;
     if items.is_empty() {
         return Ok(format!("(no sections in {scope})"));
+    }
+    if args.get("json").and_then(|v| v.as_bool()).unwrap_or(false) {
+        let arr: Vec<_> = items
+            .iter()
+            .map(|s| {
+                serde_json::json!({
+                    "scope": s.scope, "name": s.name, "kind": s.kind.as_str(),
+                    "title": s.title, "order": s.order,
+                })
+            })
+            .collect();
+        return Ok(serde_json::to_string_pretty(&arr).unwrap());
     }
     Ok(items
         .into_iter()
@@ -1466,7 +1552,7 @@ const TOOLS: &str = r#"[
   },
   {
     "name": "ws_get",
-    "description": "Read one workflow section body verbatim. Checklists keep their '- [ ]'/'- [x]' lines.",
+    "description": "Read one workflow section body verbatim. Checklists keep their '- [ ]'/'- [x]' lines. json=true returns the full section (name, kind, title, body, order) as JSON.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1490,7 +1576,7 @@ const TOOLS: &str = r#"[
   },
   {
     "name": "ws_list",
-    "description": "List workflow sections for a scope: one line each — name, kind, title, and done/total for checklists. Dotted names nest; bare ancestors are containers, not sections.",
+    "description": "List workflow sections for a scope: one line each — name, kind, title, and done/total for checklists. Dotted names nest; bare ancestors are containers, not sections. json=true returns them as a JSON array.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1532,8 +1618,32 @@ const TOOLS: &str = r#"[
   },
   {
     "name": "item_list",
-    "description": "List work items for the current project: open first, then by priority. Lines show id, status, priority, title, and open blockers.",
-    "inputSchema": { "type": "object", "properties": { "scope": { "type": "string" } } }
+    "description": "List work items for the current project: open first, then by priority. Lines show id, status, priority, title, and open blockers. json=true returns the full items as a JSON array.",
+    "inputSchema": { "type": "object", "properties": { "scope": { "type": "string" }, "json": { "type": "boolean", "description": "Return the full items as a JSON array instead of lines." } } }
+  },
+  {
+    "name": "item_move",
+    "description": "Move a work item within the scope's display queue: 'top', 'bottom', or before/after a sibling item id.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "rel": { "type": "string", "enum": ["top", "bottom", "before", "after"] },
+        "sibling": { "type": "string", "description": "Required for before/after." },
+        "scope": { "type": "string", "description": "Omit for the current project." }
+      },
+      "required": ["id", "rel"]
+    }
+  },
+  {
+    "name": "sessions",
+    "description": "Session presence rows as JSON (S1 inspection): every session seen in any scope, stale included. Rows carry session_id, scope, workspace, last_seen.",
+    "inputSchema": { "type": "object", "properties": {} }
+  },
+  {
+    "name": "scope",
+    "description": "Print the repo identity used to scope project-tier data, so script/TS clients can match scopes exactly. Errors outside a git repository.",
+    "inputSchema": { "type": "object", "properties": {} }
   },
   {
     "name": "item_ready",
@@ -1887,7 +1997,7 @@ mod tests {
 
     #[test]
     fn harvest_tool_roundtrip() {
-        let dir = std::env::temp_dir().join("cx-harvest-mcp");
+        let dir = std::env::temp_dir().join("gzero-harvest-mcp");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(

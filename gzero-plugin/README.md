@@ -3,7 +3,7 @@
 pi extension that connects the context system to pi sessions. Speaks to
 gzero only via MCP — no direct SQLite or hub access.
 
-- registers `cx-mcp` so the model gets the `mcp__context__*` tools
+- registers `gzero-mcp` so the model gets the `mcp__context__*` tools
 - injects the resolved default context (global + project tiers) into the
   system prompt on every turn
 - plain `/context` shows usage; it no longer opens anything —
@@ -11,7 +11,7 @@ gzero only via MCP — no direct SQLite or hub access.
   model — its atoms load only when a tag is pulled or a skill is
   referenced/loaded. The injection refreshes itself: the cache is
   stamped with the store file's mtime, so any change — the model's
-  `add`/`remove` calls, `/context add`, `cx` in a shell, another
+  `add`/`remove` calls, `/context add`, `gzero` in a shell, another
   session — is picked up on the next turn. `/context reload` forces a
   re-resolve without waiting; `/context add <text>` saves an atom with
   a confirm dialog; `/context local|global <text>` sends the raw note
@@ -33,7 +33,7 @@ gzero only via MCP — no direct SQLite or hub access.
   (`<skills>` section) as `#skill:<name>`. Referencing also feeds the
   skillbag: a skill not yet in the store is distilled (summary + section
   highlights, same style as `tools/skills/pull.py`) and added via
-  `cx-mcp add` with `skills/<vendor>` scope, tagged `#<name>` and
+  the `add` tool with `skills/<vendor>` scope, tagged `#<name>` and
   `#<vendor>`, so its terse atoms persist across sessions. Re-adding is
   idempotent (store dedupes by text); explicitly removed atoms stay
   removed (tombstones). Plain hashtags still type normally — just keep
@@ -80,8 +80,8 @@ gzero only via MCP — no direct SQLite or hub access.
   only — loading happens in the skills picker or the gzero panel's
   skills search; the column appears when the first skill is loaded and
   never reaches the chat area. `CX_SKILLS_STRIP=0` removes it
-- warns on a stale `cx-mcp` (missing tools via `tools/list`)
-- offers to install gzero on first run if `cx-mcp` is missing
+- warns on a stale `gzero-mcp` (missing tools via `tools/list`)
+- offers to install gzero on first run if `gzero-mcp` is missing
 
 - post-turn review: every turn is captured; when `CX_REVIEW_BATCH`
   (default 5) turns are pending, one forked model call — the session's
@@ -118,16 +118,16 @@ fast-moving dev workspaces):
 The blessed copy is standalone: pi resolves `@earendil-works/*`
 imports itself, so no node_modules is shipped.
 
-Requires `cx` and `cx-mcp` (the plugin offers to run
+Requires `gzero` and `gzero-mcp` (the plugin offers to run
 `cargo install --git https://github.com/fluid-notion-labs/gzero`).
 Hub sync uses `CX_HUB_URL` and `CX_TOKEN`; unset means offline.
 
-### Dev cx-mcp override
+### Dev gzero-mcp override
 
 A repo can ship its own locally built server: drop an executable at
-`.pi/dev-cx-mcp` and add a `context` entry to `.pi/mcp.json` (see the
+`.pi/dev-gzero-mcp` and add a `context` entry to `.pi/mcp.json` (see the
 gzero repo). The plugin's own calls (`/context`, autocomplete)
-prefer `<cwd>/.pi/dev-cx-mcp` when present, matching the mcp.json
+prefer `<cwd>/.pi/dev-gzero-mcp` when present, matching the mcp.json
 override pi applies to the model's tools.
 
 ## Tests
