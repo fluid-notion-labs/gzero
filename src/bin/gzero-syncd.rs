@@ -218,6 +218,12 @@ fn sse_loop(tx: mpsc::Sender<String>, stream: Stream) {
             Ok(resp) => {
                 log(&format!("sse connected: {} ({})", url, resp.status()));
                 backoff = 2;
+                // Compensating pull: events fired while disconnected
+                // (or before this connect) are lost — without this a
+                // reconnect waits for the backstop (60s) before it
+                // notices. Cheap: a sync with nothing new is a single
+                // small pull.
+                let _ = tx.send(stream.name.clone());
                 let mut push_seen = false;
                 let mut line = String::new();
                 let result = (|| -> std::io::Result<()> {

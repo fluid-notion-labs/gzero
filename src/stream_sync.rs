@@ -274,6 +274,12 @@ pub fn sync_store(
 ) -> Result<(usize, usize), String> {
     store.doc_lock();
     let out = (|| {
+        // Adopt what other syncers (the daemon) flushed to disk since
+        // this store was opened — the cursor below is shared, so a
+        // skipped pull must not mean skipped content.
+        if let Err(e) = store.refresh() {
+            sync_log(stream, &format!("refresh: FAILED: {e}"));
+        }
         let mut cursor = SyncCursor::load(sidecar, stream)?;
         let t0 = std::time::Instant::now();
         let result = sync_once(store, hub, &mut cursor);

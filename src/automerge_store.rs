@@ -311,8 +311,27 @@ impl AutomergeStore {
             return Ok(());
         };
         self.doc_lock();
-        // Adopt concurrent on-disk changes (best effort: if the file is
-        // missing or unreadable, our save simply replaces it).
+        self.refresh()?;
+        let doc_bytes = self.doc.save();
+        let hash_bytes = serde_json::to_vec(&self.hashes)?;
+        Self::atomic_write(&p, &doc_bytes)?;
+        Self::atomic_write(&Self::hash_path(&p), &hash_bytes)?;
+        self.doc_unlock();
+        Ok(())
+    }
+
+    /// Adopt concurrent on-disk changes into memory without saving.
+    /// A sync transaction shares its cursor with other syncers (the
+    /// daemon), so it must also see the changes those syncers already
+    /// applied and flushed — otherwise a reader that opened the file
+    /// before the daemon's write pulls 0 changes (the shared cursor is
+    /// already past them) and stays stale until its next write. Call
+    /// under the doc lock. Best effort: a missing or unreadable file
+    /// just means nothing to adopt.
+    pub(crate) fn refresh(&mut self) -> Result<()> {
+        let Some(p) = self.path.clone() else {
+            return Ok(());
+        };
         if let Ok(bytes) = std::fs::read(&p) {
             if let Ok(mut disk) = AutoCommit::load(&bytes) {
                 if self.doc.merge(&mut disk).is_ok() {
@@ -326,11 +345,6 @@ impl AutomergeStore {
                 }
             }
         }
-        let doc_bytes = self.doc.save();
-        let hash_bytes = serde_json::to_vec(&self.hashes)?;
-        Self::atomic_write(&p, &doc_bytes)?;
-        Self::atomic_write(&Self::hash_path(&p), &hash_bytes)?;
-        self.doc_unlock();
         Ok(())
     }
 
