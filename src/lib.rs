@@ -876,21 +876,8 @@ pub fn sync_doc(store: &mut AutomergeStore) -> std::result::Result<(), String> {
     let Some(hub) = hub_changes::HubChanges::from_env(&bag) else {
         return Ok(());
     };
-    let sidecar = hub_changes::sidecar_path(&path);
-    let mut cursor = hub_changes::SyncCursor::load(&sidecar, &bag)?;
-    let t0 = std::time::Instant::now();
-    let result = hub_changes::sync_once(store, &hub, &mut cursor);
-    let ms = t0.elapsed().as_millis();
-    cursor.save(&sidecar, &bag)?;
-    if matches!(std::env::var("CX_SYNC_LOG").as_deref(), Ok("detail")) {
-        match &result {
-            Ok((pushed, pulled)) => {
-                eprintln!("gzero-sync [{bag}] once: {ms}ms (+{pushed} -{pulled})");
-            }
-            Err(e) => eprintln!("gzero-sync [{bag}] once: {ms}ms, FAILED: {e}"),
-        }
-    }
-    result.map(|_| ())
+    hub_changes::sync_store(store, &hub, &hub_changes::sidecar_path(&path), &bag)
+        .map(|_| ()) (store: doc lock + merge-on-flush — safe co-writing for sessions and gzero-syncd)
 }
 
 #[cfg(test)]

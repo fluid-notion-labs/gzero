@@ -654,11 +654,8 @@ impl CommsLayer for CommsStore {
         let Some(hub) = HubChanges::from_env(&comms_bag()) else {
             return Ok((0, 0));
         };
-        let sidecar = hub_changes::sidecar_path(&path);
-        let mut cursor = SyncCursor::load(&sidecar, &comms_bag())?;
-        let result = hub_changes::sync_once(&mut self.store, &hub, &mut cursor);
-        cursor.save(&sidecar, &comms_bag())?;
-        result.map_err(|e| e.into())
+        hub_changes::sync_store(&mut self.store, &hub, &hub_changes::sidecar_path(&path), &comms_bag())
+            .map_err(|e| e.into())
     }
 }
 

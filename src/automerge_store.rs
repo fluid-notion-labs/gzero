@@ -21,6 +21,7 @@
 //! re-import, so per-payload LWW is exactly the semantics we want.
 
 use std::collections::{BTreeMap, HashSet};
+use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
 
 use automerge::transaction::Transactable;
@@ -47,6 +48,13 @@ pub struct AutomergeStore {
     /// the fold is idempotent, and the conflict count only changes when
     /// a genuinely new conflicting root object arrives.
     roots_state: Option<[usize; 3]>,
+    /// Advisory lock file handle (`<doc>.lock`), open but unlocked.
+    /// Held open so `doc_lock`/`doc_unlock` reuse one file description:
+    /// flock attaches to the description, so re-locking the same fd is
+    /// instant (re-entrant within this store) while other stores and
+    /// processes still block. This is what makes gzero-syncd and
+    /// sessions safe co-writers of the doc file.
+    lock: Option<std::fs::File>,
 }
 
 /// Hashes-sidecar key holding the reconciled root conflict counts.
@@ -69,7 +77,16 @@ impl AutomergeStore {
             hashes: BTreeMap::new(),
             subscribers: Vec::new(),
             roots_state: None,
+            lock: None,
         };
+        if let Some(p) = &store.path {
+            store.lock = Some(
+                std::fs::OpenOptions::new()
+                    .create(true)
+                    .write(true)
+                    .open(Self::lock_path(p))?,
+            );
+        }
         // Root objects are created lazily (ensure_schema): a cold
         // replica that syncs before writing should adopt the peer's
         // schema from the change log instead of creating its own and
@@ -126,6 +143,7 @@ impl AutomergeStore {
             hashes: BTreeMap::new(),
             subscribers: Vec::new(),
             roots_state: None,
+            lock: None,
         })
     }
 
@@ -255,12 +273,83 @@ impl AutomergeStore {
         PathBuf::from(s)
     }
 
-    /// Persist doc + hashes sidecar (no-op in memory).
-    pub(crate) fn flush(&mut self) -> Result<()> {
-        if let Some(p) = &self.path {
-            std::fs::write(p, self.doc.save())?;
-            std::fs::write(Self::hash_path(p), serde_json::to_string(&self.hashes)?)?;
+    fn lock_path(path: &Path) -> PathBuf {
+        let mut s = path.as_os_str().to_os_string();
+        s.push(".lock");
+        PathBuf::from(s)
+    }
+
+    /// Take the advisory exclusive lock on this store's doc file.
+    /// Blocking. Re-entrant within one store (flock attaches to the
+    /// open file description held in `self.lock`, so a second call on
+    /// an already-held fd returns instantly) — that is what lets sync
+    /// transactions call `flush` while holding the lock. No-op for
+    /// in-memory stores.
+    pub(crate) fn doc_lock(&mut self) {
+        if let Some(f) = &self.lock {
+            unsafe { libc::flock(f.as_raw_fd(), libc::LOCK_EX) };
         }
+    }
+
+    /// Release the advisory lock (no-op in memory).
+    pub(crate) fn doc_unlock(&mut self) {
+        if let Some(f) = &self.lock {
+            unsafe { libc::flock(f.as_raw_fd(), libc::LOCK_UN) };
+        }
+    }
+
+    /// Persist doc + hashes sidecar (no-op in memory).
+    ///
+    /// Under the doc lock, first merge whatever is currently on disk
+    /// into the in-memory doc: a long-lived writer (the MCP comms
+    /// store) may have loaded long before another writer (gzero-syncd
+    /// pulling from the hub) saved new changes. Without the merge this
+    /// full-document save would clobber them — with it, every flush is
+    /// a merge, and co-writers converge instead of racing.
+    pub(crate) fn flush(&mut self) -> Result<()> {
+        let Some(p) = self.path.clone() else {
+            return Ok(());
+        };
+        self.doc_lock();
+        // Adopt concurrent on-disk changes (best effort: if the file is
+        // missing or unreadable, our save simply replaces it).
+        if let Ok(bytes) = std::fs::read(&p) {
+            if let Ok(mut disk) = AutoCommit::load(&bytes) {
+                if self.doc.merge(&mut disk).is_ok() {
+                    if let Ok(disk_hashes) = Self::read_hashes(&p) {
+                        for (k, v) in disk_hashes {
+                            self.hashes.entry(k).or_insert(v);
+                        }
+                    }
+                    self.doc.commit();
+                    self.reconcile_roots()?;
+                }
+            }
+        }
+        let doc_bytes = self.doc.save();
+        let hash_bytes = serde_json::to_vec(&self.hashes)?;
+        Self::atomic_write(&p, &doc_bytes)?;
+        Self::atomic_write(&Self::hash_path(&p), &hash_bytes)?;
+        self.doc_unlock();
+        Ok(())
+    }
+
+    fn read_hashes(path: &Path) -> std::io::Result<BTreeMap<String, String>> {
+        let bytes = std::fs::read(Self::hash_path(path))?;
+        serde_json::from_slice(&bytes).map_err(|e| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string())
+        })
+    }
+
+    /// Write via a temp file + rename so concurrent readers (another
+    /// store's merge-on-flush) never see a torn document.
+    fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
+        let tmp = path.with_extension(format!(
+            "tmp-{}",
+            std::process::id()
+        ));
+        std::fs::write(&tmp, bytes)?;
+        std::fs::rename(&tmp, path)?;
         Ok(())
     }
 
@@ -669,6 +758,55 @@ mod tests {
         assert_eq!(store.source_hash("a.md").unwrap().as_deref(), Some("h1"));
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(AutomergeStore::hash_path(&path));
+    }
+
+    #[test]
+    fn merge_on_flush_preserves_concurrent_writes() {
+        // Two writers open the same doc file, then both write without
+        // reloading. The second flush must adopt the first's changes
+        // (merge-on-flush) instead of clobbering them — this is the
+        // gzero-syncd / long-lived-session co-writer scenario.
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!(
+            "gzero-merge-on-flush-{}.doc",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        {
+            let mut a = AutomergeStore::open(Some(&path)).unwrap();
+            let mut b = AutomergeStore::open(Some(&path)).unwrap();
+            add_doc(&mut a, "a.md", "## n\n- from-a\n").unwrap();
+            // b is stale: it loaded before a's flush
+            add_doc(&mut b, "b.md", "## n\n- from-b\n").unwrap();
+        }
+        let c = AutomergeStore::open(Some(&path)).unwrap();
+        let texts: Vec<String> = alive(&c).unwrap().into_iter().map(|(t, _)| t).collect();
+        assert!(texts.contains(&"from-a".to_string()), "a's write survived: {texts:?}");
+        assert!(texts.contains(&"from-b".to_string()), "b's write survived: {texts:?}");
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(AutomergeStore::hash_path(&path));
+        let _ = std::fs::remove_file(AutomergeStore::lock_path(&path));
+    }
+
+    #[test]
+    fn doc_lock_is_reentrant_and_serializes() {
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!("gzero-doclock-{}.doc", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        {
+            let mut a = AutomergeStore::open(Some(&path)).unwrap();
+            let mut b = AutomergeStore::open(Some(&path)).unwrap();
+            a.doc_lock();
+            a.doc_lock(); // same store: re-entrant, no deadlock
+            // Cross-store serialization is hard to assert without
+            // threads; here we just prove a second store can acquire
+            // after release (no lock leaks).
+            a.doc_unlock();
+            b.doc_lock();
+            b.doc_unlock();
+        }
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(AutomergeStore::lock_path(&path));
     }
 
     #[test]

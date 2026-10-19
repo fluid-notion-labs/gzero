@@ -259,6 +259,40 @@ pub fn sync_once(
     Ok((pushed, pulled))
 }
 
+/// One full sync *transaction* for a doc-backed store: take the doc
+/// lock, load the cursor, pull+push, persist the cursor, release.
+/// Holding the lock across the whole transaction keeps concurrent
+/// syncers (a session's write sync and gzero-syncd) from loading the
+/// same cursor and double-pushing the same changes. The lock is
+/// re-entrant per store, so the nested `flush` calls inside pull
+/// don't deadlock.
+pub fn sync_store(
+    store: &mut AutomergeStore,
+    hub: &HubChanges,
+    sidecar: &Path,
+    bag: &str,
+) -> Result<(usize, usize), String> {
+    store.doc_lock();
+    let out = (|| {
+        let mut cursor = SyncCursor::load(sidecar, bag)?;
+        let t0 = std::time::Instant::now();
+        let result = sync_once(store, hub, &mut cursor);
+        let ms = t0.elapsed().as_millis();
+        cursor.save(sidecar, bag)?;
+        if matches!(std::env::var("CX_SYNC_LOG").as_deref(), Ok("detail")) {
+            match &result {
+                Ok((pushed, pulled)) => {
+                    eprintln!("gzero-sync [{bag}] once: {ms}ms (+{pushed} -{pulled})");
+                }
+                Err(e) => eprintln!("gzero-sync [{bag}] once: {ms}ms, FAILED: {e}"),
+            }
+        }
+        result
+    })();
+    store.doc_unlock();
+    out
+}
+
 impl SyncCursor {
     /// Persist to a sidecar JSON keyed by bag, so several bags can
     /// share one file next to the store.

@@ -243,6 +243,7 @@ dependencies = [
  "automerge",
  "base64",
  "hex",
+ "libc",
  "rusqlite",
  "serde",
  "serde_json",
