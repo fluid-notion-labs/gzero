@@ -1,12 +1,20 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gzero_client/main.dart';
 import 'package:gzero_client/settings/settings_store.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
+
+class FakePathProvider extends PathProviderPlatform {
+  @override
+  Future<String?> getApplicationSupportPath() async =>
+      (await Directory.systemTemp.createTemp('gzero-app-test')).path;
+}
 
 void main() {
   setUp(() {
-    SharedPreferences.setMockInitialValues({});
+    PathProviderPlatform.instance = FakePathProvider();
   });
 
   testWidgets('app shell: sync card, streams, projects placeholder, settings entry', (
@@ -14,7 +22,9 @@ void main() {
   ) async {
     // Unroutable port: connection refused immediately and deterministically,
     // so the card ends in the unreachable state without network.
-    await tester.pumpWidget(const GzeroApp(initialSettings: Settings(hubUrl: 'http://127.0.0.1:1')));
+    await tester.pumpWidget(
+      const GzeroApp(initialSettings: Settings(hubUrl: 'http://127.0.0.1:1')),
+    );
     await tester.pumpAndSettle();
     expect(find.text('gzero'), findsOneWidget);
     expect(find.byIcon(Icons.refresh), findsOneWidget);
@@ -26,7 +36,10 @@ void main() {
   testWidgets('settings screen opens, saves, and pops', (tester) async {
     final store = _RecordingStore();
     await tester.pumpWidget(
-      GzeroApp(initialSettings: const Settings(hubUrl: 'http://127.0.0.1:1'), store: store),
+      GzeroApp(
+        initialSettings: const Settings(hubUrl: 'http://127.0.0.1:1'),
+        store: store,
+      ),
     );
     await tester.pumpAndSettle();
 
