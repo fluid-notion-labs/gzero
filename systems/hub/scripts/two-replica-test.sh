@@ -3,13 +3,14 @@
 #
 # Starts `wrangler dev` for this repo, then runs the Rust convergence
 # test in the gzero repo (HUB_TEST_URL points the test at the local
-# hub). Requires the gzero checkout as a sibling of this repo (or set
-# GZERO_DIR), and `cargo` on PATH.
+# hub). The hub lives in the gzero monorepo at systems/hub, so the
+# Rust checkout is two levels up; set GZERO_DIR to point elsewhere.
+# Requires `cargo` on PATH.
 #
 #   scripts/two-replica-test.sh
 set -e
 root="$(cd "$(dirname "$0")/.." && pwd)"
-gzero="${GZERO_DIR:-$(dirname "$root")/gzero}"
+gzero="${GZERO_DIR:-$root/../..}"
 port="${HUB_TEST_PORT:-8799}"
 token="token"
 

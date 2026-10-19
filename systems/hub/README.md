@@ -1,8 +1,11 @@
 # gzero-hub
 
 v0 of the gzero hub: the Cloudflare Worker + Durable Object that
-carries gzero state between machines. Design and plan live in gzero's
-`research/hub-v0.md` and the gzero work items (`b468` epic).
+carries gzero state between machines. Brought into the gzero
+monorepo 2026-10-20 as a plain copy (no history imported; the original
+stays at `fluid-notion-labs/gzero-hub` on GitHub as archive).
+Design and plan live in `../../research/hub-v0.md` and the work items
+(`b468` epic).
 
 The hub is a change log, not a merge engine: each stream (one per doc,
 plus `global`) is a Durable Object holding an append-only log of
@@ -52,7 +55,7 @@ Clients authenticate with `Authorization: Bearer <TOKEN>`.
 
 Live at `https://gzero-hub.nick-hems.workers.dev` (workers.dev).
 Clients set `CX_HUB_URL` and `CX_TOKEN` to sync; the gzero D1 client
-(`gzero` repo, `src/hub_changes.rs`) is exercised end-to-end by the
+(`src/hub_changes.rs` in this repo) is exercised end-to-end by the
 two-replica convergence test against this deployment.
 
 Acceptance harness: `scripts/two-replica-test.sh` boots a local hub
