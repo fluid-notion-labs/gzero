@@ -278,18 +278,6 @@ impl CommsStore {
                 .collect(),
             None => Vec::new(),
         };
-        let live_reads: Vec<(String, i64)> = match self.root_map("reads") {
-            Some(r) => self
-                .store
-                .doc
-                .keys(&r)
-                .filter_map(|mid| {
-                    let at = self.read_at(&mid);
-                    (at > 0).then(|| (mid, at))
-                })
-                .collect(),
-            None => Vec::new(),
-        };
         let live_breads: Vec<(String, Vec<(String, i64)>)> = match self.root_map("broadcast_reads")
         {
             Some(br) => self
