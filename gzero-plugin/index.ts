@@ -103,7 +103,14 @@ function which(bin: string): Promise<string | null> {
  */
 function mcpRequest(cxMcp: string, method: string, params: unknown, timeoutMs = 15_000): Promise<any> {
   return new Promise((resolve, reject) => {
-    const child = spawn(cxMcp, [], { stdio: ["pipe", "pipe", "ignore"] });
+    // One-shot: this process exists for a single call, so skip the
+    // MCP server's startup hub sync (four RTTs ≈ 1.3s per spawn —
+    // that was the panel's open latency). gzero-syncd keeps the doc
+    // fresh; writes inside the call still sync.
+    const child = spawn(cxMcp, [], {
+      stdio: ["pipe", "pipe", "ignore"],
+      env: { ...process.env, CX_ONE_SHOT: "1" },
+    });
     // A dead/failed child (e.g. a broken shim) makes stdin writes emit
     // EPIPE; an unhandled 'error' event here would take down all of pi.
     child.stdin?.on("error", () => {});

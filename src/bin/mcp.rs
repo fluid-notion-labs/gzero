@@ -158,10 +158,24 @@ fn main() {
     }
 }
 
+/// One-shot mode (CX_ONE_SHOT=1): the gzero plugin spawns a fresh
+/// process per panel tool call, and gzero-syncd keeps the doc fresh
+/// (SSE + backstop), so those spawns skip the startup sync entirely —
+/// four hub round trips ≈ 1.3s per spawn was making every panel open
+/// crawl. Writes inside the call still sync (the `atoms.write` path),
+/// so one-shot is only ever stale by the syncd's backstop interval.
+fn one_shot() -> bool {
+    matches!(std::env::var("CX_ONE_SHOT").as_deref(), Ok("1"))
+}
+
 /// Best-effort startup sync: pull the hub's content before anything
 /// local runs, so seeds and harvest reconcile land on a fresh doc.
 /// Never fatal: the session works without it.
 fn startup(app: &mut App) {
+    if one_shot() {
+        eprintln!("gzero-mcp: one-shot, skipping startup sync");
+        return;
+    }
     if legacy_db() {
         // In legacy mode the comms handle is the atom store.
         let Some(store) = app.comms.legacy() else { return };
