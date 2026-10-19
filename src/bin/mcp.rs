@@ -114,14 +114,46 @@ fn main() {
     startup(&mut app);
     let stdin = std::io::stdin();
     let mut out = std::io::stdout().lock();
+    // Request timing: every request over CX_SLOW_MS (default 50) is
+    // logged with its method and duration; CX_TRACE=1 logs all. This
+    // is the outermost clock — the gzero-sync lines inside attribute
+    // the hub portion.
+    let slow_ms: u128 = std::env::var("CX_SLOW_MS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(50);
+    let trace = !matches!(std::env::var("CX_TRACE").as_deref(), Ok("0"))
+        && matches!(std::env::var("CX_TRACE").as_deref(), Ok(_));
     for line in stdin.lock().lines() {
         let Ok(line) = line else { break };
         if line.trim().is_empty() {
             continue;
         }
+        let t0 = std::time::Instant::now();
         if let Some(response) = handle_line(&line, &mut app) {
             writeln!(out, "{response}").expect("gzero-mcp: stdout closed");
             out.flush().expect("gzero-mcp: flush failed");
+        }
+        let ms = t0.elapsed().as_millis();
+        if trace || ms > slow_ms {
+            let method = line
+                .split("\"method\":\"")
+                .nth(1)
+                .and_then(|s| s.split('"').next())
+                .unwrap_or("?");
+            let name = line
+                .split("\"name\":\"")
+                .nth(1)
+                .and_then(|s| s.split('"').next())
+                .unwrap_or("");
+            eprintln!(
+                "gzero-mcp: request {method}{}: {ms}ms",
+                if name.is_empty() {
+                    String::new()
+                } else {
+                    format!(" {name}")
+                }
+            );
         }
     }
 }
@@ -144,14 +176,22 @@ fn startup(app: &mut App) {
                 return;
             }
         };
+        // Startup timing: each step's duration lands on stderr, so a
+        // slow session start can be attributed (each write below also
+        // triggers a full hub sync — see gzero-sync lines).
+        let t = std::time::Instant::now();
         if let Err(e) = atoms.sync() {
             eprintln!("gzero-mcp: hub sync failed: {e}");
         }
+        eprintln!("gzero-mcp: startup atoms.sync: {}ms", t.elapsed().as_millis());
+        let t = std::time::Instant::now();
         // Comms (bag `comms`): pull at session start so unread state
         // and presence from other machines is visible immediately.
         if let Err(e) = app.comms.layer().sync() {
             eprintln!("gzero-mcp: comms sync failed: {e}");
         }
+        eprintln!("gzero-mcp: startup comms.sync: {}ms", t.elapsed().as_millis());
+        let t = std::time::Instant::now();
         if let Err(e) = atoms.write(|s| {
             gzero::reconcile_seeds(s)
                 .map(|_| ())
@@ -159,6 +199,8 @@ fn startup(app: &mut App) {
         }) {
             eprintln!("gzero-mcp: seed sync failed: {e}");
         }
+        eprintln!("gzero-mcp: startup seeds: {}ms", t.elapsed().as_millis());
+        let t = std::time::Instant::now();
         if let Err(e) = atoms.write(|s| {
             let dir = std::env::current_dir().map_err(|e| e.to_string())?;
             gzero::reconcile_harvest(s, &dir, false)
@@ -167,6 +209,7 @@ fn startup(app: &mut App) {
         }) {
             eprintln!("gzero-mcp: harvest reconcile failed: {e}");
         }
+        eprintln!("gzero-mcp: startup harvest: {}ms", t.elapsed().as_millis());
     }
 }
 

@@ -19,6 +19,23 @@ use std::time::Duration;
 const TIMEOUT: Duration = Duration::from_secs(10);
 const PAGE_LIMIT: u64 = 200;
 
+/// Sync logging: one concise stderr line per hub operation, so slow
+/// syncs are visible in the MCP server log. `CX_SYNC_LOG=0` silences;
+/// `CX_SYNC_LOG=detail` adds per-page and skip lines.
+fn sync_log_enabled() -> bool {
+    !matches!(std::env::var("CX_SYNC_LOG").as_deref(), Ok("0"))
+}
+
+fn sync_log_detail() -> bool {
+    matches!(std::env::var("CX_SYNC_LOG").as_deref(), Ok("detail"))
+}
+
+fn sync_log(bag: &str, msg: &str) {
+    if sync_log_enabled() {
+        eprintln!("gzero-sync [{bag}] {msg}");
+    }
+}
+
 pub struct HubChanges {
     base: String,
     token: String,
@@ -52,8 +69,12 @@ impl HubChanges {
         store: &mut AutomergeStore,
         cursor: &mut SyncCursor,
     ) -> Result<usize, String> {
+        let t0 = std::time::Instant::now();
         let changes = store.changes_for(&cursor.pushed_heads);
         if changes.is_empty() {
+            if sync_log_detail() {
+                sync_log(&self.bag, "push: nothing to do");
+            }
             return Ok(0);
         }
         let n = changes.len();
@@ -64,11 +85,20 @@ impl HubChanges {
                 .collect::<Vec<_>>(),
             "machine_id": machine_id(),
         });
+        let t_net = std::time::Instant::now();
         let resp: serde_json::Value = self.post("/changes", &body)?;
+        let net_ms = t_net.elapsed().as_millis();
         if resp.get("last_seq").and_then(|v| v.as_u64()).is_none() {
             return Err("hub: missing last_seq in push response".to_string());
         }
         cursor.pushed_heads = store.heads();
+        sync_log(
+            &self.bag,
+            &format!(
+                "push: {net_ms}ms net, {}ms local, {n} changes",
+                t0.elapsed().as_millis().saturating_sub(net_ms)
+            ),
+        );
         Ok(n)
     }
 
@@ -79,10 +109,34 @@ impl HubChanges {
         store: &mut AutomergeStore,
         cursor: &mut SyncCursor,
     ) -> Result<usize, String> {
+        let t0 = std::time::Instant::now();
+        let result = self.pull_pages(store, cursor);
+        match &result {
+            Ok(n) => sync_log(
+                &self.bag,
+                &format!("pull: {}ms, {n} changes", t0.elapsed().as_millis()),
+            ),
+            Err(e) => sync_log(
+                &self.bag,
+                &format!("pull: {}ms, FAILED: {e}", t0.elapsed().as_millis()),
+            ),
+        }
+        result
+    }
+
+    /// The paging loop behind [`pull`]: fetch pages after the cursor
+    /// and apply them, until the hub reports no `next` page.
+    fn pull_pages(
+        &self,
+        store: &mut AutomergeStore,
+        cursor: &mut SyncCursor,
+    ) -> Result<usize, String> {
         let mut applied = 0;
         loop {
             let path = format!("/changes?since={}&limit={PAGE_LIMIT}", cursor.pulled_seq);
+            let t_page = std::time::Instant::now();
             let resp: serde_json::Value = self.get(&path)?;
+            let page_ms = t_page.elapsed().as_millis();
             let last = resp
                 .get("last_seq")
                 .and_then(|v| v.as_u64())
@@ -109,6 +163,9 @@ impl HubChanges {
                 );
             }
             let n = changes.len();
+            if sync_log_detail() {
+                sync_log(&self.bag, &format!("pull page: {page_ms}ms, {n} changes"));
+            }
             let pulled_hashes: Vec<ChangeHash> = changes.iter().map(|c| c.hash()).collect();
             store
                 .apply_changes(changes)

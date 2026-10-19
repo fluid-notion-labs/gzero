@@ -878,8 +878,18 @@ pub fn sync_doc(store: &mut AutomergeStore) -> std::result::Result<(), String> {
     };
     let sidecar = hub_changes::sidecar_path(&path);
     let mut cursor = hub_changes::SyncCursor::load(&sidecar, &bag)?;
+    let t0 = std::time::Instant::now();
     let result = hub_changes::sync_once(store, &hub, &mut cursor);
+    let ms = t0.elapsed().as_millis();
     cursor.save(&sidecar, &bag)?;
+    if matches!(std::env::var("CX_SYNC_LOG").as_deref(), Ok("detail")) {
+        match &result {
+            Ok((pushed, pulled)) => {
+                eprintln!("gzero-sync [{bag}] once: {ms}ms (+{pushed} -{pulled})");
+            }
+            Err(e) => eprintln!("gzero-sync [{bag}] once: {ms}ms, FAILED: {e}"),
+        }
+    }
     result.map(|_| ())
 }
 
