@@ -877,7 +877,7 @@ pub fn sync_doc(store: &mut AutomergeStore) -> std::result::Result<(), String> {
         return Ok(());
     };
     hub_changes::sync_store(store, &hub, &hub_changes::sidecar_path(&path), &bag)
-        .map(|_| ()) (store: doc lock + merge-on-flush — safe co-writing for sessions and gzero-syncd)
+        .map(|_| ())
 }
 
 #[cfg(test)]
