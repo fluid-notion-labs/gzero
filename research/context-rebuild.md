@@ -93,3 +93,18 @@ The context bag carries stale and bloated state:
 - MacPro `gzero sources`: 311-atom `atoms.json` source; multiple
   `/mnt/data/...` and `projects-old/` sources.
 - Both machines converge on the same items/sections (verified).
+
+## Executed (2026-10-19, laptop; daemon build happening on the MacPro in parallel)
+
+- Bag name kept as `context` (no config change needed): both machines'
+  docs + sidecars wiped (archived to `tmp/bloated-context/` here and
+  `~/tmp/bloated-context/` on the MacPro), hub log truncated.
+- Hub: `POST /bag/context/truncate {before: 3241}` deleted all 3240
+  changes; verified `since=0` returns empty. No snapshot was stored.
+  Comms bag untouched.
+- Exports (pre-wipe, both machines converged at 701 atoms / 115
+  tombstones): `exports/atoms-snapshot.json`, 21 items as JSON,
+  3 sections as md, sources + tags lists. Curated re-import material:
+  `tmp/cleanout/` (27 scope files, 678 atoms — 23 dropped in curation;
+  115 tombstones reset, which also clears the text-keyed-tombstone
+  limitation).
