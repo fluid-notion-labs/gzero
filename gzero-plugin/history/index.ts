@@ -1,12 +1,12 @@
 // index.ts — pi-history-plugin entry.
 //
-// ctrl+` (and /history) opens the prompt-history overlay: every user prompt
-// from this project's pi sessions, newest first, with pure filler ("yep",
-// "ok, continue", ...) filtered out. Enter inserts the selected prompt into
-// the editor; esc closes.
+// F1 (and /history) opens the history overlay: projects → sessions → the
+// branch tree (item dca8). Enter picks a prompt (inserted into the editor)
+// exactly as before; esc backs out a level, f1/q close from the top level.
 
+import { basename, dirname, join } from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { loadHistory } from "./history.ts";
+import { listProjects, loadSessions } from "./history.ts";
 import { HistoryPanel } from "./panel.ts";
 
 export default function (pi: ExtensionAPI) {
@@ -16,15 +16,17 @@ export default function (pi: ExtensionAPI) {
       ctx.ui.notify("history: no session file yet", "warning");
       return;
     }
-    const entries = loadHistory(sessionFile);
+    const { projects, current } = listProjects(sessionFile);
     ctx.ui.custom(
       (_tui, theme, keybindings, done) =>
-        new HistoryPanel(entries, theme, keybindings, {
+        new HistoryPanel(projects, current, theme, keybindings, {
           onClose: () => done(undefined),
           onPick: (entry) => {
             ctx.ui.setEditorText(entry.text);
             done(undefined);
           },
+          loadSessions: (projectDir) => loadSessions(projectDir),
+          sessionDir: (project) => join(dirname(dirname(sessionFile)), project),
         }),
       {
         overlay: true,
@@ -38,12 +40,12 @@ export default function (pi: ExtensionAPI) {
   // alt+` is the window switcher on the user's desktop. F1 decodes
   // distinctly everywhere and was free in pi and the other plugins.
   pi.registerShortcut("f1", {
-    description: "Toggle prompt history (filler filtered)",
+    description: "Toggle history (projects → sessions → branch tree)",
     handler: async (ctx) => open(ctx as ExtensionCommandContext),
   });
 
   pi.registerCommand("history", {
-    description: "Show prompt history for this project (filler filtered)",
+    description: "Show history: projects, sessions, branch tree (filler filtered)",
     handler: async (_args, ctx) => open(ctx),
   });
 }
