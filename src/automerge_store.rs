@@ -40,7 +40,20 @@ pub struct AutomergeStore {
     /// ChangeFeed subscribers (see events.rs); dead senders are dropped
     /// at drain time.
     pub(crate) subscribers: Vec<std::sync::mpsc::Sender<crate::events::ChangeEvent>>,
+    /// Conflict-count signature of the last successful root
+    /// reconciliation, persisted in the hashes sidecar. Concurrent root
+    /// creation can never be removed from the doc (automerge history),
+    /// so reconciliation must not re-fold the losers on every pull —
+    /// the fold is idempotent, and the conflict count only changes when
+    /// a genuinely new conflicting root object arrives.
+    roots_state: Option<[usize; 3]>,
 }
+
+/// Hashes-sidecar key holding the reconciled root conflict counts.
+const ROOTS_STATE_KEY: &str = "__roots__";
+
+/// Root keys reconciled after pulls, in signature order.
+const ROOT_KEYS: [&str; 3] = ["atoms", "tombs", "sections"];
 
 impl AutomergeStore {
     /// Open (or create) the doc at `path`. The hashes sidecar is a
@@ -55,6 +68,7 @@ impl AutomergeStore {
             path: path.map(Path::to_path_buf),
             hashes: BTreeMap::new(),
             subscribers: Vec::new(),
+            roots_state: None,
         };
         // Root objects are created lazily (ensure_schema): a cold
         // replica that syncs before writing should adopt the peer's
@@ -71,7 +85,32 @@ impl AutomergeStore {
                 store.hashes = serde_json::from_reader(std::fs::File::open(hp)?)?;
             }
         }
+        store.roots_state = store.roots_state_from_hashes();
         Ok(store)
+    }
+
+    /// Reconciled-root signature previously persisted in the hashes
+    /// sidecar, if any.
+    fn roots_state_from_hashes(&self) -> Option<[usize; 3]> {
+        let raw = self.hashes.get(ROOTS_STATE_KEY)?;
+        let mut parts = raw.split(',');
+        let mut out = [0usize; 3];
+        for v in out.iter_mut() {
+            *v = parts.next()?.parse().ok()?;
+        }
+        if parts.next().is_some() {
+            return None;
+        }
+        Some(out)
+    }
+
+    /// Persist the reconciled-root signature (hashes sidecar).
+    fn save_roots_state(&mut self, counts: [usize; 3]) {
+        self.roots_state = Some(counts);
+        self.hashes.insert(
+            ROOTS_STATE_KEY.to_string(),
+            counts.map(|c| c.to_string()).join(","),
+        );
     }
 
     /// In-memory store for tests.
@@ -86,6 +125,7 @@ impl AutomergeStore {
             path: None,
             hashes: BTreeMap::new(),
             subscribers: Vec::new(),
+            roots_state: None,
         })
     }
 
@@ -144,7 +184,18 @@ impl AutomergeStore {
     /// (automerge LWW over the merged change graph), so every replica
     /// folds into the same object and the stores converge to a union.
     fn reconcile_roots(&mut self) -> Result<()> {
-        for key in ["atoms", "tombs", "sections"] {
+        // Cheap first step: count the conflicting objects per root key
+        // (microseconds). The expensive fold below runs only when the
+        // signature changes, i.e. when a pull actually delivered a new
+        // conflicting root object.
+        let mut counts = [0usize; 3];
+        for (i, key) in ROOT_KEYS.into_iter().enumerate() {
+            counts[i] = self.doc.get_all(ROOT, key)?.len();
+        }
+        if self.roots_state == Some(counts) {
+            return Ok(());
+        }
+        for key in ROOT_KEYS {
             let conflicts = self.doc.get_all(ROOT, key)?;
             if conflicts.len() <= 1 {
                 continue;
@@ -163,6 +214,7 @@ impl AutomergeStore {
             }
         }
         self.doc.commit();
+        self.save_roots_state(counts);
         Ok(())
     }
 
