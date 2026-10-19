@@ -230,8 +230,11 @@ EOF
           || launchctl load -w "$plist"
         ;;
       Linux)
+        # is-system-running exits non-zero for "degraded" (some other
+        # unit failed) — that's still a working user manager for us.
         if command -v systemctl >/dev/null 2>&1 \
-           && systemctl --user is-system-running >/dev/null 2>&1; then
+           && systemctl --user is-system-running 2>/dev/null \
+              | grep -qE '^(running|degraded|maintenance)$'; then
           unit="$HOME/.config/systemd/user/gzero-syncd.service"
           say "installing systemd user unit gzero-syncd"
           mkdir -p "$(dirname "$unit")"

@@ -186,10 +186,11 @@ The comms bag gets live fan-out for free once the daemon syncs it too
   `~/Library/Logs/gzero-syncd.log`) on macOS and a systemd user unit
   on Linux; `--no-daemon` skips. The plist/unit embed the hub token
   and are chmod 600.
-- Not yet done: deploy the SSE endpoint to production (`wrangler
-  deploy` in gzero-hub) and run install.sh on both Macs; confirm SSE
-  streams through the real Cloudflare edge (local `wrangler dev`
-  verified; the heartbeat interval guards edge idle timeouts).
+- Not yet done: run install.sh on the MacBook (Air Apparent) — the
+  daemon, SSE endpoint and unit install are all done on the Al Grater
+  box. Real-edge SSE verified (hello + push events through the
+  production worker; daemon pulled a comms probe within seconds of a
+  remote push).
 
 ## Open questions
 
