@@ -1,0 +1,59 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:gzero_client/main.dart';
+import 'package:gzero_client/settings/settings_store.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+void main() {
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
+
+  testWidgets('app shell: sync card, streams, projects placeholder, settings entry', (
+    tester,
+  ) async {
+    // Unroutable port: connection refused immediately and deterministically,
+    // so the card ends in the unreachable state without network.
+    await tester.pumpWidget(const GzeroApp(initialSettings: Settings(hubUrl: 'http://127.0.0.1:1')));
+    await tester.pumpAndSettle();
+    expect(find.text('gzero'), findsOneWidget);
+    expect(find.byIcon(Icons.refresh), findsOneWidget);
+    expect(find.text('projects'), findsOneWidget);
+    expect(find.text('hub unreachable'), findsOneWidget);
+    expect(find.byIcon(Icons.cloud_off), findsOneWidget);
+  });
+
+  testWidgets('settings screen opens, saves, and pops', (tester) async {
+    final store = _RecordingStore();
+    await tester.pumpWidget(
+      GzeroApp(initialSettings: const Settings(hubUrl: 'http://127.0.0.1:1'), store: store),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Settings'));
+    await tester.pumpAndSettle();
+    expect(find.text('settings'), findsOneWidget);
+
+    await tester.enterText(find.widgetWithText(TextField, 'hub url'), 'https://new.test');
+    await tester.enterText(find.widgetWithText(TextField, 'device token (CX_TOKEN)'), 'tok');
+    await tester.tap(find.text('save'));
+    await tester.pumpAndSettle();
+
+    expect(store.saved?.hubUrl, 'https://new.test');
+    expect(store.saved?.token, 'tok');
+    // back on home after save
+    expect(find.text('settings'), findsNothing);
+  });
+}
+
+class _RecordingStore implements SettingsStore {
+  Settings? saved;
+
+  @override
+  Future<Settings> load() async => saved ?? const Settings();
+
+  @override
+  Future<void> save(Settings settings) async {
+    saved = settings;
+  }
+}

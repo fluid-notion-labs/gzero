@@ -5,6 +5,13 @@ of the gzero streams, syncing through the hub. Speaks to the api server
 (the gzero Worker + DO hub); no content plane, no resident — just
 Knowledge-plane replication end to end.
 
+*2026-10-19: the app exists — in-tree at `gzero-flutter/` in the gzero
+repo (one repo, may extract later). Transport plane working: hub client
+(health, per-stream head seq), device token in settings, sync status
+card, verified against the production hub. Open architectural decision
+for the data planes: automerge decoding in Dart (no mature package —
+needs a port/FFI) versus a hub-side decoded view endpoint.*
+
 3D diagram: [`flutter-client.glb`](flutter-client.glb) (built with
 scene-mcp from the mermaid below). Planes are nested and stacked
 vertically — Surface at the top, hub at the bottom; sync flows down,
