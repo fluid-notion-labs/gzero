@@ -5,7 +5,7 @@
 Superseded by `plan3.md` (2026-10) — kept as reference for the engine
 rationale, record-type schema, and the workflow-content rule. Original
 greeting: productization thread: gzero grows
-from "bag + CLI" into a fully specified product — doc set, user
+from "stream + CLI" into a fully specified product — doc set, user
 stories, work-item/todo facet, native history — with automerge-rs as
 the engine core behind gzero's `Storage` trait (**elastic** is the
 deferred name for the typed layer once it's a crate). Sits beside
@@ -34,7 +34,7 @@ history is the data, not an afterthought.
 
 ## Engine packaging: automerge behind `Storage`; elastic deferred
 
-`nursery/bagflow` (own repo, retrieved) stays an unrenamed reference
+`nursery/streamflow` (own repo, retrieved) stays an unrenamed reference
 prototype — gzero has no code dependency on it, and nothing needs
 a second crate yet:
 
@@ -49,21 +49,21 @@ a second crate yet:
   lattice stretches to absorb concurrent replicas and always snaps back
   to one state.
 - No rename todo remains: no `nursery/elastic`, no symlink, no
-  component-table churn. `lattice.md` keeps pointing at bagflow as the
+  component-table churn. `lattice.md` keeps pointing at streamflow as the
   DFIR reference prototype.
 
 ## The doc set
 
 | doc | contents | status |
 |---|---|---|
-| `product.md` | what gzero/gzero does, for whom, overarching ideas, non-goals | to write — markdown now; migrates into the bag (this rule) |
-| `architecture.md` | gzero umbrella (planes, moving parts) — promoted from `architecture2.md`, which is retired | exists — migrates into the bag (this rule) |
-| `research/old/memory-plane.md` | bag components, resolution model, diagrams | exists (archived) — migrates (this rule) |
-| `stories.md` | user stories / workflows — human and agent personas | to write — markdown now; migrates into the bag (this rule) |
+| `product.md` | what gzero/gzero does, for whom, overarching ideas, non-goals | to write — markdown now; migrates into the stream (this rule) |
+| `architecture.md` | gzero umbrella (planes, moving parts) — promoted from `architecture2.md`, which is retired | exists — migrates into the stream (this rule) |
+| `research/old/memory-plane.md` | stream components, resolution model, diagrams | exists (archived) — migrates (this rule) |
+| `stories.md` | user stories / workflows — human and agent personas | to write — markdown now; migrates into the stream (this rule) |
 | `plan2.md` | this | — |
 | record-type specs | work-item schema, merge semantics, lifecycle | to write (can live in `stories.md` appendix or own doc) |
 
-## Workflow content lives in the bag, not in files
+## Workflow content lives in the stream, not in files
 
 ("wsys" is just the author's shorthand for "workflow system" — an
 earlier draft mistook it for a rule name; the idea below is what
@@ -80,7 +80,7 @@ lives in gzero's store, stored/synced via automerge:
   `cx item` verbs + MCP tools (L3)
 - **markdown stays the authoring format** — files are inputs, not the
   store: import (harvest pattern), then the file is a stub or deleted.
-  The bag is the single home; `cx export`/section views regenerate the
+  The stream is the single home; `cx export`/section views regenerate the
   publishable prose on demand
 - **files remain files** for: code, binaries and GLB (Derived plane),
   vendored material — the rule is about workflow content, not Content
@@ -159,7 +159,7 @@ three bolted-on history mechanisms; gzero's own unproven
   merged), a SQLite **derived index** for query/FTS (cache of doc
   state, never truth), MCP/CLI tools — starts as modules inside
   gzero. `elastic` names the extraction, if it ever happens.
-  bagflow (DFIR) stays a reference prototype.
+  streamflow (DFIR) stays a reference prototype.
 - **hydroflow/DFIR, timely:** no — wrong problem. **raft-rs/openraft:**
   no — reaffirms `resident-mcp/replication.md`; a CRDT core makes
   consensus moot for this plane. **`lattices`/`crdts` crates:**
@@ -176,8 +176,8 @@ reference reading only.
 
 ## Engine milestones (automerge behind `Storage`; elastic deferred)
 
-- **L0 — substrate in place (done):** `nursery/bagflow` cloned as the
-  reference prototype (own repo, `fluid-notion-labs/bagflow`;
+- **L0 — substrate in place (done):** `nursery/streamflow` cloned as the
+  reference prototype (own repo, `fluid-notion-labs/streamflow`;
   explorations ignores `nursery/`). Not renamed; no further L0 work.
 - **L1 — automerge behind `Storage`** (= plan.md M4): `AutomergeStore`
   in gzero — ledger, fold, and absorb ported onto automerge
@@ -211,7 +211,7 @@ reference reading only.
   separate `elastic-mcp`? Lean: extend cx (one MCP server, one tool
   vocabulary).
 - **Doc placement:** resolved by the rule above — markdown homes in
-  `research/context/` until L2, then everything migrates into the bag
+  `research/context/` until L2, then everything migrates into the stream
   (prose → section records, todos → work items).
 
 ## TODO (the list, until it becomes items)
@@ -219,7 +219,7 @@ reference reading only.
 - [ ] write `product.md`
 - [ ] write `stories.md`
 - [x] refresh architecture docs (done: umbrella promoted to
-      `architecture.md`; bag doc is `gzero/research/memory-plane.md`
+      `architecture.md`; stream doc is `gzero/research/memory-plane.md`
       with elastic rows, L1 note; stale architecture2/plan references
       updated everywhere)
 - [x] L1 (store): `AutomergeStore` behind `Storage` — done, tested

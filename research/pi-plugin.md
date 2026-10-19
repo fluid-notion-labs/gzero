@@ -48,7 +48,7 @@ experience is: detect → offer → install.
 
   Note: plain `cargo install gzero` is wrong — the name is taken on
   crates.io by an unrelated utility crate. If the project later publishes,
-  it needs a free crate name (e.g. `contextbag`); until then the `--git`
+  it needs a free crate name (e.g. `contextstream`); until then the `--git`
   form is the install path.
 - **Decline / failure.** Plugin degrades to no injection (same path as
   server-connect failure); warn once, remind via `/context`.
@@ -129,10 +129,10 @@ Commands only orchestrate the existing MCP tools; they add no storage logic.
 ### 4. Pack recommendation — dissolved (decision 2026-10-10)
 
 Packs (`packs/*.md` + `cx recommend`) were a file-based ingestion channel
-from the pre-MCP design, parallel to the bag. Dissolved: tagged atoms are
+from the pre-MCP design, parallel to the stream. Dissolved: tagged atoms are
 just atoms; the pull-in workflow already covers them.
 
-- Seed each pack file's atoms into the bag once (`cx add`), delete
+- Seed each pack file's atoms into the stream once (`cx add`), delete
   `packs/` + `recommend` from the code (work-list: `plan.md` M4).
 - Project-relevance is data, not machinery: a project-scope atom names
   the tags that matter in that repo ("Rust project — `#rust` has
@@ -226,7 +226,7 @@ turn 2. The plugin therefore caches one resolve per session and re-sets
 3. **P3 — packs.** Dissolved by decision (§4 above) — no plugin work.
    Remaining code cleanup is in `plan.md` M4's work-list.
 4. **P4 — migration (done).** `~/.pi/agent/AGENTS.md` and explorations
-   `CONTEXT.md` are pointer stubs; the bag is the sole authority.
+   `CONTEXT.md` are pointer stubs; the stream is the sole authority.
    Verified live: model sees layout/style/tooling atoms from injection
    alone. Stubs are bullet-free (an accidental `cx add` imports nothing)
    and warn that per-source sync would replace the atoms with the stub —

@@ -1,4 +1,4 @@
-# Track S v1 — cross-machine messaging on its own automerge bag
+# Track S v1 — cross-machine messaging on its own automerge stream
 
 *2026-10-19. Design for taking S1–S3b cross-machine. Written after a working
 session that audited the messaging stack, tested local delivery, and chose
@@ -12,23 +12,23 @@ link).*
   SQLite comms store (`CX_LEGACY_DB=1` rollback hatch, slated for removal).
   Nothing syncs those tables; they never enter snapshots.
 - The hub (`gzero-hub` v0, deployed) transports exactly one thing: the
-  automerge change log of the ws doc, per **bag** (bag `context` in use).
-  Change log in D1, merge engine client-side (automerge), per-bag endpoints
-  already parameterized (`HubChanges::from_env(bag)`).
+  automerge change log of the ws doc, per **stream** (stream `context` in use).
+  Change log in D1, merge engine client-side (automerge), per-stream endpoints
+  already parameterized (`StreamSync::from_env(stream)`).
 - No Track S plan exists in hub-v0 or plan3 — this document is it.
 - Tested in-session: local delivery works (message between two sessions on
   one machine, seen unread in the store, delivered on next `resolve`).
 
-## Decision: a second automerge bag, `comms`
+## Decision: a second automerge stream, `comms`
 
 Cross-machine messaging keeps the same architecture as the context store —
 its **own** automerge doc, synced through the hub's existing change-log
-endpoints under bag name `comms`.
+endpoints under stream name `comms`.
 
 Why not hub-native ephemeral rows (plain D1 + server TTL): messages would
 need the machine online at send time, a second transport to build and
 maintain, and the mobile client would need a second protocol. The automerge
-path reuses `HubChanges`, cursors, the convergence tests, and gives
+path reuses `StreamSync`, cursors, the convergence tests, and gives
 offline-first sends for free (queue locally, sync when the hub is reachable).
 Concurrent sends from two machines both survive — correct chat semantics.
 
@@ -47,7 +47,7 @@ an append-only change log; naive tombstoning grows forever. Design:
   messages exceed a size/count threshold, or age > TTL), a replica mints a
   fresh epoch doc containing only live messages, records
   `epoch = {n, base_seq}` in the doc, and calls a new hub endpoint to
-  truncate the bag's change log below the new epoch's base seq.
+  truncate the stream's change log below the new epoch's base seq.
 - Convergence holds because every replica pulls the same log from the same
   cursor domain; a replica with an older cursor simply re-syncs into the new
   epoch (its pre-epoch changes are rejected/no-op against the truncated log).
@@ -87,9 +87,9 @@ No scope column: comms are machine-global, matching today's table shape.
 
 ## Hub integration
 
-- **[built]** Existing per-bag change endpoints work as-is for bag
+- **[built]** Existing per-stream change endpoints work as-is for stream
   `comms`; auth is the same `CX_TOKEN`.
-- **[built]** New endpoint: `POST /bag/{name}/truncate {"before": N}` in
+- **[built]** New endpoint: `POST /stream/{name}/truncate {"before": N}` in
   gzero-hub — deletes change rows with seq < `before`, count-truthful and
   idempotent, `nextSeq` untouched so pushes keep their position. The one
   sanctioned deletion in the append-only log.
@@ -101,7 +101,7 @@ No scope column: comms are machine-global, matching today's table shape.
 
 - `comms.rs`: `CommsStore` — an `AutomergeStore` at its own path
   (`~/.pi/agent/comms.ws`, `CX_COMMS_DB` override) + `SyncCursor` sidecar,
-  bag `comms` (`CX_COMMS_BAG` override for isolated test runs). The
+  stream `comms` (`CX_COMMS_STREAM` override for isolated test runs). The
   `CommsLayer` trait abstracts the S1–S3b surface: `CommsStore` (doc) and
   `SqliteStore` (legacy tables) both implement it, so `CX_LEGACY_DB=1`
   stays the rollback hatch and in-memory tests can use either backend.

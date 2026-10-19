@@ -3,7 +3,7 @@
 *Active plan (2026-10), written after a code audit. Supersedes
 `plan2.md`'s build-order TODO; plan2 stays as reference for the engine
 rationale, record-type schema, and the workflow-content rule (workflow
-content lives in the bag, not in files). Ordering follows the
+content lives in the stream, not in files). Ordering follows the
 re-phased build order in `old/architecture.md`: the workflow system (WS)
 built **locally**, then **distributed**; the resident track is far
 later and not planned here.*
@@ -24,7 +24,7 @@ Everything lives in this repo (`nursery/gzero`), crate
 | pi plugin: per-turn injection, `/context` tier browser, review hook, skills, workstyles | `gzero-plugin/*.ts` | live; `EXPECTED_TOOLS` gate = resolve/search/add/remove/tags |
 | global floor content, compiled in, reconciled at startup | `seeds/global.md` | live |
 | hub (deployed Worker + DO) | **not in this repo** | source location unknown — find before D1 |
-| bagflow (DFIR + lattices reference prototype) | `nursery/bagflow` | unrenamed, no code dependency |
+| streamflow (DFIR + lattices reference prototype) | `nursery/streamflow` | unrenamed, no code dependency |
 
 ## Audit findings — what needs to change
 
@@ -40,7 +40,7 @@ Everything lives in this repo (`nursery/gzero`), crate
 2. ~~The kv annex is SQLite-only and outside the automerge doc~~
    **resolved 2026-10:** the annex was removed entirely — zero usage,
    a pre-generalization artifact (revert of `b6ef929`). Workflow
-   content lives in the bag as record data (W1).
+   content lives in the stream as record data (W1).
 3. **Stale doc references**: `architecture.md` and `plan2.md` point at
    `gzero/research/memory-plane.md`, `research/context/…`, and
    `plan.md` — all now under `research/old/` after the restructure.
@@ -63,10 +63,10 @@ Everything lives in this repo (`nursery/gzero`), crate
   native history (actor/timestamp/seq on every change), append-only
   persistence. SQLite is demoted to a derived index (query/FTS),
   never truth.
-- **workflow content lives in the bag, not in files**: prose → section
+- **workflow content lives in the stream, not in files**: prose → section
   records; state (todos, decisions,
   annotations) → record types; markdown stays the authoring format;
-  files are inputs, the bag is the store.
+  files are inputs, the stream is the store.
 - **Work items are native** (not adopted): record type per plan2's
   schema; borrow the beads/beads-rs/br workflow wisdom.
 - **One MCP server, one vocabulary**: extend `cx` + `cx-mcp`.
@@ -164,7 +164,7 @@ Everything lives in this repo (`nursery/gzero`), crate
   the doc; files become stubs or are deleted; `cx export`/section views
   regenerate publishable prose on demand.
 - Fix the stale references (finding 3) as part of this.
-- *Acceptance:* the docs read back from the bag; repo `.md` files are
+- *Acceptance:* the docs read back from the stream; repo `.md` files are
   stubs pointing at `cx ws show`.
 
 ## Track D — distribution (after W works locally)
@@ -240,7 +240,7 @@ session tree after that. The MCP surface stays stable throughout.
       superseded by the pane + Ctrl+W viewer. EXPECTED_TOOLS gained
       item_pin, plan_next.
 - [ ] W4: capacity/policy, gates, evidence-ranked scheduler
-- [ ] W5: doc migration into the bag; fix stale references
+- [ ] W5: doc migration into the stream; fix stale references
 - [x] ~~locate hub Worker source~~ — decision 2026-10-18: source is lost;
       v0 rebuilds the hub as a new repo (`gzero-hub`). Plan + status:
       `research/hub-v0.md`

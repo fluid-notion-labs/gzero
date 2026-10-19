@@ -596,27 +596,27 @@ export default function (pi: ExtensionAPI) {
   let editorInstalled = false;
   let uiCtx: ExtensionContext | null = null;
   /** Skill references already distilled into the store this session. */
-  const addedToBag = new Set<string>();
+  const addedToStore = new Set<string>();
 
   /** Distill any of the given skills not yet in the store into the skillbag.
    * Store atoms dedupe by text; already-imported skills are skipped by node check. */
-  const ensureInBag = async (
+  const ensureInStore = async (
     cxMcp: string,
     entries: SkillEntry[],
     ui: ExtensionContext["ui"],
   ) => {
-    const pending = entries.filter((e) => !addedToBag.has(`${e.vendor}/${e.name.toLowerCase()}`));
+    const pending = entries.filter((e) => !addedToStore.has(`${e.vendor}/${e.name.toLowerCase()}`));
     if (pending.length === 0) return;
-    let inBag: string | null = null;
+    let inStore: string | null = null;
     try {
-      inBag = await mcpCall(cxMcp, "resolve", { scope_prefix: "skills/" });
+      inStore = await mcpCall(cxMcp, "resolve", { scope_prefix: "skills/" });
     } catch {
       // store check failed; adding is still safe (dedupe by text)
     }
     for (const entry of pending) {
       const key = `${entry.vendor}/${entry.name.toLowerCase()}`;
-      addedToBag.add(key);
-      if (inBag?.includes(`# skills/${entry.vendor}/${entry.name}`)) continue;
+      addedToStore.add(key);
+      if (inStore?.includes(`# skills/${entry.vendor}/${entry.name}`)) continue;
       const atoms = distillSkill(entry);
       if (atoms.length === 0) continue;
       try {
@@ -631,7 +631,7 @@ export default function (pi: ExtensionAPI) {
         });
         ui.notify(`skillbag: added ${entry.name} (${atoms.length} atoms)`, "info");
       } catch (e) {
-        addedToBag.delete(key);
+        addedToStore.delete(key);
         ui.notify(
           `skillbag add failed for ${entry.name}: ${e instanceof Error ? e.message : String(e)}`,
           "error",
@@ -926,7 +926,7 @@ export default function (pi: ExtensionAPI) {
           `<skills>\nThese skills are loaded for this session or were referenced with #skill:<name>; their full instructions are included here.\n\n${parts.join("\n\n")}\n</skills>`;
       }
       if (cxMcp && entries.size > 0) {
-        await ensureInBag(cxMcp, [...entries.values()], ctx.ui);
+        await ensureInStore(cxMcp, [...entries.values()], ctx.ui);
       }
     }
     if (cxMcp) {

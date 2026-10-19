@@ -1,4 +1,4 @@
-# Context rebuild — export, curate, fresh bag, re-import
+# Context rebuild — export, curate, fresh stream, re-import
 
 *2026-10-19. The rejig that got forgotten once already: find it here
 next time. Motivation and evidence below; execute top to bottom.
@@ -6,14 +6,14 @@ Work item in the workflow system tracks progress.*
 
 ## Why
 
-The context bag carries stale and bloated state:
+The context stream carries stale and bloated state:
 
 - **Dead-source atoms**: sources under paths that no longer exist —
   `/mnt/data/projects/...` (old disk layout), `projects-old/`,
   `nursery/contexture/`, `nursery/contextual/packs/` — including one
   source (`contextual/sync/atoms.json`) contributing 311 atoms.
   Harvested AGENTS.md files from abandoned checkouts.
-- **Change-log bloat**: 1200+ changes in bag `context`, recent pages
+- **Change-log bloat**: 1200+ changes in stream `context`, recent pages
   ~2.5 MB, which time out at the 10 s client read limit. Every write
   retries the same doomed pull; since `sync_once` pulls before it
   pushes, a failing pull also blocks pushes. This is the "pi is
@@ -26,8 +26,8 @@ The context bag carries stale and bloated state:
 - `gzero item list --json`, `gzero item show <id> --json`,
   `gzero ws show <name>` — workflow docs, export manually (few).
 - `gzero sources` — per-source counts, the curation map.
-- Hub compaction endpoint: `POST /bag/{bag}/snapshot` truncates the
-  change log (gzero-hub `src/bag.ts`). No client command uses it yet.
+- Hub compaction endpoint: `POST /stream/{name}/snapshot` truncates the
+  change log (gzero-hub `src/stream.ts`). No client command uses it yet.
 
 ## Plan
 
@@ -61,12 +61,12 @@ The context bag carries stale and bloated state:
 - Decide item/section carry-over: recreate the live ones (open items,
   debt ledger, procedures) from the exports; drop closed history.
 
-### 4. Fresh bag
+### 4. Fresh stream
 
-- New bag name, e.g. `CX_BAG=context2` on both machines (env/config;
+- New stream name, e.g. `CX_CONTEXT_STREAM=context2` on both machines (env/config;
   `install.sh` update). Fresh change log = the bloat problem is gone;
-  old bag stays on the hub frozen as history.
-- Comms bag keeps its name (epoch rolls already bound its growth).
+  old stream stays on the hub frozen as history.
+- Comms stream keeps its name (epoch rolls already bound its growth).
 
 ### 5. Re-import + verify
 
@@ -78,7 +78,7 @@ The context bag carries stale and bloated state:
 
 ### 6. Aftermath
 
-- Old `context` bag: leave frozen, or DELETE from D1 once `context2`
+- Old `context` stream: leave frozen, or DELETE from D1 once `context2`
   is verified on both machines.
 - Client-side: `gzero compact` command that POSTs the snapshot to the
   hub (uses the existing endpoint) — prevents recurrence.
@@ -87,7 +87,7 @@ The context bag carries stale and bloated state:
 
 ## Evidence log (2026-10-19)
 
-- Test run against the real bag: `pull: 41894ms, FAILED: timed out
+- Test run against the real stream: `pull: 41894ms, FAILED: timed out
   reading response` at `since=1200`, ~2.5 MB pages; repeated on every
   sync attempt.
 - MacPro `gzero sources`: 311-atom `atoms.json` source; multiple
@@ -96,12 +96,12 @@ The context bag carries stale and bloated state:
 
 ## Executed (2026-10-19, laptop; daemon build happening on the MacPro in parallel)
 
-- Bag name kept as `context` (no config change needed): both machines'
+- Stream name kept as `context` (no config change needed): both machines'
   docs + sidecars wiped (archived to `tmp/bloated-context/` here and
   `~/tmp/bloated-context/` on the MacPro), hub log truncated.
-- Hub: `POST /bag/context/truncate {before: 3241}` deleted all 3240
+- Hub: `POST /stream/context/truncate {before: 3241}` deleted all 3240
   changes; verified `since=0` returns empty. No snapshot was stored.
-  Comms bag untouched.
+  Comms stream untouched.
 - Exports (pre-wipe, both machines converged at 701 atoms / 115
   tombstones): `exports/atoms-snapshot.json`, 21 items as JSON,
   3 sections as md, sources + tags lists. Curated re-import material:

@@ -1,5 +1,13 @@
 # gzero-hub v0 — status & plan
 
+*2026-10-19 update: "bags" renamed to **streams** across the hub and
+core (item 7ace). Wire is now `/stream/{name}/…`, DO ids
+`stream:<name>`; a `project/<scope>` stream is a project, `context`
+and `comms` are system streams. Deployed with the change-log history
+wiped and recreated from local replicas — the two-replica acceptance
+and the comms epoch test both pass against the new wire. Docs below
+keep their original dates but use the new names.*
+
 *2026-10-18. Written for the start of hub work: v0 of `gzero-hub` (the
 Cloudflare Worker + Durable Object that carries gzero state between
 machines) and the mobile client. Status section reflects a fresh audit
@@ -20,8 +28,8 @@ context store, synced through the hub's D1 change log.**
   on every write; `CX_LEGACY_DB=1` is the SQLite rollback hatch.
 - Acceptance: `scripts/mcp-convergence-test.sh` (two MCP processes
   converge through a local hub); production verified with two cold
-  replicas on one bag. This machine migrated 976 atoms / 28 sources /
-  90 tombstones and pushed them (bag `context`).
+  replicas on one stream. This machine migrated 976 atoms / 28 sources /
+  90 tombstones and pushed them (stream `context`).
 - Still open: second machine cutover (pull, cargo install,
   migrate-db, sync); legacy hub `/events`+`/snapshot` endpoints and
   `gzero pull`/`push` remain until it's done — see the
@@ -40,7 +48,7 @@ context store, synced through the hub's D1 change log.**
   (`item_pin`, `plan_next`, the pi workflow pane), W4 ranking/gates
   (`item_rank`, WIP limit, gates — body of plan3 records it done; the
   plan3 TODO checkbox is stale, reconcile when W5 lands).
-- W5 (doc-set migration into the bag) still open; independent of hub
+- W5 (doc-set migration into the stream) still open; independent of hub
   work.
 
 **Sync today — atoms only, snapshot-based, hub source missing.**
@@ -72,9 +80,9 @@ Transport / Hub+Sync DO) with a 3D diagram built in scene-mcp. No code.
    The original text said the source was lost and called for a
    rewrite.)* The repo is TypeScript, Wrangler, Worker + Durable
    Object; its old server-side atom merge (`src/merge.ts`) is kept for
-   the legacy `bag:global` path.
+   the legacy `stream:legacy-global` path.
 2. **The hub is a change log, not a merge engine (v0).** The DO stores
-   an append-only log of automerge changes per bag + a bootstrap
+   an append-only log of automerge changes per stream + a bootstrap
    snapshot. Merge happens client-side (automerge is already
    convergence-guaranteed); the DO only needs ordering and fan-out.
    Clients send `get_changes(have)` output and apply `apply_changes`.
@@ -84,27 +92,27 @@ Transport / Hub+Sync DO) with a 3D diagram built in scene-mcp. No code.
    `GET /snapshot` working (compat with `src/hub.rs` as deployed) and
    adds the change endpoints. Old clients keep working during the D1
    migration.
-4. **Bags are per-scope.** A bag = one repo scope (the existing
-   `repo_identity` concept) + the global bag. The DO id derives from
-   the bag name (`bag:<scope>`), one DO instance per bag.
+4. **Streams are per-scope.** A stream = one repo scope (the existing
+   `repo_identity` concept) + the global stream. The DO id derives from
+   the stream name (`stream:<name>`), one DO instance per stream.
 
 ## gzero-hub v0 — scope
 
-- **`POST /bag/{bag}/changes`** — append a batch of automerge changes
+- **`POST /stream/{name}/changes`** — append a batch of automerge changes
   (binary chunks, base64 or raw body). Returns the new highest seq.
-- **`GET /bag/{bag}/changes?since=SEQ`** — changes after a cursor,
+- **`GET /stream/{name}/changes?since=SEQ`** — changes after a cursor,
   chunked. Client loop: `get_changes(have)` → push; `since=last_seq`
   → pull → `apply_changes`.
-- **`GET /bag/{bag}/snapshot`** — full doc snapshot for bootstrap
+- **`GET /stream/{name}/snapshot`** — full doc snapshot for bootstrap
   (fresh machine / first sync), built from the change log.
-- **`POST /bag/{bag}/snapshot`** — compaction: client uploads a
+- **`POST /stream/{name}/snapshot`** — compaction: client uploads a
   collapsed snapshot; DO truncates the log up to the snapshot point.
   (v0 can stub this; log stays small for a long time.)
-- **Auth:** existing `CX_TOKEN` bearer, per-bag write ACL v0 = single
+- **Auth:** existing `CX_TOKEN` bearer, per-stream write ACL v0 = single
   user (all machines are the user's). Machine registry: machines
   announce `{machine_id, last_seq}` on push (flutter-client.md's
   machine registry plane).
-- **SSE** `/bag/{bag}/events` — notify pullers a push happened (v0
+- **SSE** `/stream/{name}/events` — notify pullers a push happened (v0
   optional; polling `since=` is enough for v0, SSE is a v0.1 add).
 - **Persistence:** DO storage (SQLite-backed) for the change log;
   changes are immutable so writes are append-only puts.
@@ -119,11 +127,11 @@ local `wrangler dev`.
 
 Per `research/flutter-client.md`, trimmed to the knowledge plane:
 
-- Bag replica on-device: atoms + tombstones in SQLite keyed by atom
+- Stream replica on-device: atoms + tombstones in SQLite keyed by atom
   text, OR-set union with tombstones on merge (the Lattice plane).
 - Sync controller: pull → merge → push loop against hub v0 endpoints,
   offline queue with retry/backoff, `CX_TOKEN` device token.
-- Surface: bag screen (atom list, tag chips), resolve preview, sync
+- Surface: stream screen (atom list, tag chips), resolve preview, sync
   status card (last push/pull, pending count).
 - **Out of scope for v0:** workflow docs (sections/items) — those ride
   D3 after D1 stabilizes; editing is limited to add/remove atoms.

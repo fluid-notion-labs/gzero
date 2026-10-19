@@ -300,7 +300,7 @@
       ]
     },
     {
-      "text": "when-to-request-review: Mandatory:; After each task in subagent-driven development; After completing major feature; Before merge to main #code-review",
+      "text": "when-to-request-review: Mandatory:; After each task in sustreament-driven development; After completing major feature; Before merge to main #code-review",
       "scope": "skills/superpowers",
       "node": "requesting-code-review",
       "tags": [
@@ -412,7 +412,7 @@
       ]
     },
     {
-      "text": "final-review: Run ../subagent-driven-development/scripts/review-package PLAN_FILE MERGE_BASE HEAD (MERGE_BASE = the commit the branch started from, e.g. #planning",
+      "text": "final-review: Run ../sustreament-driven-development/scripts/review-package PLAN_FILE MERGE_BASE HEAD (MERGE_BASE = the commit the branch started from, e.g. #planning",
       "scope": "skills/superpowers",
       "node": "executing-plans",
       "tags": [
@@ -571,7 +571,7 @@
     {
       "text": "Use when executing implementation plans with independent tasks in the current session #agents #planning",
       "scope": "skills/superpowers",
-      "node": "subagent-driven-development",
+      "node": "sustreament-driven-development",
       "tags": [
         "agents",
         "planning"
@@ -580,7 +580,7 @@
     {
       "text": "setup: Ensure the work happens in an isolated workspace: use superpowers:using-git-worktrees to create one or verify the existing one. #agents #planning",
       "scope": "skills/superpowers",
-      "node": "subagent-driven-development",
+      "node": "sustreament-driven-development",
       "tags": [
         "agents",
         "planning"
@@ -589,7 +589,7 @@
     {
       "text": "model-selection: Use the least powerful model that can handle each role to conserve cost and increase speed. #agents #planning",
       "scope": "skills/superpowers",
-      "node": "subagent-driven-development",
+      "node": "sustreament-driven-development",
       "tags": [
         "agents",
         "planning"
@@ -598,7 +598,7 @@
     {
       "text": "the-task-loop: Batch small same-shape work. #agents #planning",
       "scope": "skills/superpowers",
-      "node": "subagent-driven-development",
+      "node": "sustreament-driven-development",
       "tags": [
         "agents",
         "planning"
@@ -607,7 +607,7 @@
     {
       "text": "final-review: The final whole-branch review gets a package too: run bash scripts/review-package PLAN_FILE MERGE_BASE HEAD (MERGE_BASE = the commit the #agents #planning",
       "scope": "skills/superpowers",
-      "node": "subagent-driven-development",
+      "node": "sustreament-driven-development",
       "tags": [
         "agents",
         "planning"
@@ -3632,7 +3632,7 @@
       "tags": []
     },
     {
-      "text": "RLM kernel API in the persistent Python REPL: `rlm.spawn/find_models/collect/list_subagents/delete_subagent/create_session/progress_note`, `rlm.harness` CRUD, `agent_message.send`, `agent_observe`, `compact`, `goal`, `refine`, `attach_image`, skills (markdown + Python) per the skill contract in the base system prompt.",
+      "text": "RLM kernel API in the persistent Python REPL: `rlm.spawn/find_models/collect/list_sustreaments/delete_sustreament/create_session/progress_note`, `rlm.harness` CRUD, `agent_message.send`, `agent_observe`, `compact`, `goal`, `refine`, `attach_image`, skills (markdown + Python) per the skill contract in the base system prompt.",
       "scope": "fluid-notion-labs/prime-agent",
       "node": "surface-contract-(must-not-change)",
       "tags": []
@@ -4004,7 +4004,7 @@
       "tags": []
     },
     {
-      "text": "Workers AI's chat endpoint rejects assistant messages carrying tool_calls with content:null (pi sends null for tool-call-only turns; OpenAI allows it) — multi-turn tool loops on @cf/ models fail on request 2 with 'oneOf at /' 400. Fix: rewrite null content to \"\" in a before_provider_request hook (pi-router-plugin/compat.ts); subagents need the same fix, so load the extension via -e in spawned pi processes.",
+      "text": "Workers AI's chat endpoint rejects assistant messages carrying tool_calls with content:null (pi sends null for tool-call-only turns; OpenAI allows it) — multi-turn tool loops on @cf/ models fail on request 2 with 'oneOf at /' 400. Fix: rewrite null content to \"\" in a before_provider_request hook (pi-router-plugin/compat.ts); sustreaments need the same fix, so load the extension via -e in spawned pi processes.",
       "scope": "fluid-notion-labs/contextual",
       "node": "notes",
       "tags": [
@@ -4156,7 +4156,7 @@
       "tags": []
     },
     {
-      "text": "Context bag: persisted multiset managed by `cx` (source: `~/projects/explorations/nursery/contextual`; spec: `research/context/findings.md` and `plan.md`).",
+      "text": "Context stream: persisted multiset managed by `cx` (source: `~/projects/explorations/nursery/contextual`; spec: `research/context/findings.md` and `plan.md`).",
       "scope": "global",
       "node": "contexts",
       "tags": []
@@ -4236,7 +4236,7 @@
       "tags": []
     },
     {
-      "text": "Engine crate: bagflow → elastic — the typed layer over a battle-tested core (record types, lifecycle/query folds, capacity policy, SQLite derived index); not a merge engine; the DFIR prototype is reference-only.",
+      "text": "Engine crate: streamflow → elastic — the typed layer over a battle-tested core (record types, lifecycle/query folds, capacity policy, SQLite derived index); not a merge engine; the DFIR prototype is reference-only.",
       "scope": "fluid-notion-labs/explorations",
       "node": "explorations/contexture",
       "tags": []
@@ -4263,13 +4263,13 @@
       "tags": []
     },
     {
-      "text": "Larger or long-lived documents (decisions, working data, JSON) live in the kv annex beside the atom bag, addressed by dotted keys.",
+      "text": "Larger or long-lived documents (decisions, working data, JSON) live in the kv annex beside the atom store, addressed by dotted keys.",
       "scope": "global",
       "node": "usage",
       "tags": []
     },
     {
-      "text": "Long-form workflow content lives in the workflow system, not in files: ws_* sections (the research docs are imported there), item_* tasks, plan_next for what's next, item_pin to put a task into injected context. Markdown in research/ is a source to import from; the bag is the store.",
+      "text": "Long-form workflow content lives in the workflow system, not in files: ws_* sections (the research docs are imported there), item_* tasks, plan_next for what's next, item_pin to put a task into injected context. Markdown in research/ is a source to import from; the stream is the store.",
       "scope": "notes",
       "node": "workflow-system",
       "tags": []
@@ -4381,7 +4381,7 @@
       "tags": []
     },
     {
-      "text": "Skills pipeline: tools/skills/install.py imports the vendored repos into ~/.pi/pi-contexture/skills (deduped by name, skills.yaml priority order); the plugin's skills picker reads only that dir (CX_SKILLS_DIRS overrides) — never cwd or repo paths. Bag imports stay on tools/skills/pull.py + `cx add packs/`; the old skills/jj-skills bag scope is retired (fn-skills is the jj-skills source).",
+      "text": "Skills pipeline: tools/skills/install.py imports the vendored repos into ~/.pi/pi-contexture/skills (deduped by name, skills.yaml priority order); the plugin's skills picker reads only that dir (CX_SKILLS_DIRS overrides) — never cwd or repo paths. Stream imports stay on tools/skills/pull.py + `cx add packs/`; the old skills/jj-skills stream scope is retired (fn-skills is the jj-skills source).",
       "scope": "fluid-notion-labs/contextual",
       "node": "skills-pipeline",
       "tags": []
@@ -4411,13 +4411,13 @@
       "tags": []
     },
     {
-      "text": "The engine crate is **elastic** (renamed from bagflow; lattic was an intermediate): the typed layer over a battle-tested core — record types, lifecycle/query folds, capacity policy, SQLite derived index; not a merge engine; the DFIR prototype is reference-only.",
+      "text": "The engine crate is **elastic** (renamed from streamflow; lattic was an intermediate): the typed layer over a battle-tested core — record types, lifecycle/query folds, capacity policy, SQLite derived index; not a merge engine; the DFIR prototype is reference-only.",
       "scope": "fluid-notion-labs/explorations",
       "node": "contexture",
       "tags": []
     },
     {
-      "text": "The kv annex was removed as a pre-generalization artifact - there are no kv_* tools and no kv table. Long-form workflow content (docs, decisions, working data) lives in the bag as records; until section records land (W1), markdown in research/ is the authoring home.",
+      "text": "The kv annex was removed as a pre-generalization artifact - there are no kv_* tools and no kv table. Long-form workflow content (docs, decisions, working data) lives in the stream as records; until section records land (W1), markdown in research/ is the authoring home.",
       "scope": "fluid-notion-labs/contextual",
       "node": "notes",
       "tags": []
@@ -4457,13 +4457,13 @@
       "tags": []
     },
     {
-      "text": "When a work item is done, merge its branch to main by default (no need to ask), then push — the personal pi extension symlinks to the default checkout, so a merge goes live on /reload or restart. Bag-data changes (cx ws/item) are live immediately.",
+      "text": "When a work item is done, merge its branch to main by default (no need to ask), then push — the personal pi extension symlinks to the default checkout, so a merge goes live on /reload or restart. Stream-data changes (cx ws/item) are live immediately.",
       "scope": "fluid-notion-labs/contextual",
       "node": "notes",
       "tags": []
     },
     {
-      "text": "When the architecture or plans change, update the context atoms and docs in the same work item - the bag must never describe a system that no longer exists.",
+      "text": "When the architecture or plans change, update the context atoms and docs in the same work item - the stream must never describe a system that no longer exists.",
       "scope": "fluid-notion-labs/contextual",
       "node": "notes",
       "tags": []
@@ -4499,19 +4499,19 @@
       "tags": []
     },
     {
-      "text": "context refresh test atom: if this appears in the injected <context> block, bag changes are picked up live",
+      "text": "context refresh test atom: if this appears in the injected <context> block, stream changes are picked up live",
       "scope": "fluid-notion-labs/contextual",
       "node": "notes",
       "tags": []
     },
     {
-      "text": "contextual is a context bag: a persistent store of terse, tagged instruction atoms that replaces AGENTS.md-style files, injected into every session and synced across machines via hub sync.",
+      "text": "contextual is a context stream: a persistent store of terse, tagged instruction atoms that replaces AGENTS.md-style files, injected into every session and synced across machines via hub sync.",
       "scope": "global",
       "node": "usage",
       "tags": []
     },
     {
-      "text": "contexture hub carries the bag now",
+      "text": "contexture hub carries the stream now",
       "scope": "test",
       "node": "mcp",
       "tags": []

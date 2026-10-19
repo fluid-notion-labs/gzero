@@ -56,7 +56,7 @@ still breaking-API per minor release.
 5. **Deletion is a prefix hack.** `Doc::del(author, prefix)` inserts
    an *empty entry at the prefix*, clearing matching entries — real
    tombstone propagation, but per-author and per-prefix; no story for
-   the comms bag's epoch rolls / log truncation (`truncate_before`
+   the comms stream's epoch rolls / log truncation (`truncate_before`
    has no iroh-docs equivalent; a synced doc grows forever).
 
 ## Where iroh *is* the right tool (later tracks)
@@ -70,7 +70,7 @@ still breaking-API per minor release.
   transport (iroh-blobs carrying change bundles between machines that
   *are* both online, hub as slow/offline path) is a plausible Track D
   add-on without touching merge semantics.
-- **Comms bag.** High-churn ephemeral chat over LWW entries is
+- **Comms stream.** High-churn ephemeral chat over LWW entries is
   conceptually clean — but the epoch-roll/truncation requirement has
   no equivalent, so only if growth is accepted.
 
@@ -134,7 +134,7 @@ existing stack scores:
   remote changes only on its *next write*. An idle machine never
   syncs. Fan-out is hub-mediated but latency is unbounded.
 - **The hub spec already planned the fix.** `research/hub-v0.md`
-  lists SSE `/bag/{bag}/events` as a v0.1 add: notify pullers that a
+  lists SSE `/stream/{name}/events` as a v0.1 add: notify pullers that a
   push happened, so they pull immediately instead of on next write.
   But an SSE notification is only useful to a client that is
   *listening* — and no gzero process listens between sessions. The

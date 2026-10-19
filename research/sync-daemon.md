@@ -3,7 +3,7 @@
 *2026-10-19. Handoff doc: this work is picked up on nick-MacPro5-1
 (Al Grater). Written after assessing iroh 1.0 against the goal below —
 full analysis in `iroh-assessment.md`; hub endpoints in `hub-v0.md`.*
-*Companion: `comms.md` (the comms bag rides the same transport).*
+*Companion: `comms.md` (the comms stream rides the same transport).*
 
 ## Goal
 
@@ -31,7 +31,7 @@ all peers). Machines today: MacBookAir (Air Apparent) + MacPro tower
    path under the same engine (tower as seed for the phone). Not
    required for this goal. See `iroh-assessment.md`.
 5. **Push trigger = hub SSE.** `hub-v0.md` already lists SSE
-   `/bag/{bag}/events` as a v0.1 add. Cheapest correct trigger; no new
+   `/stream/{name}/events` as a v0.1 add. Cheapest correct trigger; no new
    dependency stack (plain HTTP streaming).
 
 ## Current state (audited 2026-10-19, MacBookAir checkout)
@@ -39,13 +39,13 @@ all peers). Machines today: MacBookAir (Air Apparent) + MacPro tower
 - Sync is **pull-on-write**: each MCP call pushes then pulls via
   `SyncCursor` (`src/hub_changes.rs`, `push`/`pull`). An idle machine
   never syncs — latency unbounded. This is the gap.
-- Hub v0 deployed (D1 change log, per-bag). Endpoints: push changes,
+- Hub v0 deployed (D1 change log, per-stream). Endpoints: push changes,
   pull `?since=seq`, snapshot get/put. **No SSE endpoint yet.**
 - Sync primitives tested: `apply_changes` / `get_changes(have)` /
   `changes_for` on `AutomergeStore`; two-replica convergence through a
   local hub passes.
-- Both machines migrated to the automerge doc (bag `context`);
-  comms bag live on this machine. Cursors persist in the sidecar next
+- Both machines migrated to the automerge doc (stream `context`);
+  comms stream live on this machine. Cursors persist in the sidecar next
   to the doc.
 - No resident process exists anywhere in the stack.
 
@@ -96,7 +96,7 @@ surface.
 
 ### 1. Hub: SSE endpoint
 
-- `GET /bag/{bag}/events` — stream `{last_seq, machine}` events on
+- `GET /stream/{name}/events` — stream `{last_seq, machine}` events on
   every push; bearer `CX_TOKEN`; heartbeat/comment lines for idle
   keepalive; reconnect handled client-side with `Last-Event-ID` or
   plain re-pull `since=` on connect (preferred: reconnect = normal
@@ -116,7 +116,7 @@ surface.
   `~/Library/Logs/gzero-syncd.log`; crash-only design (cursors in
   sidecar = restart-safe).
 - Config via existing env (`CX_HUB_URL`, `CX_TOKEN`, `CX_WS_DB`,
-  `CX_COMMS_BAG`).
+  `CX_COMMS_STREAM`).
 
 ### 3. Acceptance
 
@@ -132,9 +132,9 @@ The daemon is the natural owner of doc compaction — the `packing`
 design (`gzero ws show packing fluid-notion-labs/contextual`, sketched
 2026-10) already covers it: fold the doc to its current view, write a
 fresh doc (atoms + tombs + sections + items), atomic swap. The daemon
-adds the hub half: `POST /bag/{bag}/snapshot` with the packed doc and
+adds the hub half: `POST /stream/{name}/snapshot` with the packed doc and
 `up_to = last_seq` — the endpoint already truncates the change log
-(gzero-hub `src/bag.ts`), no client calls it yet.
+(gzero-hub `src/stream.ts`), no client calls it yet.
 
 - **Epoch counter** in doc + snapshot (packing's key decision): after
   a pack, peers detect "no shared history" and re-bootstrap from the
@@ -158,19 +158,19 @@ adds the hub half: `POST /bag/{bag}/snapshot` with the packed doc and
 ## Out of scope (here)
 
 iroh transport, mobile client, multi-user ACL, epoch-roll changes.
-The comms bag gets live fan-out for free once the daemon syncs it too
-(it already rides the same HubChanges transport under bag `comms`).
+The comms stream gets live fan-out for free once the daemon syncs it too
+(it already rides the same StreamSync transport under stream `comms`).
 
 ## Status update (2026-10-19, built and tested on the Al Grater box)
 
-- **Hub SSE shipped** (`gzero-hub` f0ad175): `GET /bag/{bag}/events`
+- **Hub SSE shipped** (`gzero-hub` f0ad175): `GET /stream/{name}/events`
   streams `hello` (carries current `last_seq`) on connect, one `push`
   event per successful `POST /changes` batch, comment heartbeat ~25s.
   Trigger only — subscribers pull `/changes?since=`; reconnect
   re-pulls, so a dropped stream or DO restart loses nothing.
 - **`gzero-syncd` shipped** (`src/bin/gzero-syncd.rs`): boots with one
-  full pull+push per bag (context @ CX_WS_DB, comms @ CX_COMMS_DB),
-  then one SSE listener thread per bag waking an immediate sync on
+  full pull+push per stream (context @ CX_WS_DB, comms @ CX_COMMS_DB),
+  then one SSE listener thread per stream waking an immediate sync on
   push, with a jittered-free 60s backstop (`CX_SYNCD_BACKSTOP_SECS`)
   as the SSE-failure path. SSE reconnect uses capped exponential
   backoff; a 90s read timeout (3 missed heartbeats) catches
@@ -195,7 +195,7 @@ The comms bag gets live fan-out for free once the daemon syncs it too
 ## Open questions
 
 - ~~Front-door vs silent-refresher (step 0)~~ — decided, see above.
-- ~~Does the daemon also own session presence heartbeats (comms bag)?~~
+- ~~Does the daemon also own session presence heartbeats (comms stream)?~~
   No — presence stays with sessions (they're the live things).
 - ~~SSE through Cloudflare workers: buffering surprises~~ — verified
   with `wrangler dev`: the local acceptance sees sub-3s arrivals.
