@@ -1,4 +1,4 @@
 target
 vendor/
 node_modules
-tmp/bloated-context/
+tmp/

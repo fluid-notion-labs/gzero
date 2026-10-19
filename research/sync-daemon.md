@@ -102,6 +102,35 @@ surface.
 - Kill -9 the daemon mid-apply → restart converges (cursor discipline).
 - Existing `mcp-convergence-test.sh` still green.
 
+## Daemon-owned GC (packing)
+
+The daemon is the natural owner of doc compaction — the `packing`
+design (`gzero ws show packing fluid-notion-labs/contextual`, sketched
+2026-10) already covers it: fold the doc to its current view, write a
+fresh doc (atoms + tombs + sections + items), atomic swap. The daemon
+adds the hub half: `POST /bag/{bag}/snapshot` with the packed doc and
+`up_to = last_seq` — the endpoint already truncates the change log
+(gzero-hub `src/bag.ts`), no client calls it yet.
+
+- **Epoch counter** in doc + snapshot (packing's key decision): after
+  a pack, peers detect "no shared history" and re-bootstrap from the
+  snapshot instead of change-syncing. The comms epoch roll is the
+  working precedent.
+- **Never pack away tombstones inside the TTL window** — early
+  collection resurrects deletions on merge with a peer that hasn't
+  seen them.
+- **Trigger policy is a seam**: size > N MB or M changes since last
+  pack is enough to start; change the strategy later without touching
+  the mechanism.
+- **Do not** build an SQLite incremental store for this: with
+  load-once and packing bounding doc size, debounced whole-file saves
+  are milliseconds; an append-log + replay path is a second storage
+  format solving the cheap half of the problem.
+- **Hard invariant from the rebuild (round 2):** at startup the daemon
+  reloads state from disk/hub and never pushes from memory loaded
+  before an external reset — an in-memory holder that wins the
+  truth contest silently resurrects deleted data.
+
 ## Out of scope (here)
 
 iroh transport, mobile client, multi-user ACL, epoch-roll changes.
