@@ -119,8 +119,16 @@ No scope column: comms are machine-global, matching today's table shape.
 - Extend the two-replica pattern of `scripts/mcp-convergence-test.sh`:
   two comms replicas converge through the local hub (send on one, read on
   the other; read receipts propagate back).
+- **[built]** Live-delivery leg: recipient's gzero-syncd running (SSE path);
+  the sender sends and the recipient's doc has the message within seconds.
+  Recipient reads are one-shot/local so only the daemon can have delivered.
+- **[built]** Offline leg: hub down at send time, the message queues
+  locally and rides the next write's push after recovery; the reconnect
+  compensating pull catches events missed while disconnected.
 - Epoch roll test: fill past threshold, roll, verify both replicas converge
-  on the truncated log and expired messages disappear everywhere.
+  on the truncated log and expired messages disappear everywhere. (Roll is
+  unit-tested and the hub truncate endpoint has its own test; an end-to-end
+  roll through the hub is still open.)
 - Offline test: send with hub unreachable, come back, verify delivery.
 
 ## Open questions
