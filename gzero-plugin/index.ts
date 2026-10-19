@@ -104,6 +104,9 @@ function which(bin: string): Promise<string | null> {
 function mcpRequest(cxMcp: string, method: string, params: unknown, timeoutMs = 15_000): Promise<any> {
   return new Promise((resolve, reject) => {
     const child = spawn(cxMcp, [], { stdio: ["pipe", "pipe", "ignore"] });
+    // A dead/failed child (e.g. a broken shim) makes stdin writes emit
+    // EPIPE; an unhandled 'error' event here would take down all of pi.
+    child.stdin?.on("error", () => {});
     let buf = "";
     const requestId = 2; // 1 is the initialize reply
     const finish = (fn: () => void) => {
