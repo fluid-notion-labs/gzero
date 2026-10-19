@@ -1,0 +1,33 @@
+// gzero-hub — change-log Worker + per-stream Durable Objects.
+// One DO instance per stream ("stream:<name>"; legacy clients share
+// "stream:legacy-global").
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "gzero-hub",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  // TOKEN comes from .dev.vars in dev/test; production sets it as a
+  // secret (wrangler secret put TOKEN).
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "STREAM",
+        "class_name": "Stream"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["Bag"]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["Stream"]
+    },
+    {
+      "tag": "v3",
+      "deleted_classes": ["Bag"]
+    }
+  ]
+}

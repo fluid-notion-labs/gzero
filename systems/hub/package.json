@@ -1,0 +1,20 @@
+{
+  "name": "gzero-hub",
+  "version": "0.1.0",
+  "private": true,
+  "description": "gzero hub: change-log Worker + per-bag Durable Objects carrying gzero state between machines",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.8.71",
+    "@cloudflare/workers-types": "^5.20261018.1",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4",
+    "wrangler": "^4.151.1"
+  }
+}
