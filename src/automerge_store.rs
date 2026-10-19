@@ -413,9 +413,19 @@ impl AutomergeStore {
         }
     }
 
-    /// Write one source payload: replaced wholesale (same-source LWW).
+    /// Write one source payload: replaced wholesale (same-source LWW),
+    /// but only when the payload actually differs — a startup reconcile
+    /// of unchanged seeds must not generate automerge churn (every
+    /// delete+put pair is a new change that gets pushed to the hub).
     fn write_payload(&mut self, sources: &ObjId, source: &str, atom: &ParsedAtom) -> Result<()> {
-        if self.has(sources, source) {
+        if let Some((_, payload)) = self.doc.get(sources, source).ok().flatten() {
+            let current = self.read_payload(&payload, &atom.text);
+            if current.scope == atom.scope
+                && current.node == atom.node
+                && current.tags == atom.tags
+            {
+                return Ok(());
+            }
             self.doc.delete(sources, source)?;
         }
         let p = self.doc.put_object(sources, source, ObjType::Map)?;
