@@ -8,7 +8,9 @@
 import 'package:flutter/material.dart';
 
 import '../settings/settings_store.dart';
+import '../state/projects.dart';
 import '../state/sync_controller.dart';
+import 'projects_screen.dart';
 import 'settings_screen.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -52,20 +54,96 @@ class HomeScreen extends StatelessWidget {
             children: [
               _SyncCard(controller: controller),
               const SizedBox(height: 16),
-              Text(
-                'projects',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: 8),
-              const Card(
-                child: Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Text('coming up — needs the projects data plane (automerge in dart or a hub view)'),
-                ),
-              ),
+              _ProjectsCard(controller: controller),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _ProjectsCard extends StatelessWidget {
+  const _ProjectsCard({required this.controller});
+
+  final SyncController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final projects = controller.projects;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.folder_outlined),
+                const SizedBox(width: 12),
+                Expanded(child: Text('projects', style: theme.textTheme.titleMedium)),
+                IconButton(
+                  icon: const Icon(Icons.open_in_new),
+                  tooltip: 'Open projects',
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(builder: (_) => ProjectsScreen(controller: controller)),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            if (projects.isEmpty)
+              Text(
+                'nothing yet — waiting on the context doc',
+                style: theme.textTheme.bodySmall,
+              )
+            else ...[
+              for (final p in projects.take(3))
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: _ProjectRow(project: p),
+                ),
+              if (projects.length > 3)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    '+${projects.length - 3} more',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ProjectRow extends StatelessWidget {
+  const _ProjectRow({required this.project});
+
+  final Project project;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => ProjectDetailScreen(project: project)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(project.scope, style: theme.textTheme.bodyMedium, overflow: TextOverflow.ellipsis),
+          ),
+          Text(
+            '${project.openCount} open',
+            style: theme.textTheme.bodySmall,
+          ),
+        ],
       ),
     );
   }
@@ -126,7 +204,7 @@ class _SyncCard extends StatelessWidget {
               Text(c.connectionError!, style: theme.textTheme.bodySmall),
             ],
             const SizedBox(height: 12),
-            for (final s in c.statuses)
+            for (final s in c.statuses) ...[
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),
                 child: Row(
@@ -147,6 +225,18 @@ class _SyncCard extends StatelessWidget {
                   ],
                 ),
               ),
+              for (final s in c.statuses)
+                if (s.name == 'context' || s.name == 'comms')
+                  if ((s.name == 'context' ? c.contextDoc : c.commsDoc)?.statusLine
+                      case final line?)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 26, bottom: 4),
+                      child: Text(
+                        line,
+                        style: theme.textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic),
+                      ),
+                    ),
+            ],
             if (c.lastChecked != null) ...[
               const SizedBox(height: 8),
               Text(

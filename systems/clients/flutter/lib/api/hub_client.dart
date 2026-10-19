@@ -20,6 +20,15 @@ class HubException implements Exception {
   String toString() => 'hub $status: $detail';
 }
 
+/// One page of the change log. [changes] are base64 automerge blobs;
+/// [next] is null when the page is the last one.
+class ChangesPage {
+  ChangesPage({required this.changes, required this.lastSeq, this.next});
+  final List<String> changes;
+  final int lastSeq;
+  final int? next;
+}
+
 class HubClient {
   HubClient({required this.baseUrl, this.token = '', http.Client? httpClient})
     : _http = httpClient ?? http.Client();
@@ -45,6 +54,32 @@ class HubClient {
     if (body['status'] != 'ok') {
       throw HubException(res.statusCode, 'unexpected health body: $body');
     }
+  }
+
+  /// One page of changes after [since] — the pull half of sync.
+  Future<ChangesPage> changes(String stream, int since) async {
+    final res = await _http.get(
+      _uri('/stream/$stream/changes', {'since': '$since', 'limit': '200'}),
+      headers: _headers,
+    );
+    if (res.statusCode != 200) {
+      throw HubException(res.statusCode, 'changes($stream) failed');
+    }
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    final list = body['changes'];
+    if (list is! List) {
+      throw HubException(res.statusCode, 'changes($stream): missing changes');
+    }
+    final last = body['last_seq'];
+    if (last is! int) {
+      throw HubException(res.statusCode, 'changes($stream): missing last_seq');
+    }
+    final next = body['next'];
+    return ChangesPage(
+      changes: [for (final c in list) c as String],
+      lastSeq: last,
+      next: next is int ? next : null,
+    );
   }
 
   /// The stream's highest change seq — the observable of "how much is

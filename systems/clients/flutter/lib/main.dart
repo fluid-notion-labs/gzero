@@ -6,7 +6,10 @@
 // system streams; projects list and messaging land as their data planes
 // come online.
 
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
 
 import 'api/hub_client.dart';
 import 'settings/settings_store.dart';
@@ -15,16 +18,24 @@ import 'ui/home_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const GzeroApp());
+  Directory? docStoreDir;
+  try {
+    docStoreDir = (await getApplicationSupportDirectory());
+  } catch (_) {
+    // no doc store (tests/dev): the sync card still works, minus the replica
+  }
+  runApp(GzeroApp(docStoreDir: docStoreDir));
 }
 
 class GzeroApp extends StatefulWidget {
-  const GzeroApp({super.key, this.store, this.initialSettings});
+  const GzeroApp({super.key, this.store, this.initialSettings, this.docStoreDir});
 
   /// Injectable for tests; production uses the real store.
   final SettingsStore? store;
   /// Preloaded settings skip the async load (tests).
   final Settings? initialSettings;
+  /// Where the doc replicas live; null skips the FFI doc sync.
+  final Directory? docStoreDir;
 
   @override
   State<GzeroApp> createState() => _GzeroAppState();
@@ -60,7 +71,7 @@ class _GzeroAppState extends State<GzeroApp> {
 
   void _rebuild() {
     _client = HubClient(baseUrl: _settings.hubUrl, token: _settings.token);
-    _controller = SyncController(_client);
+    _controller = SyncController(_client, docStoreDir: widget.docStoreDir);
     _controller.refresh();
   }
 
