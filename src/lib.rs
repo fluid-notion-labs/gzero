@@ -28,7 +28,7 @@ pub mod automerge_store;
 pub mod comms;
 pub mod events;
 pub mod hub;
-pub mod hub_changes;
+pub mod stream_sync;
 pub mod items;
 pub mod messages;
 pub mod sections;
@@ -791,9 +791,9 @@ pub fn legacy_db() -> bool {
     std::env::var("CX_LEGACY_DB").ok().as_deref() == Some("1")
 }
 
-/// The sync bag: hub-side namespace for this doc's change log.
-pub fn atoms_bag() -> String {
-    std::env::var("CX_BAG").unwrap_or_else(|_| "context".into())
+/// The sync stream: hub-side namespace for this doc's change log.
+pub fn context_stream() -> String {
+    std::env::var("CX_CONTEXT_STREAM").unwrap_or_else(|_| "context".into())
 }
 
 /// Default legacy SQLite atom store path (`CX_DB`).
@@ -872,11 +872,11 @@ pub fn sync_doc(store: &mut AutomergeStore) -> std::result::Result<(), String> {
     let Some(path) = store.path().map(|p| p.to_path_buf()) else {
         return Ok(());
     };
-    let bag = atoms_bag();
-    let Some(hub) = hub_changes::HubChanges::from_env(&bag) else {
+    let stream = context_stream();
+    let Some(hub) = stream_sync::StreamSync::from_env(&stream) else {
         return Ok(());
     };
-    hub_changes::sync_store(store, &hub, &hub_changes::sidecar_path(&path), &bag)
+    stream_sync::sync_store(store, &hub, &stream_sync::sidecar_path(&path), &stream)
         .map(|_| ())
 }
 

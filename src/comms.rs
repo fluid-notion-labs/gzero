@@ -1,6 +1,6 @@
 //! Comms store (Track S v1): messages, broadcasts and session presence
 //! on their **own** automerge doc, synced through the hub under a
-//! separate bag (`comms`) — design in `research/comms.md`.
+//! separate stream (`comms`) — design in `research/comms.md`.
 //!
 //! Why a separate doc instead of the context doc or hub-native rows:
 //! chat is high-churn and ephemeral — it must not slow `resolve`, bloat
@@ -12,7 +12,7 @@
 //! (expired entries are filtered out of every view), and garbage
 //! collection is an **epoch roll** — a replica periodically mints a
 //! fresh doc holding only live data and asks the hub to truncate the
-//! bag's change log below it (`HubChanges::truncate_before`,
+//! stream's change log below it (`StreamSync::truncate_before`,
 //! best-effort: a hub without the endpoint simply skips GC, and
 //! expired rows keep being filtered locally until then).
 //!
@@ -35,12 +35,12 @@ use automerge::transaction::Transactable;
 use automerge::{ObjId, ObjType, ReadDoc, ROOT, Value};
 
 use crate::automerge_store::AutomergeStore;
-use crate::hub_changes::{self, HubChanges, SyncCursor};
+use crate::stream_sync::{self, StreamSync, SyncCursor};
 use crate::messages::{Broadcast, Message, MESSAGE_TTL_SECS};
 use crate::sessions::{SessionInfo, PRESENCE_TTL_SECS};
 use crate::{items::fresh_id, Result};
 
-/// How much dead weight a comms bag accumulates before a replica rolls
+/// How much dead weight a comms stream accumulates before a replica rolls
 /// the epoch. Sweeping at every resolve only counts; the roll happens
 /// when this many expired messages are visible (`CX_EPOCH_ROLL_THRESHOLD`
 /// overrides, for test runs that exercise the roll).
@@ -56,15 +56,15 @@ fn epoch_roll_threshold() -> usize {
 /// staleness already hides them long before).
 const PRESENCE_ARCHIVE_TTL_SECS: i64 = 30 * 24 * 3600;
 
-pub const COMMS_BAG: &str = "comms";
+pub const COMMS_STREAM: &str = "comms";
 
-/// The bag this machine's comms doc syncs under (`CX_COMMS_BAG`
+/// The stream this machine's comms doc syncs under (`CX_COMMS_STREAM`
 /// overrides, for isolated test runs against a shared hub).
-pub fn comms_bag() -> String {
-    std::env::var("CX_COMMS_BAG")
+pub fn comms_stream() -> String {
+    std::env::var("CX_COMMS_STREAM")
         .ok()
         .filter(|b| !b.is_empty())
-        .unwrap_or_else(|| COMMS_BAG.to_string())
+        .unwrap_or_else(|| COMMS_STREAM.to_string())
 }
 
 pub fn now() -> i64 {
@@ -106,7 +106,7 @@ pub fn comms_db_path() -> PathBuf {
 }
 
 /// The automerge comms store: one doc per machine, merged through the
-/// hub's change log (bag `comms`).
+/// hub's change log (stream `comms`).
 pub struct CommsStore {
     pub(crate) store: AutomergeStore,
     sidecar: Option<PathBuf>,
@@ -116,7 +116,7 @@ impl CommsStore {
     /// Open (or create) the comms doc. `None` = in-memory (tests).
     pub fn open(path: Option<&Path>) -> Result<Self> {
         let store = AutomergeStore::open(path)?;
-        let sidecar = path.map(hub_changes::sidecar_path);
+        let sidecar = path.map(stream_sync::sidecar_path);
         Ok(Self { store, sidecar })
     }
 
@@ -398,10 +398,10 @@ impl CommsStore {
 
         // Push the new epoch; truncate the superseded log. Works with
         // or without a sidecar (in-memory replicas get a fresh cursor).
-        if let Some(hub) = HubChanges::from_env(&comms_bag()) {
+        if let Some(hub) = StreamSync::from_env(&comms_stream()) {
             let mut cursor = match &self.sidecar {
                 Some(sidecar) => {
-                    let mut c = SyncCursor::load(sidecar, &comms_bag())?;
+                    let mut c = SyncCursor::load(sidecar, &comms_stream())?;
                     c.pushed_heads = Vec::new();
                     c
                 }
@@ -409,7 +409,7 @@ impl CommsStore {
             };
             let pushed = hub.push(&mut self.store, &mut cursor)?;
             if let Some(sidecar) = &self.sidecar {
-                cursor.save(sidecar, &comms_bag())?;
+                cursor.save(sidecar, &comms_stream())?;
             }
             if pushed > 0 {
                 if let Ok(head) = hub.head_seq() {
@@ -651,10 +651,10 @@ impl CommsLayer for CommsStore {
         let Some(path) = self.store.path().map(|p| p.to_path_buf()) else {
             return Ok((0, 0));
         };
-        let Some(hub) = HubChanges::from_env(&comms_bag()) else {
+        let Some(hub) = StreamSync::from_env(&comms_stream()) else {
             return Ok((0, 0));
         };
-        hub_changes::sync_store(&mut self.store, &hub, &hub_changes::sidecar_path(&path), &comms_bag())
+        stream_sync::sync_store(&mut self.store, &hub, &stream_sync::sidecar_path(&path), &comms_stream())
             .map_err(|e| e.into())
     }
 }
@@ -812,7 +812,7 @@ mod tests {
         // Dev hub token (.dev.vars); this test targets a local hub only.
         std::env::set_var("CX_TOKEN", "token");
         std::env::set_var(
-            "CX_COMMS_BAG",
+            "CX_COMMS_STREAM",
             format!(
                 "comms-test-{}",
                 std::time::SystemTime::now()
@@ -821,7 +821,7 @@ mod tests {
                     .as_millis()
             ),
         );
-        let hub = HubChanges::from_env(&comms_bag()).expect("hub config");
+        let hub = StreamSync::from_env(&comms_stream()).expect("hub config");
 
         let mut a = store();
         a.send_message("sess-b", "sess-a", "survives the roll").unwrap();

@@ -1,7 +1,6 @@
 //! Snapshot document: the machine's published CRDT state and the
-//! cross-machine merge unit. Mirrors `bagflow::Snapshot` field-for-field —
-//! the JSON shape is the contract between implementations (see
-//! `research/context/sync.md`).
+//! cross-machine merge unit. The JSON shape is the contract between
+//! implementations (see `research/context/sync.md`).
 
 use std::collections::BTreeSet;
 
@@ -9,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 pub const SNAPSHOT_VERSION: u32 = 1;
 
-/// One atom as it travels in a snapshot. Matches `bagflow::Atom`.
+/// One atom as it travels in a snapshot.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Atom {
     pub text: String,

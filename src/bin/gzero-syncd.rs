@@ -8,9 +8,9 @@
 //! live in the per-doc sidecar, so kill -9 at any point resumes on
 //! the next cycle.
 //!
-//! Per bag (context @ CX_WS_DB, comms @ CX_COMMS_DB):
+//! Per stream (context @ CX_WS_DB, comms @ CX_COMMS_DB):
 //! - on boot: one full pull+push (covers everything missed offline)
-//! - an SSE stream on the hub's `/bag/{name}/events` wakes an
+//! - an SSE stream on the hub's `/stream/{name}/events` wakes an
 //!   immediate sync on push (the live path, target ≤2s)
 //! - a periodic backstop sync (default 60s) covers SSE loss
 //!
@@ -20,50 +20,50 @@
 //! daemon-applied pull.
 //!
 //! Config: CX_HUB_URL, CX_TOKEN (required), CX_WS_DB, CX_COMMS_DB,
-//! CX_BAG, CX_COMMS_BAG, CX_SYNCD_BACKSTOP_SECS (default 60).
+//! CX_CONTEXT_STREAM, CX_COMMS_STREAM, CX_SYNCD_BACKSTOP_SECS (default 60).
 
-use gzero::comms::{comms_bag, comms_db_path};
-use gzero::hub_changes::{self, HubChanges};
+use gzero::comms::{comms_stream, comms_db_path};
+use gzero::stream_sync::{self, StreamSync};
 use gzero::sections::default_ws_path;
-use gzero::{atoms_bag, AutomergeStore};
+use gzero::{context_stream, AutomergeStore};
 use std::io::BufRead;
 use std::path::PathBuf;
 use std::sync::mpsc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-/// One synced bag: a doc file plus its hub-side change-log name.
-struct Bag {
+/// One synced stream: a doc file plus its hub-side change-log name.
+struct Stream {
     name: String,
     doc: PathBuf,
 }
 
-fn bags() -> Vec<Bag> {
+fn streams() -> Vec<Stream> {
     vec![
-        Bag {
-            name: atoms_bag(),
+        Stream {
+            name: context_stream(),
             doc: default_ws_path(),
         },
-        Bag {
-            name: comms_bag(),
+        Stream {
+            name: comms_stream(),
             doc: comms_db_path(),
         },
     ]
 }
 
-/// One full sync of one bag: open the doc fresh (it may have been
+/// One full sync of one stream: open the doc fresh (it may have been
 /// written by a session since our last cycle), pull+push under the
 /// doc lock. Cursor sidecar is per doc, so sessions and daemon share
-/// one cursor per bag — no double-pushing.
-fn sync_bag(bag: &Bag) -> Result<(usize, usize), String> {
-    let hub = HubChanges::from_env(&bag.name)
+/// one cursor per stream — no double-pushing.
+fn sync_stream(stream: &Stream) -> Result<(usize, usize), String> {
+    let hub = StreamSync::from_env(&stream.name)
         .ok_or_else(|| "hub not configured (CX_HUB_URL/CX_TOKEN)".to_string())?;
     let mut store =
-        AutomergeStore::open(Some(&bag.doc)).map_err(|e| e.to_string())?;
-    hub_changes::sync_store(
+        AutomergeStore::open(Some(&stream.doc)).map_err(|e| e.to_string())?;
+    stream_sync::sync_store(
         &mut store,
         &hub,
-        &hub_changes::sidecar_path(&bag.doc),
-        &bag.name,
+        &stream_sync::sidecar_path(&stream.doc),
+        &stream.name,
     )
 }
 
@@ -100,34 +100,34 @@ fn main() {
             .unwrap_or(60),
     );
     log(&format!(
-        "starting: backstop={}s bags={}",
+        "starting: backstop={}s streams={}",
         backstop.as_secs(),
-        bags()
+        streams()
             .iter()
             .map(|b| format!("{}@{}", b.name, b.doc.display()))
             .collect::<Vec<_>>()
             .join(", ")
     ));
 
-    let all = bags();
+    let all = streams();
     let (tx, rx) = mpsc::channel::<String>();
 
-    // One SSE listener per bag. The loop never returns: connect →
+    // One SSE listener per stream. The loop never returns: connect →
     // read events until the stream ends → reconnect with backoff. A
     // read timeout (3 missed heartbeats) catches silently-stalled
     // connections.
-    for bag in &all {
+    for stream in &all {
         let tx = tx.clone();
-        let bag = Bag {
-            name: bag.name.clone(),
-            doc: bag.doc.clone(),
+        let stream = Stream {
+            name: stream.name.clone(),
+            doc: stream.doc.clone(),
         };
-        std::thread::spawn(move || sse_loop(tx, bag));
+        std::thread::spawn(move || sse_loop(tx, stream));
     }
 
     // Boot sync: everything missed while offline, before any SSE.
-    for bag in &all {
-        boot_sync(bag);
+    for stream in &all {
+        boot_sync(stream);
     }
 
     loop {
@@ -140,13 +140,13 @@ fn main() {
                         due.push(more);
                     }
                 }
-                for bag in all.iter().filter(|b| due.contains(&b.name)) {
-                    cycle_sync(bag, "push event");
+                for stream in all.iter().filter(|b| due.contains(&b.name)) {
+                    cycle_sync(stream, "push event");
                 }
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {
-                for bag in &all {
-                    cycle_sync(bag, "backstop");
+                for stream in &all {
+                    cycle_sync(stream, "backstop");
                 }
             }
             Err(mpsc::RecvTimeoutError::Disconnected) => unreachable!(
@@ -156,56 +156,56 @@ fn main() {
     }
 }
 
-fn boot_sync(bag: &Bag) {
-    match sync_bag(bag) {
+fn boot_sync(stream: &Stream) {
+    match sync_stream(stream) {
         Ok((pushed, pulled)) => {
             log(&format!(
                 "boot {}@{}: pushed {pushed}, pulled {pulled}",
-                bag.name,
-                bag.doc.display()
+                stream.name,
+                stream.doc.display()
             ));
         }
         Err(e) => log(&format!(
             "boot {}@{} FAILED: {e}",
-            bag.name,
-            bag.doc.display()
+            stream.name,
+            stream.doc.display()
         )),
     }
 }
 
-fn cycle_sync(bag: &Bag, why: &str) {
-    match sync_bag(bag) {
+fn cycle_sync(stream: &Stream, why: &str) {
+    match sync_stream(stream) {
         Ok((pushed, pulled)) => {
             if pushed > 0 || pulled > 0 {
                 log(&format!(
                     "{} {}@{}: pushed {pushed}, pulled {pulled}",
                     why,
-                    bag.name,
-                    bag.doc.display()
+                    stream.name,
+                    stream.doc.display()
                 ));
             }
         }
         Err(e) => log(&format!(
             "{} {}@{} FAILED: {e}",
             why,
-            bag.name,
-            bag.doc.display()
+            stream.name,
+            stream.doc.display()
         )),
     }
 }
 
-/// SSE listener: connect to the hub's event stream for one bag and
+/// SSE listener: connect to the hub's event stream for one stream and
 /// forward push triggers to the main loop. Never returns; reconnects
 /// with capped exponential backoff. SSE is a trigger only — every
 /// reconnect does a normal pull, so a lost stream is a latency blip,
 /// never lost data.
-fn sse_loop(tx: mpsc::Sender<String>, bag: Bag) {
+fn sse_loop(tx: mpsc::Sender<String>, stream: Stream) {
     let agent = ureq::AgentBuilder::new()
         .timeout_connect(Duration::from_secs(10))
         // 3 missed heartbeats (25s each) → the connection is dead.
         .timeout_read(Duration::from_secs(90))
         .build();
-    let url = format!("{}/bag/{}/events", hub_base(), bag.name);
+    let url = format!("{}/stream/{}/events", hub_base(), stream.name);
     let auth = format!("Bearer {}", hub_token());
     let mut backoff: u64 = 2;
     loop {
@@ -233,7 +233,7 @@ fn sse_loop(tx: mpsc::Sender<String>, bag: Bag) {
                             push_seen = true;
                         } else if l.is_empty() && push_seen {
                             push_seen = false;
-                            let _ = tx.send(bag.name.clone());
+                            let _ = tx.send(stream.name.clone());
                         }
                         // "event: hello", data lines and heartbeat
                         // comments carry nothing we need: a fresh
@@ -241,16 +241,16 @@ fn sse_loop(tx: mpsc::Sender<String>, bag: Bag) {
                     }
                 })();
                 if let Err(e) = result {
-                    log(&format!("sse read error: {}: {e}", bag.name));
+                    log(&format!("sse read error: {}: {e}", stream.name));
                 } else {
-                    log(&format!("sse stream ended: {}", bag.name));
+                    log(&format!("sse stream ended: {}", stream.name));
                 }
             }
             Err(ureq::Error::Status(code, _)) => {
-                log(&format!("sse connect: {} rejected ({code}); retrying", bag.name));
+                log(&format!("sse connect: {} rejected ({code}); retrying", stream.name));
             }
             Err(e) => {
-                log(&format!("sse connect: {} failed ({e}); retrying", bag.name));
+                log(&format!("sse connect: {} failed ({e}); retrying", stream.name));
             }
         }
         std::thread::sleep(Duration::from_secs(backoff));

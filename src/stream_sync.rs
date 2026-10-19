@@ -1,5 +1,5 @@
 //! D1 change transport: sync `AutomergeStore` changes through gzero-hub's
-//! per-bag change endpoints.
+//! per-stream change endpoints.
 //!
 //! The hub is a change log, not a merge engine — clients push their
 //! `changes_for` output and pull by seq cursor; automerge guarantees
@@ -30,16 +30,16 @@ fn sync_log_detail() -> bool {
     matches!(std::env::var("CX_SYNC_LOG").as_deref(), Ok("detail"))
 }
 
-fn sync_log(bag: &str, msg: &str) {
+fn sync_log(stream: &str, msg: &str) {
     if sync_log_enabled() {
-        eprintln!("gzero-sync [{bag}] {msg}");
+        eprintln!("gzero-sync [{stream}] {msg}");
     }
 }
 
-pub struct HubChanges {
+pub struct StreamSync {
     base: String,
     token: String,
-    bag: String,
+    stream: String,
 }
 
 /// One direction of sync for one replica.
@@ -51,14 +51,14 @@ pub struct SyncCursor {
     pub pulled_seq: u64,
 }
 
-impl HubChanges {
-    pub fn from_env(bag: &str) -> Option<HubChanges> {
+impl StreamSync {
+    pub fn from_env(stream: &str) -> Option<StreamSync> {
         let base = std::env::var("CX_HUB_URL").ok().filter(|u| !u.is_empty())?;
         let token = std::env::var("CX_TOKEN").ok().filter(|t| !t.is_empty())?;
-        Some(HubChanges {
+        Some(StreamSync {
             base: base.trim_end_matches('/').to_string(),
             token,
-            bag: bag.to_string(),
+            stream: stream.to_string(),
         })
     }
 
@@ -73,7 +73,7 @@ impl HubChanges {
         let changes = store.changes_for(&cursor.pushed_heads);
         if changes.is_empty() {
             if sync_log_detail() {
-                sync_log(&self.bag, "push: nothing to do");
+                sync_log(&self.stream, "push: nothing to do");
             }
             return Ok(0);
         }
@@ -93,7 +93,7 @@ impl HubChanges {
         }
         cursor.pushed_heads = store.heads();
         sync_log(
-            &self.bag,
+            &self.stream,
             &format!(
                 "push: {net_ms}ms net, {}ms local, {n} changes",
                 t0.elapsed().as_millis().saturating_sub(net_ms)
@@ -113,11 +113,11 @@ impl HubChanges {
         let result = self.pull_pages(store, cursor);
         match &result {
             Ok(n) => sync_log(
-                &self.bag,
+                &self.stream,
                 &format!("pull: {}ms, {n} changes", t0.elapsed().as_millis()),
             ),
             Err(e) => sync_log(
-                &self.bag,
+                &self.stream,
                 &format!("pull: {}ms, FAILED: {e}", t0.elapsed().as_millis()),
             ),
         }
@@ -164,7 +164,7 @@ impl HubChanges {
             }
             let n = changes.len();
             if sync_log_detail() {
-                sync_log(&self.bag, &format!("pull page: {page_ms}ms, {n} changes"));
+                sync_log(&self.stream, &format!("pull page: {page_ms}ms, {n} changes"));
             }
             let pulled_hashes: Vec<ChangeHash> = changes.iter().map(|c| c.hash()).collect();
             store
@@ -185,7 +185,7 @@ impl HubChanges {
         }
     }
 
-    /// The hub's highest change seq for this bag (epoch GC cursor).
+    /// The hub's highest change seq for this stream (epoch GC cursor).
     pub fn head_seq(&self) -> Result<u64, String> {
         let resp = self.get("/changes?since=0&limit=1")?;
         resp.get("last_seq")
@@ -193,7 +193,7 @@ impl HubChanges {
             .ok_or_else(|| "hub: missing last_seq in head_seq".to_string())
     }
 
-    /// Epoch GC: drop this bag's change rows with seq < `before`.
+    /// Epoch GC: drop this stream's change rows with seq < `before`.
     /// Callers must have pushed the new epoch first, with `before`
     /// set to the first seq of the new epoch's changes.
     pub fn truncate_before(&self, before: u64) -> Result<(), String> {
@@ -211,9 +211,9 @@ impl HubChanges {
     fn post(&self, path: &str, body: &serde_json::Value) -> Result<serde_json::Value, String> {
         let resp = Self::agent()
             .post(&format!(
-                "{}/bag/{}{}",
+                "{}/stream/{}{}",
                 self.base,
-                self.bag.trim_matches('/'),
+                self.stream.trim_matches('/'),
                 path
             ))
             .set("Authorization", &format!("Bearer {}", self.token))
@@ -225,9 +225,9 @@ impl HubChanges {
     fn get(&self, path: &str) -> Result<serde_json::Value, String> {
         let resp = Self::agent()
             .get(&format!(
-                "{}/bag/{}{}",
+                "{}/stream/{}{}",
                 self.base,
-                self.bag.trim_matches('/'),
+                self.stream.trim_matches('/'),
                 path
             ))
             .set("Authorization", &format!("Bearer {}", self.token))
@@ -251,7 +251,7 @@ fn parse_json(resp: ureq::Response, path: &str) -> Result<serde_json::Value, Str
 /// ever creates its own root objects.
 pub fn sync_once(
     store: &mut AutomergeStore,
-    hub: &HubChanges,
+    hub: &StreamSync,
     cursor: &mut SyncCursor,
 ) -> Result<(usize, usize), String> {
     let pulled = hub.pull(store, cursor)?;
@@ -268,23 +268,23 @@ pub fn sync_once(
 /// don't deadlock.
 pub fn sync_store(
     store: &mut AutomergeStore,
-    hub: &HubChanges,
+    hub: &StreamSync,
     sidecar: &Path,
-    bag: &str,
+    stream: &str,
 ) -> Result<(usize, usize), String> {
     store.doc_lock();
     let out = (|| {
-        let mut cursor = SyncCursor::load(sidecar, bag)?;
+        let mut cursor = SyncCursor::load(sidecar, stream)?;
         let t0 = std::time::Instant::now();
         let result = sync_once(store, hub, &mut cursor);
         let ms = t0.elapsed().as_millis();
-        cursor.save(sidecar, bag)?;
+        cursor.save(sidecar, stream)?;
         if matches!(std::env::var("CX_SYNC_LOG").as_deref(), Ok("detail")) {
             match &result {
                 Ok((pushed, pulled)) => {
-                    eprintln!("gzero-sync [{bag}] once: {ms}ms (+{pushed} -{pulled})");
+                    eprintln!("gzero-sync [{stream}] once: {ms}ms (+{pushed} -{pulled})");
                 }
-                Err(e) => eprintln!("gzero-sync [{bag}] once: {ms}ms, FAILED: {e}"),
+                Err(e) => eprintln!("gzero-sync [{stream}] once: {ms}ms, FAILED: {e}"),
             }
         }
         result
@@ -294,19 +294,19 @@ pub fn sync_store(
 }
 
 impl SyncCursor {
-    /// Persist to a sidecar JSON keyed by bag, so several bags can
+    /// Persist to a sidecar JSON keyed by stream, so several streams can
     /// share one file next to the store.
-    pub fn save(&self, sidecar: &Path, bag: &str) -> Result<(), String> {
+    pub fn save(&self, sidecar: &Path, stream: &str) -> Result<(), String> {
         let mut root = if sidecar.exists() {
             serde_json::from_str(
                 &std::fs::read_to_string(sidecar)
                     .map_err(|e| format!("sync cursor: {}: {e}", sidecar.display()))?,
             )
-            .unwrap_or_else(|_| serde_json::json!({"bags": {}}))
+            .unwrap_or_else(|_| serde_json::json!({"streams": {}}))
         } else {
-            serde_json::json!({"bags": {}})
+            serde_json::json!({"streams": {}})
         };
-        root["bags"][bag] = serde_json::json!({
+        root["streams"][stream] = serde_json::json!({
             "pushed_heads": self
                 .pushed_heads
                 .iter()
@@ -319,8 +319,8 @@ impl SyncCursor {
             .map_err(|e| format!("sync cursor: {}: {e}", sidecar.display()))
     }
 
-    /// Load this bag's cursor from the sidecar (empty when absent).
-    pub fn load(sidecar: &Path, bag: &str) -> Result<SyncCursor, String> {
+    /// Load this stream's cursor from the sidecar (empty when absent).
+    pub fn load(sidecar: &Path, stream: &str) -> Result<SyncCursor, String> {
         if !sidecar.exists() {
             return Ok(SyncCursor::default());
         }
@@ -328,7 +328,7 @@ impl SyncCursor {
             .map_err(|e| format!("sync cursor: {}: {e}", sidecar.display()))?;
         let root: serde_json::Value =
             serde_json::from_str(&text).map_err(|e| format!("sync cursor: {e}"))?;
-        let entry = root.get("bags").and_then(|b| b.get(bag));
+        let entry = root.get("streams").and_then(|b| b.get(stream));
         let Some(entry) = entry else {
             return Ok(SyncCursor::default());
         };
@@ -397,15 +397,15 @@ mod tests {
         if std::env::var("CX_TOKEN").map_or(true, |t| t.is_empty()) {
             std::env::set_var("CX_TOKEN", "token");
         }
-        // Unique bag per run so reruns start from an empty log.
-        let bag = format!(
+        // Unique stream per run so reruns start from an empty log.
+        let stream = format!(
             "test-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
                 .as_millis()
         );
-        let hub = HubChanges::from_env(&bag).expect("hub config");
+        let hub = StreamSync::from_env(&stream).expect("hub config");
 
         // Two replicas starting from the same point.
         let mut a = AutomergeStore::in_memory().unwrap();
@@ -463,15 +463,15 @@ mod tests {
         if std::env::var("CX_TOKEN").map_or(true, |t| t.is_empty()) {
             std::env::set_var("CX_TOKEN", "token");
         }
-        let bag = format!(
+        let stream = format!(
             "cli-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
                 .as_millis()
         );
-        let hub = HubChanges::from_env(&bag).expect("hub config");
-        let dir = std::env::temp_dir().join(format!("gzero-cli-sync-{}", bag));
+        let hub = StreamSync::from_env(&stream).expect("hub config");
+        let dir = std::env::temp_dir().join(format!("gzero-cli-sync-{}", stream));
         std::fs::create_dir_all(&dir).unwrap();
         let (doc_a, doc_b) = (dir.join("a.ws"), dir.join("b.ws"));
 
@@ -479,14 +479,14 @@ mod tests {
         add_doc(&mut a, "a.md", "## n\n- one\n").unwrap();
         let mut ca = SyncCursor::default();
         sync_once(&mut a, &hub, &mut ca).unwrap();
-        ca.save(&sidecar_path(&doc_a), &bag).unwrap();
+        ca.save(&sidecar_path(&doc_a), &stream).unwrap();
 
         // B opens cold, syncs from empty, and sees A's atom.
         let mut b = AutomergeStore::open(Some(&doc_b)).unwrap();
-        let mut cb = SyncCursor::load(&sidecar_path(&doc_b), &bag).unwrap();
+        let mut cb = SyncCursor::load(&sidecar_path(&doc_b), &stream).unwrap();
         assert!(cb.pushed_heads.is_empty() && cb.pulled_seq == 0);
         sync_once(&mut b, &hub, &mut cb).unwrap();
-        cb.save(&sidecar_path(&doc_b), &bag).unwrap();
+        cb.save(&sidecar_path(&doc_b), &stream).unwrap();
         let texts: Vec<String> = alive(&b).unwrap().into_iter().map(|(t, _)| t).collect();
         assert!(texts.contains(&"one".to_string()), "B missing A's atom");
 
@@ -495,20 +495,20 @@ mod tests {
         add_doc(&mut a, "shared.md", "## n\n- conflict [tag-a]\n").unwrap();
         add_doc(&mut b, "shared.md", "## n\n- conflict [tag-b]\n").unwrap();
         sync_once(&mut a, &hub, &mut ca).unwrap();
-        ca.save(&sidecar_path(&doc_a), &bag).unwrap();
+        ca.save(&sidecar_path(&doc_a), &stream).unwrap();
         sync_once(&mut b, &hub, &mut cb).unwrap();
-        cb.save(&sidecar_path(&doc_b), &bag).unwrap();
+        cb.save(&sidecar_path(&doc_b), &stream).unwrap();
         sync_once(&mut a, &hub, &mut ca).unwrap();
-        ca.save(&sidecar_path(&doc_a), &bag).unwrap();
+        ca.save(&sidecar_path(&doc_a), &stream).unwrap();
         sync_once(&mut b, &hub, &mut cb).unwrap();
-        cb.save(&sidecar_path(&doc_b), &bag).unwrap();
+        cb.save(&sidecar_path(&doc_b), &stream).unwrap();
 
         let ta = alive(&a).unwrap();
         let tb = alive(&b).unwrap();
         assert_eq!(ta, tb, "replicas diverged");
 
         // Cursor reload from disk must be lossless.
-        let ca2 = SyncCursor::load(&sidecar_path(&doc_a), &bag).unwrap();
+        let ca2 = SyncCursor::load(&sidecar_path(&doc_a), &stream).unwrap();
         assert_eq!(ca2.pulled_seq, ca.pulled_seq);
         assert_eq!(ca2.pushed_heads.len(), ca.pushed_heads.len());
 
@@ -532,14 +532,14 @@ mod tests {
         if std::env::var("CX_TOKEN").map_or(true, |t| t.is_empty()) {
             std::env::set_var("CX_TOKEN", "token");
         }
-        let bag = format!(
+        let stream = format!(
             "init-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
                 .as_millis()
         );
-        let hub = HubChanges::from_env(&bag).expect("hub config");
+        let hub = StreamSync::from_env(&stream).expect("hub config");
         // Two fully independent stores, each with local data.
         let mut a = AutomergeStore::in_memory().unwrap();
         let mut b = AutomergeStore::in_memory().unwrap();

@@ -24,7 +24,7 @@
 //!
 //! Atom storage: the automerge doc at `CX_WS_DB` (default
 //! `~/.pi/agent/context.ws`), synced through the gzero-hub D1 change
-//! log (`CX_HUB_URL`/`CX_TOKEN`, bag `CX_BAG`). `CX_LEGACY_DB=1`
+//! log (`CX_HUB_URL`/`CX_TOKEN`, stream `CX_CONTEXT_STREAM`). `CX_LEGACY_DB=1`
 //! selects the legacy SQLite store at `CX_DB` (default
 //! `~/.pi/agent/context.db`) — the rollback hatch. Sessions, messages,
 //! broadcasts and presence always live in the SQLite handle
@@ -57,7 +57,7 @@ struct App {
     atoms: Box<dyn Fn() -> Result<Atoms, String> + Send>,
 }
 
-/// Where S1–S3b live. The doc store syncs its own bag through the hub;
+/// Where S1–S3b live. The doc store syncs its own stream through the hub;
 /// the legacy store stays machine-local.
 enum CommsHandle {
     Doc(gzero::comms::CommsStore),
@@ -185,7 +185,7 @@ fn startup(app: &mut App) {
         }
         eprintln!("gzero-mcp: startup atoms.sync: {}ms", t.elapsed().as_millis());
         let t = std::time::Instant::now();
-        // Comms (bag `comms`): pull at session start so unread state
+        // Comms (stream `comms`): pull at session start so unread state
         // and presence from other machines is visible immediately.
         if let Err(e) = app.comms.layer().sync() {
             eprintln!("gzero-mcp: comms sync failed: {e}");

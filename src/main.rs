@@ -63,7 +63,7 @@ gzero migrate-db     import context.db atoms + tombstones into the workspace doc
 gzero export file    write this machine's snapshot (merge unit)
 gzero absorb file... merge other machines' snapshots into the local store
 gzero sync           push+pull the workspace store through the hub change log (CX_HUB_URL,
-                  CX_TOKEN; bag CX_BAG, default 'context')
+                  CX_TOKEN; stream CX_CONTEXT_STREAM, default 'context')
 gzero pull           fetch merged snapshot from the hub (CX_HUB_URL) and absorb
 gzero push           post this store's atoms + tombstones to the hub as events
 gzero sources        per-source assertion counts
@@ -97,7 +97,7 @@ gzero watch          stream ws-doc change events (items/sections) as JSON lines
 gzero sessions       session presence rows (stale marked; S1 inspection)
 env: CX_WS_DB     atom store + workflow doc: atoms, tombstones, sections, items
                   (default ~/.pi/agent/context.ws); synced via `gzero sync`
-                  (CX_HUB_URL, CX_TOKEN, bag CX_BAG default 'context')
+                  (CX_HUB_URL, CX_TOKEN, stream CX_CONTEXT_STREAM default 'context')
 env: CX_LEGACY_DB=1  rollback: atoms on the legacy SQLite store (CX_DB,
                   default ~/.pi/agent/context.db); `gzero pull`/`push` are
                   legacy-only; migrate-db imports SQLite into the doc";
@@ -215,23 +215,23 @@ fn main() {
             try_post_events(&events);
         }
         "sync" => {
-            let bag = std::env::var("CX_BAG").unwrap_or_else(|_| "context".into());
-            let hub = gzero::hub_changes::HubChanges::from_env(&bag).unwrap_or_else(|| {
+            let stream = std::env::var("CX_CONTEXT_STREAM").unwrap_or_else(|_| "context".into());
+            let hub = gzero::stream_sync::StreamSync::from_env(&stream).unwrap_or_else(|| {
                 eprintln!("gzero sync: set CX_HUB_URL and CX_TOKEN");
                 exit(2);
             });
             let path = gzero::sections::default_ws_path();
             let mut store = AutomergeStore::open(Some(&path))
                 .unwrap_or_else(|e| panic!("gzero: open {}: {e}", path.display()));
-            let sidecar = gzero::hub_changes::sidecar_path(&path);
-            let mut cursor = gzero::hub_changes::SyncCursor::load(&sidecar, &bag)
+            let sidecar = gzero::stream_sync::sidecar_path(&path);
+            let mut cursor = gzero::stream_sync::SyncCursor::load(&sidecar, &stream)
                 .unwrap_or_else(|e| panic!("gzero sync: {e}"));
-            let (pushed, pulled) = gzero::hub_changes::sync_once(&mut store, &hub, &mut cursor)
+            let (pushed, pulled) = gzero::stream_sync::sync_once(&mut store, &hub, &mut cursor)
                 .unwrap_or_else(|e| panic!("gzero sync: {e}"));
             cursor
-                .save(&sidecar, &bag)
+                .save(&sidecar, &stream)
                 .unwrap_or_else(|e| panic!("gzero sync: {e}"));
-            println!("sync {bag}: pushed {pushed}, pulled {pulled}");
+            println!("sync {stream}: pushed {pushed}, pulled {pulled}");
         }
         "pull" => {
             let hub = Hub::from_env().unwrap_or_else(|| {
