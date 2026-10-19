@@ -69,10 +69,14 @@ hub. `--no-plugin` and `--no-migrate` narrow the run.
 - Shipped: atom store with resolve/search and hub sync; workflow
   system W0–W4 (sections, work items, plan_next, pinned items,
   ranking with score + evidence, WIP limit, gates).
+- Shipped: **gzero-syncd** — the resident sync daemon (silent
+  refresher): continuous pull via hub SSE + 60s backstop, doc-lock
+  co-writing with sessions, installed as LaunchAgent / systemd user
+  unit by `install.sh`. Comms and context ride the same transport.
 - In progress: W5 — repo docs migrate into the workflow system and
-  become stubs.
+  become stubs; production deploy of the hub SSE endpoint.
 - Deferred: Track D (change-based push/pull of workflow docs via the
-  hub), resident track (far later).
+  hub), iroh direct transport, mobile client.
 
 ## Repo map
 

@@ -49,6 +49,30 @@ all peers). Machines today: MacBookAir (Air Apparent) + MacPro tower
   to the doc.
 - No resident process exists anywhere in the stack.
 
+## Step 0 — decided: silent refresher with central doc lock
+
+*Decided 2026-10-19 (Al Grater box). Front-door is disproportionate:
+it would move the whole mutation surface (~7k lines of atoms, workflow,
+comms and session logic) behind IPC, for a problem that only exists on
+the receiving side — sessions already push on every write. So:
+
+- **Sessions keep writing the doc files directly.** `gzero-syncd` only
+  pulls/applies; it never writes unless a pull brought changes.
+- **The two-writer race is closed structurally, not by convention.**
+  `AutomergeStore` holds a `<doc>.lock` flock file description and
+  locks it around each flush and each sync transaction — never for a
+  store's lifetime (the MCP comms store is long-lived; lock-at-open
+  would starve the daemon). flock re-locks on the same fd instantly,
+  so nested lock (sync → apply → flush) doesn't deadlock.
+- **Merge-on-flush** is the core fix: before saving, `flush()` merges
+  whatever is on disk into the in-memory doc (a stale session cannot
+  clobber a daemon-applied pull) and writes via temp+rename so
+  concurrent readers never see a torn document.
+- **`hub_changes::sync_store`** is the one lock-cursor-sync-save
+  transaction; sessions, the CLI and the daemon all go through it.
+- Presence heartbeats stay with the sessions (the live things); the
+  daemon does not do presence.
+
 ## Plan
 
 ### 0. First decision: single-writer
@@ -137,10 +161,41 @@ iroh transport, mobile client, multi-user ACL, epoch-roll changes.
 The comms bag gets live fan-out for free once the daemon syncs it too
 (it already rides the same HubChanges transport under bag `comms`).
 
+## Status update (2026-10-19, built and tested on the Al Grater box)
+
+- **Hub SSE shipped** (`gzero-hub` f0ad175): `GET /bag/{bag}/events`
+  streams `hello` (carries current `last_seq`) on connect, one `push`
+  event per successful `POST /changes` batch, comment heartbeat ~25s.
+  Trigger only — subscribers pull `/changes?since=`; reconnect
+  re-pulls, so a dropped stream or DO restart loses nothing.
+- **`gzero-syncd` shipped** (`src/bin/gzero-syncd.rs`): boots with one
+  full pull+push per bag (context @ CX_WS_DB, comms @ CX_COMMS_DB),
+  then one SSE listener thread per bag waking an immediate sync on
+  push, with a jittered-free 60s backstop (`CX_SYNCD_BACKSTOP_SECS`)
+  as the SSE-failure path. SSE reconnect uses capped exponential
+  backoff; a 90s read timeout (3 missed heartbeats) catches
+  silently-stalled connections. No hub config → exit non-zero
+  (the service supervisor retries).
+- **Acceptance passed** (`scripts/syncd-convergence-test.sh`, local
+  `wrangler dev` hub): A writes → B sees it within the 3s window with
+  the backstop at 60s (so the arrival proves the SSE trigger, not the
+  backstop); kill -9 the daemon mid-stream → restart converges with
+  nothing lost. `mcp-convergence-test.sh` still green.
+- **Service install shipped**: `install.sh` step 8 installs the
+  LaunchAgent (`com.gzero.syncd`, KeepAlive, log at
+  `~/Library/Logs/gzero-syncd.log`) on macOS and a systemd user unit
+  on Linux; `--no-daemon` skips. The plist/unit embed the hub token
+  and are chmod 600.
+- Not yet done: deploy the SSE endpoint to production (`wrangler
+  deploy` in gzero-hub) and run install.sh on both Macs; confirm SSE
+  streams through the real Cloudflare edge (local `wrangler dev`
+  verified; the heartbeat interval guards edge idle timeouts).
+
 ## Open questions
 
-- Front-door vs silent-refresher (step 0) — decide first.
-- Does the daemon also own session presence heartbeats (comms bag)?
-  Natural fit if front-door; keep separate if refresher.
-- SSE through Cloudflare workers: confirm no buffering surprises
-  (workers can stream; verify with `wrangler dev` early).
+- ~~Front-door vs silent-refresher (step 0)~~ — decided, see above.
+- ~~Does the daemon also own session presence heartbeats (comms bag)?~~
+  No — presence stays with sessions (they're the live things).
+- ~~SSE through Cloudflare workers: buffering surprises~~ — verified
+  with `wrangler dev`: the local acceptance sees sub-3s arrivals.
+  Real-edge check remains with the production deploy.

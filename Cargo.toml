@@ -27,3 +27,7 @@ libc = "0.2"
 [[bin]]
 name = "gzero-mcp"
 path = "src/bin/mcp.rs"
+
+[[bin]]
+name = "gzero-syncd"
+path = "src/bin/gzero-syncd.rs"
