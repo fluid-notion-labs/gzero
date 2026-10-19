@@ -11,7 +11,7 @@
 
 import { matchesKey, type Keybinding, type KeyId, type KeybindingsManager } from "@earendil-works/pi-tui";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import type { HistNode, PromptEntry, SessionModel } from "./history.ts";
+import type { HistNode, PresenceBadge, PromptEntry, SessionModel } from "./history.ts";
 
 /** How many list lines render at once. */
 const WINDOW = 20;
@@ -35,6 +35,10 @@ export interface HistoryPanelOptions {
   loadSessions: (projectDir: string) => SessionModel[];
   /** Resolve a fork's parent display name (basename of parentSessionPath). */
   sessionDir: (project: string) => string;
+  /** The session file this panel was opened from — badged "you". */
+  currentSessionFile?: string;
+  /** Live presence (comms roster) keyed by session id — sessions level badges. */
+  presence?: Map<string, PresenceBadge>;
 }
 
 type Level = "projects" | "sessions" | "history";
@@ -208,7 +212,18 @@ export class HistoryPanel {
     const title = session.name ?? session.firstPrompt ?? session.id;
     const fork = session.parentSessionPath ? " ↰ fork" : "";
     const count = ` · ${session.promptCount} prompt${session.promptCount === 1 ? "" : "s"}`;
-    return `${date}  ${title}${count}${fork}`;
+    return `${date}  ${title}${count}${fork}${this.presenceBadge(session)}`;
+  }
+
+  /** Cross-machine liveness: "you" for the opening session, machine name
+   * (or short id) for sessions whose presence row is live. */
+  private presenceBadge(session: SessionModel): string {
+    if (this.opts.currentSessionFile && session.path === this.opts.currentSessionFile) {
+      return " · you";
+    }
+    const p = this.opts.presence?.get(session.id);
+    if (!p) return "";
+    return ` · ● ${p.label || p.machine.slice(0, 8)}`;
   }
 
   private renderProjects(content: number): string[] {

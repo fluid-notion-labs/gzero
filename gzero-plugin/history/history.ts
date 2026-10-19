@@ -260,6 +260,38 @@ export function activePath(session: SessionModel): HistNode[] {
   return path;
 }
 
+/** One row of the comms presence roster (gzero-mcp `sessions` output). */
+export interface PresenceRow {
+  session_id: string;
+  machine: string;
+  label: string;
+  last_seen: number;
+}
+
+export interface PresenceBadge {
+  machine: string;
+  label: string;
+}
+
+/**
+ * Live presence rows only (300s TTL, mirrored from the Rust side's
+ * PRESENCE_TTL_SECS), keyed by session id — which, since the plugin now
+ * adopts pi's session id, is exactly the id in the session file header.
+ */
+export function livePresence(
+  rows: PresenceRow[],
+  now: number,
+  ttlSecs = 300,
+): Map<string, PresenceBadge> {
+  const live = new Map<string, PresenceBadge>();
+  for (const r of rows) {
+    if (typeof r?.session_id !== "string" || !r.session_id) continue;
+    if (typeof r.last_seen !== "number" || now - r.last_seen >= ttlSecs) continue;
+    live.set(r.session_id, { machine: r.machine ?? "", label: r.label ?? "" });
+  }
+  return live;
+}
+
 /** The projects level: session folders under the sessions root. */
 export function listProjects(sessionFile: string): { projects: string[]; current: string | null } {
   const root = dirname(dirname(sessionFile));

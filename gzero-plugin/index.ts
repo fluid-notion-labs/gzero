@@ -50,7 +50,7 @@ import {
 import { ItemsPaneController, setItemsProvider } from "./items-pane.ts";
 import { messageText, registerReview, type ReviewDeps } from "./review.ts";
 import routerSetup from "./router/index.ts";
-import { loadHistory, type PromptEntry } from "./history/history.ts";
+import { loadHistory, type PresenceRow, type PromptEntry } from "./history/history.ts";
 import historySetup from "./history/index.ts";
 import { routerSnapshot } from "./router/state.ts";
 import { summarizeLedger } from "./router/ledger.ts";
@@ -576,7 +576,11 @@ export default function (pi: ExtensionAPI) {
   // blessed snapshot is the only thing plain `pi` loads, so they ride
   // along (their modules live in router/ and history/).
   routerSetup(pi);
-  historySetup(pi);
+  historySetup(pi, {
+    // Live presence for the history panel's session badges; same source
+    // the panel presence label uses. Failures just mean no badges.
+    fetchPresence: async () => (await mcpJson("sessions", {})) as PresenceRow[],
+  });
 
   const itemsPane = new ItemsPaneController();
 
@@ -678,6 +682,16 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_start", async (_event, ctx) => {
     resolvedBody = null; // fresh session → resolve again
+    // Presence rides pi's session id, not the factory UUID: pi's id is
+    // in the session file name and header, so presence rows match session
+    // files exactly (the history panel's badges rely on that). Heartbeats
+    // spawned after this point adopt it; the factory row ages out via TTL.
+    try {
+      const piSessionId = ctx.sessionManager.getSessionId();
+      if (piSessionId) process.env.CX_SESSION_ID = piSessionId;
+    } catch {
+      // no session manager in this context — keep the factory UUID
+    }
     startDiscovery();
     if (!autocompleteInstalled && ctx.mode === "tui") {
       autocompleteInstalled = true;

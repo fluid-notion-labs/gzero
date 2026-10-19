@@ -222,3 +222,34 @@ test("flattenTree: depth-first order, folded subtrees hidden", () => {
   const folded = flattenTree([tree], new Set(["reply"]));
   assert.deepEqual(folded.map((r) => r.node.id), ["root", "reply"]);
 });
+
+// --- presence badges (dca8 slice 2) --------------------------------------
+
+test("sessions level: 'you' badge on the opening session, ● machine on live presence", () => {
+  const hooks: PanelHooks = { picks: [], loads: [] };
+  const current = sessionModel("sess-current", [promptNode("p1", "current session work")]);
+  const other = sessionModel("sess-live", [promptNode("p2", "other machine work")]);
+  const offline = sessionModel("sess-old", [promptNode("p3", "old work")]);
+  const p = panel(["proj"], [current, other, offline], hooks);
+  (p as unknown as { opts: { currentSessionFile: string; presence: Map<string, { machine: string; label: string }> } }).opts.currentSessionFile = current.path;
+  (p as unknown as { opts: { currentSessionFile: string; presence: Map<string, { machine: string; label: string }> } }).opts.presence = new Map([
+    ["sess-live", { machine: "aaaa-bbbb-cccc", label: "" }],
+    ["sess-current", { machine: "local", label: "" }],
+  ]);
+  p.handleInput("\r"); // -> sessions
+  const body = p.render(120).join("\n");
+  assert.match(body, /current session work.*· you/s);
+  assert.match(body, /other machine work.*● aaaa-bbb/s);
+  assert.match(body, /old work/);
+});
+
+test("presence label wins over machine id when set", () => {
+  const hooks: PanelHooks = { picks: [], loads: [] };
+  const other = sessionModel("sess-labeled", [promptNode("p", "labeled work")]);
+  const p = panel(["proj"], [other], hooks);
+  (p as unknown as { opts: { presence: Map<string, { machine: string; label: string }> } }).opts.presence = new Map([
+    ["sess-labeled", { machine: "zzzz", label: "laptop" }],
+  ]);
+  p.handleInput("\r");
+  assert.match(p.render(120).join("\n"), /● laptop/);
+});

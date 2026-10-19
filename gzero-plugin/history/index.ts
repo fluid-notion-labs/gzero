@@ -4,19 +4,33 @@
 // branch tree (item dca8). Enter picks a prompt (inserted into the editor)
 // exactly as before; esc backs out a level, f1/q close from the top level.
 
-import { basename, dirname, join } from "node:path";
+import { dirname, join } from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { listProjects, loadSessions } from "./history.ts";
+import { livePresence, listProjects, loadSessions, type PresenceRow } from "./history.ts";
 import { HistoryPanel } from "./panel.ts";
 
-export default function (pi: ExtensionAPI) {
-  const open = (ctx: ExtensionCommandContext) => {
+export interface HistoryDeps {
+  /** Live presence rows from the comms store (the caller knows how to
+   * fetch MCP); absence or rejection just means no badges. */
+  fetchPresence?: () => Promise<PresenceRow[]>;
+}
+
+export default function (pi: ExtensionAPI, deps: HistoryDeps = {}) {
+  const open = async (ctx: ExtensionCommandContext) => {
     const sessionFile = ctx.sessionManager.getSessionFile();
     if (!sessionFile) {
       ctx.ui.notify("history: no session file yet", "warning");
       return;
     }
     const { projects, current } = listProjects(sessionFile);
+    let presence = new Map<string, { machine: string; label: string }>();
+    if (deps.fetchPresence) {
+      try {
+        presence = livePresence(await deps.fetchPresence(), Date.now() / 1000);
+      } catch {
+        // presence must never block the panel
+      }
+    }
     ctx.ui.custom(
       (_tui, theme, keybindings, done) =>
         new HistoryPanel(projects, current, theme, keybindings, {
@@ -27,6 +41,8 @@ export default function (pi: ExtensionAPI) {
           },
           loadSessions: (projectDir) => loadSessions(projectDir),
           sessionDir: (project) => join(dirname(dirname(sessionFile)), project),
+          currentSessionFile: sessionFile,
+          presence,
         }),
       {
         overlay: true,

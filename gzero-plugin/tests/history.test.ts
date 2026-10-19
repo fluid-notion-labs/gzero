@@ -180,3 +180,22 @@ test("listProjects: folders sorted, current first; sessions newest first", () =>
   assert.ok(sessions.length >= 1);
   assert.equal(sessions[0].firstPrompt, "newest");
 });
+
+// --- presence badges (dca8 slice 2) --------------------------------------
+
+import { livePresence } from "../history/history.ts";
+
+test("livePresence: filters stale and malformed rows, keys by session id", () => {
+  const now = 1_000_000;
+  const rows = [
+    { session_id: "a", machine: "m-uuid-1", label: "panel dev", last_seen: now - 10 },
+    { session_id: "b", machine: "m-uuid-2", label: "", last_seen: now - 400 }, // stale
+    { session_id: "c", machine: "m-uuid-3", label: "", last_seen: now + 5 }, // future = live
+    { session_id: "", machine: "x", label: "", last_seen: now }, // malformed
+    { machine: "y", label: "", last_seen: now }, // no id
+  ];
+  const live = livePresence(rows, now);
+  assert.equal(live.size, 2);
+  assert.deepEqual(live.get("a"), { machine: "m-uuid-1", label: "panel dev" });
+  assert.deepEqual(live.get("c"), { machine: "m-uuid-3", label: "" });
+});
