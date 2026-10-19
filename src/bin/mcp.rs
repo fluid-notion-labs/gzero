@@ -1980,6 +1980,17 @@ mod tests {
     /// Test app: comms in memory, atoms in a unique temp doc file that
     /// every call reopens — the same per-call semantics as production.
     fn app() -> App {
+        // Every write syncs through the hub when configured. With
+        // CX_HUB_URL/CX_TOKEN in the environment (as on a dev machine
+        // that runs `gzero` from the same shell), tests pull real hub
+        // atoms into their temp docs and push test atoms to the
+        // production store. Tests must be hermetic: drop the hub
+        // config once, before the first store opens.
+        static HERMETIC: std::sync::Once = std::sync::Once::new();
+        HERMETIC.call_once(|| {
+            std::env::remove_var("CX_HUB_URL");
+            std::env::remove_var("CX_TOKEN");
+        });
         static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let path = std::env::temp_dir().join(format!(
             "gzero-mcp-test-{}-{}.ws",
