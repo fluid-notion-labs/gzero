@@ -108,3 +108,31 @@ The context bag carries stale and bloated state:
   `tmp/cleanout/` (27 scope files, 678 atoms — 23 dropped in curation;
   115 tombstones reset, which also clears the text-keyed-tombstone
   limitation).
+
+## Round 2 (2026-10-19): first re-import was silently defeated — redo
+
+The first re-import looked clean but old state resurrected on both
+machines. Cause: a long-lived gzero-mcp process on the MacPro (the
+in-development daemon, plus other sessions) held the **pre-wipe doc in
+memory** and re-pushed old changes to the hub as new seqs after the
+truncate; the next pulls flowed them back into both "fresh" docs.
+Wipes only defeat on-disk state, never in-memory holders.
+
+Redo (verified clean):
+- Killed all gzero-mcp on the MacPro (note: `pkill -f gzero-mcp` kills
+  your own ssh wrapper — use `pkill -x`), re-truncated the hub
+  (253 further changes deleted), wiped both docs + sidecars.
+- Re-imported: 31 curated files (`context/`, committed), all 48
+  sections across 7 scopes, **all 20 items** replayed from the archive
+  JSONs incl. closed history, notes re-attached, edges remapped
+  (title-matched; ids differ from the old ones).
+- Item id map: d294→a348, 7e9f→a585, b66c→2399, 9e16→4cc5.
+- Verification: laptop 678 atoms / 0 tombstones / 20 items / 7 scopes;
+  hub log 159 changes; **fresh-client test** — MacPro wiped doc pulls
+  the whole log in 0.76s and lands on 680 atoms / 20 items / 7 scopes
+  with **zero old-path sources**. The poison-page problem is gone.
+
+Lesson for the daemon (sync-daemon.md): a resident holder must reload
+state from disk/hub at startup and must never push from memory it
+loaded before an external reset. A daemon that wins the "who holds the
+truth" contest silently resurrects deleted data.
