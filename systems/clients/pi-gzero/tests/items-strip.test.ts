@@ -9,6 +9,7 @@ import {
   stripCurrent,
   stripGlyph,
   stripLabel,
+  stripLabelRow,
   stripLines,
   stripOrder,
   taskRowCap,
@@ -87,6 +88,21 @@ test("strip label: first 3 words of the title, ellipsis when truncated, capped t
   assert.equal(stripLabel("   "), "");
 })
 
+test("strip label row: cell index of the current item, -1 without one", () => {
+  const rows = [
+    row({ id: "a", status: "closed", created: 1 }),
+    row({ id: "b", status: "in_progress", created: 2 }),
+    row({ id: "c", status: "open", created: 3 }),
+  ];
+  // Timeline order: closed a, in-progress b, open c. Current is b, cell 1.
+  assert.equal(stripLabelRow(rows, { frame: 0, cap: 10 }), 1);
+  // No in-progress item: no label to align.
+  assert.equal(stripLabelRow([row({ id: "x", status: "open" })], { frame: 0, cap: 10 }), -1);
+  // Overflow: cap 2 keeps only the newest cell plus the ⋮ marker; the
+  // current item is hidden behind it, so no label row.
+  assert.equal(stripLabelRow(rows, { frame: 0, cap: 2 }), -1);
+})
+
 test("strip current: first in-progress in strip order; null when none", () => {
   const rows = [
     row({ id: "a", status: "open", created: 30 }),
@@ -127,30 +143,37 @@ test("overflow drops from the top (past) and marks it with ⋮", () => {
   assert.deepEqual(stripLines(rows, { frame: 0, cap: 10 })[0], { glyph: "○", color: "muted", id: "0" });
 });
 
-test("strip renders the current item's label beside its glyph; glyph-only otherwise", () => {
+test("strip stays the skinny rail; the current item's label sticks out via the label overlay", () => {
   const pane = new ItemsPane();
   pane.mode = "strip";
   pane.rows = [row({ id: "a", status: "open" }), row({ id: "b", title: "fix the strip now", status: "in_progress" })];
   const theme = { fg: (_c: string, s: string) => s } as never;
   (pane as unknown as { theme: unknown }).theme = theme;
   const lines = pane.render(40);
-  const label = stripLabel("fix the strip now"); // "fix the strip…"
-  const inner = 3 + STRIP_LABEL_MAX;
-  // Timeline order: in-progress above open; the label rides the spinner row.
+  // Timeline order: in-progress above open. The rail itself is always
+  // 5 columns (3-cell slot + borders); the label is NOT inside it —
+  // StripLabelPane renders it as a separate overlay to the left.
   assert.deepEqual(lines, [
-    "╭" + "─".repeat(inner) + "╮",
-    "│ " + SPINNER_FRAMES[0] + " " + label + " ".repeat(STRIP_LABEL_MAX - label.length) + "│",
-    // Slot right-padding (1) + label width fill (STRIP_LABEL_MAX).
-    "│ ○" + " ".repeat(STRIP_LABEL_MAX + 1) + "│",
-    "╰" + "─".repeat(inner) + "╯",
+    "╭───╮",
+    "│ " + SPINNER_FRAMES[0] + " │",
+    "│ ○ │",
+    "╰───╯",
   ]);
-  assert.ok(lines.every((l) => l.length === stripBoxWidth(true)));
+  assert.ok(lines.every((l) => l.length === 5));
+  // What the label overlay would show, and where it aligns: the
+  // in-progress item is the first cell (row 0).
+  assert.equal(pane.currentLabelText(), stripLabel("fix the strip now"));
+  assert.equal(pane.currentLabelRow(), 0);
+  assert.equal(pane.stripWidth(), stripBoxWidth(true)); // extent for the skills column
 
-  // No in-progress item: back to the skinny glyph-only rail.
+  // No in-progress item: no label at all, same skinny rail.
   pane.rows = [row({ id: "a", status: "open" })];
   const skinny = pane.render(40);
   assert.deepEqual(skinny, ["╭───╮", "│ ○ │", "╰───╯"]);
   assert.ok(skinny.every((l) => l.length === 5));
+  assert.equal(pane.currentLabelText(), "");
+  assert.equal(pane.currentLabelRow(), -1);
+  assert.equal(pane.stripWidth(), stripBoxWidth(false));
   // Panel mode renders the framed sidebar, not glyphs.
   pane.mode = "panel";
   const panel = pane.render(60);

@@ -124,6 +124,14 @@ export function stripCurrent(rows: ItemRow[]): ItemRow | null {
   return stripOrder(rows).find((r) => r.status === "in_progress") ?? null;
 }
 
+/** The current item's cell index within the strip's rendered cells
+ * (−1 when no current item): where the stuck-out label aligns. */
+export function stripLabelRow(rows: ItemRow[], opts: { frame: number; cap: number }): number {
+  const current = stripCurrent(rows);
+  if (!current) return -1;
+  return stripLines(rows, opts).findIndex((c) => c.id === current.id);
+}
+
 /** Total on-screen width of the strip box. */
 export function stripBoxWidth(hasLabel: boolean): number {
   return hasLabel ? 3 + STRIP_LABEL_MAX + 2 : 5;
@@ -384,8 +392,9 @@ export class ItemsPane implements Component {
    * are no tasks). Capped at terminal height; overflow drops from the
    * top (past) with ⋮ marking the hidden items.
    */
-  /** The strip's on-screen width for its current rows (controller uses
-   * this to decide whether the overlays need relayouting). */
+  /** The strip's total on-screen extent — the 5-column rail plus the
+   * stuck-out label when a current item shows (controller uses this for
+   * the skills column's position and relayout decisions). */
   stripWidth(): number {
     return stripBoxWidth(!this.error && this.rows.length > 0 && stripCurrent(this.rows) !== null);
   }
@@ -394,33 +403,60 @@ export class ItemsPane implements Component {
     const theme = this.theme;
     if (!theme) return [];
     const border = (s: string) => theme.fg("borderMuted", s);
-    const current = this.error || this.rows.length === 0 ? null : stripCurrent(this.rows);
-    const label = current ? stripLabel(current.title) : "";
     const cells = this.error
       ? [{ glyph: "⚠", color: "warning" as StripColor, id: "" }]
       : this.rows.length === 0
         ? [{ glyph: "·", color: "dim" as StripColor, id: "" }]
         : stripLines(this.rows, { frame: this.frame, cap: taskRowCap(process.stdout.rows) });
-    const inner = label ? 3 + STRIP_LABEL_MAX : 3;
-    const lines = [border("╭" + "─".repeat(inner) + "╮")];
+    const lines = [border("╭───╮")];
     for (const c of cells) {
       const vw = Math.min(3, visibleWidth(c.glyph));
       const left = Math.floor((3 - vw) / 2);
-      let content =
+      const content =
         " ".repeat(left) + theme.fg(c.color, c.glyph) + " ".repeat(3 - vw - left);
-      if (label && current && c.id === current.id) {
-        // The glyph slot's right padding doubles as the label gap.
-        content += padStyled(theme.fg("accent", label), STRIP_LABEL_MAX);
-      } else {
-        content += " ".repeat(Math.max(0, inner - 3));
-      }
       lines.push(border("│") + content + border("│"));
     }
-    lines.push(border("╰" + "─".repeat(inner) + "╯"));
+    lines.push(border("╰───╯"));
     return lines;
   }
 
+  /** The stuck-out label's alignment: the current item's row inside the
+   * strip (0-based cell index), or −1 when nothing is in progress. */
+  currentLabelRow(): number {
+    return stripLabelRow(this.rows, { frame: this.frame, cap: taskRowCap(process.stdout.rows) });
+  }
+
+  /** The current item's stuck-out label ("" when nothing is in progress
+   * or the strip shows an error). */
+  currentLabelText(): string {
+    const current = this.error || this.rows.length === 0 ? null : stripCurrent(this.rows);
+    return current ? stripLabel(current.title) : "";
+  }
+
   private cacheWidth = -1;
+}
+
+/** The current item's label, floating left of the strip rail. A separate
+ * overlay because compositing paints every overlay column: widening the
+ * 5-column rail to carry the label would erase the chat behind it on
+ * every row. This overlay paints only its own line, and the controller
+ * re-shows it (cheap) whenever the current row moves. */
+export class StripLabelPane implements Component {
+  text = "";
+  private theme: Theme | null = null;
+
+  attach(_tui: TUI, theme: Theme): void {
+    this.theme = theme;
+  }
+
+  dispose(): void {}
+
+  invalidate(): void {}
+
+  render(_width: number): string[] {
+    if (!this.theme || !this.text) return [];
+    return [this.theme.fg("accent", this.text)];
+  }
 }
 
 /** Pad an already-styled string to the given visible width. */
@@ -444,11 +480,18 @@ export class ItemsPaneController {
   private stripPane: ItemsPane | null = null; // the always-on rail
   private stripHandle: OverlayHandle | null = null;
   private stripDone: ((result: undefined) => void) | null = null;
+  private labelPane: StripLabelPane | null = null; // the current item's stuck-out label
+  private labelHandle: OverlayHandle | null = null;
+  private labelDone: ((result: undefined) => void) | null = null;
+  /** The label row the label overlay was opened at (−1 = not shown). */
+  private labelRow = -1;
   private skillsPane: SkillsStrip | null = null; // loaded-skills column, left of the rail
   private skillsHandle: OverlayHandle | null = null;
   private skillsDone: ((result: undefined) => void) | null = null;
   private opening = false;
-  /** The width the strip overlay was opened at (5, or 5+1+STRIP_LABEL_MAX). */
+  /** The strip's total on-screen extent (5, or 5+1+STRIP_LABEL_MAX with a
+   * stuck-out label) — governs the skills column's position, not the rail
+   * overlay, which is always the narrow 5-column box. */
   private stripWidth = 5;
   /** The session context, kept so the strip can relayout when its width changes. */
   private lastCtx: ExtensionContext | null = null;
@@ -476,7 +519,10 @@ export class ItemsPaneController {
   async start(ctx: ExtensionContext): Promise<void> {
     this.lastCtx = ctx;
     await this.ensureStrip(ctx);
-    // Skills column sits just left of the rail: 1px margin + rail + 1px gap.
+    this.labelRow = this.stripPane ? this.stripPane.currentLabelRow() : -1;
+    await this.ensureLabelStrip(ctx);
+    // Skills column sits just left of the rail (plus the stuck-out label
+    // when one shows): 1px margin + extent + 1px gap.
     await this.ensureSkillsStrip(ctx, this.stripWidth + 2);
   }
 
@@ -502,6 +548,7 @@ export class ItemsPaneController {
           this.pane = pane;
           this.opening = false;
           this.stripHandle?.setHidden(true);
+          this.labelHandle?.setHidden(true);
           this.skillsHandle?.setHidden(true);
           return pane;
         },
@@ -530,6 +577,7 @@ export class ItemsPaneController {
       this.done = null;
       this.opening = false;
       this.stripHandle?.setHidden(false);
+      this.labelHandle?.setHidden(false);
       this.skillsHandle?.setHidden(false);
     }
   }
@@ -544,6 +592,7 @@ export class ItemsPaneController {
     this.opening = false;
     done?.(undefined);
     this.stripHandle?.setHidden(false);
+    this.labelHandle?.setHidden(false);
     this.skillsHandle?.setHidden(false);
   }
 
@@ -556,6 +605,12 @@ export class ItemsPaneController {
     this.stripHandle = null;
     this.stripPane = null;
     done?.(undefined);
+    this.labelPane?.dispose();
+    const labelDone = this.labelDone;
+    this.labelDone = null;
+    this.labelHandle = null;
+    this.labelPane = null;
+    labelDone?.(undefined);
     this.skillsPane?.dispose();
     const skillsDone = this.skillsDone;
     this.skillsDone = null;
@@ -566,16 +621,23 @@ export class ItemsPaneController {
 
   async refresh(): Promise<void> {
     if (this.stripPane) await this.stripPane.refresh();
+    if (this.labelPane) this.labelPane.text = this.stripPane?.currentLabelText() ?? "";
     if (this.pane) {
       await this.pane.refresh();
       this.syncVisibility();
     }
     // The skills column derives from live state on every render; nothing
     // to refresh here.
-    // The strip has two widths (glyph-only / with current-item label).
-    // When it crosses between them, the overlays must be re-opened at
-    // the new width (overlay geometry is fixed at show time) and the
-    // skills column repositioned.
+    // The stuck-out label's row is fixed at open time: re-open it when
+    // the current item moves to a different cell (or appears/vanishes).
+    const wantRow = this.stripPane && !this.opening ? this.stripPane.currentLabelRow() : this.labelRow;
+    if (this.stripOn && wantRow !== this.labelRow && !this.opening && this.lastCtx) {
+      this.labelRow = wantRow;
+      await this.relayoutLabel(this.lastCtx);
+    }
+    // The strip has two extents (glyph-only / with stuck-out label).
+    // When it crosses between them, the skills column must be
+    // repositioned (the rail itself is always the narrow box).
     const want = this.stripPane ? this.stripPane.stripWidth() : stripBoxWidth(false);
     if (this.stripPane && want !== this.stripWidth && !this.opening && this.lastCtx) {
       this.stripWidth = want;
@@ -599,7 +661,16 @@ export class ItemsPaneController {
     this.skillsHandle = null;
     this.skillsDone = null;
     skillsDone?.(undefined);
+    this.labelPane?.dispose();
+    const labelDone = this.labelDone;
+    this.labelPane = null;
+    this.labelHandle = null;
+    this.labelDone = null;
+    labelDone?.(undefined);
     await this.ensureStrip(ctx);
+    if (this.labelRow >= 0) {
+      await this.ensureLabelStrip(ctx);
+    }
     await this.ensureSkillsStrip(ctx, this.stripWidth + 2);
   }
 
@@ -614,7 +685,11 @@ export class ItemsPaneController {
       // refresh already records errors on the pane itself
     }
     this.stripWidth = pane.stripWidth();
-    const width = this.stripWidth;
+    // The rail overlay is always the narrow 5-column box; the current
+    // item's label is its own overlay (ensureLabelStrip) that sticks out
+    // to the left — compositing paints every overlay column, so a wider
+    // rail would erase the chat behind it.
+    const width = stripBoxWidth(false);
     try {
       await ctx.ui.custom(
         (tui, theme, _keybindings, done) => {
@@ -646,6 +721,69 @@ export class ItemsPaneController {
       this.stripHandle = null;
       this.stripDone = null;
       this.opening = false;
+    }
+  }
+
+  /**
+   * The current item's label, sticking out to the left of the rail. Its
+   * vertical position is fixed at open time (overlay geometry doesn't
+   * update), so refresh() re-opens it whenever the current row moves.
+   * Hidden (via `visible`) whenever there is no current item.
+   */
+  private async ensureLabelStrip(ctx: ExtensionContext): Promise<void> {
+    if (!this.stripOn || this.labelPane || this.opening || ctx.mode !== "tui" || !ctx.hasUI) return;
+    this.opening = true;
+    const pane = new StripLabelPane();
+    pane.text = this.stripPane?.currentLabelText() ?? "";
+    try {
+      await ctx.ui.custom(
+        (tui, theme, _keybindings, done) => {
+          pane.attach(tui, theme);
+          this.labelDone = done;
+          this.labelPane = pane;
+          this.opening = false;
+          return pane;
+        },
+        {
+          overlay: true,
+          overlayOptions: () => ({
+            width: STRIP_LABEL_MAX,
+            minWidth: STRIP_LABEL_MAX,
+            maxHeight: TASKS_MAX_HEIGHT,
+            anchor: "top-right",
+            // Strip top margin (2) + strip top border (1) + cell row.
+            margin: { top: 3 + Math.max(0, this.labelRow), right: 1 + 5 + 1 },
+            nonCapturing: true,
+            visible: (termWidth: number) =>
+              termWidth >= 60 && (this.labelPane?.text ?? "") !== "",
+          }),
+          onHandle: (handle) => {
+            this.labelHandle = handle;
+          },
+        },
+      );
+    } finally {
+      pane.dispose();
+      this.labelPane = null;
+      this.labelHandle = null;
+      this.labelDone = null;
+      this.opening = false;
+    }
+  }
+
+  /** Re-open the label overlay at the current row (position is fixed at
+   * open time). No-op when there is no current item. */
+  private async relayoutLabel(ctx: ExtensionContext): Promise<void> {
+    if (this.labelPane) {
+      this.labelPane.dispose();
+      const labelDone = this.labelDone;
+      this.labelPane = null;
+      this.labelHandle = null;
+      this.labelDone = null;
+      labelDone?.(undefined);
+    }
+    if (this.labelRow >= 0 && this.stripPane) {
+      await this.ensureLabelStrip(ctx);
     }
   }
 
