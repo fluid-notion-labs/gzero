@@ -859,7 +859,7 @@ async function skillsFixture() {
       id: "skills",
       label: "skills",
       expanded: true,
-      children: skillsSectionNodes(catalog, skills.activated()),
+      children: skillsSectionNodes(skills.activated()),
     },
     { id: "documentation", label: "documentation", children: [] },
   ];
@@ -882,13 +882,15 @@ test("catalog search in the skills section finds unloaded skills; enter loads th
   p.handleInput("\r"); // enter loads the skill
   await flushSkill();
   assert.ok(loaded.has("skill-fn/unloaded-one"), "skill activated");
-  // Now it's in the tree (✓ marker) and out of the loadable set.
+  // Now it's in the tree (the section lists enabled skills) and out of
+  // the loadable set.
   const skillsNode = (get(p, "nodes") as PanelNode[]).find((n) => n.id === "skills");
   const hasNode = (ns: PanelNode[] | undefined, id: string): boolean =>
     (ns ?? []).some((n) => n.id === id || hasNode(n.children, id));
-  assert.ok(hasNode(skillsNode?.children, "skill-fn/unloaded-one"), "loaded skill present in the grouped catalog");
+  assert.ok(hasNode(skillsNode?.children, "skill-fn/unloaded-one"), "enabled skill present in the section");
+  assert.ok(!hasNode(skillsNode?.children, "skill-fn/other"), "never-enabled catalog skill stays out of the tree");
   const after = plain(p.render(100)).join("\n");
-  assert.ok(after.includes("✓ unloaded-one"), "loaded skills tagged with a checkmark");
+  assert.ok(after.includes("unloaded-one"), "enabled skill listed in the section");
   assert.ok(!after.includes("[skill+] unloaded-one"), "no loadable hits left for this query");
 });
 
@@ -917,7 +919,7 @@ test("zero-data sections: empty catalog renders without crashing", () => {
   const p = make([
     { id: "tasks", label: "tasks", expanded: true, children: [] },
     { id: "context", label: "context", expanded: true, children: [] },
-    { id: "skills", label: "skills", expanded: true, children: skillsSectionNodes([], []) },
+    { id: "skills", label: "skills", expanded: true, children: skillsSectionNodes([]) },
     { id: "router", label: "router", expanded: true, children: [] },
     { id: "history", label: "history", expanded: true, children: [] },
     { id: "documentation", label: "documentation", children: [] },
@@ -932,22 +934,17 @@ test("zero-data sections: empty catalog renders without crashing", () => {
   assert.ok(true);
 });
 
-test("skillsSectionNodes groups the catalog by vendor, marks loaded with a checkmark", () => {
+test("skillsSectionNodes lists only enabled skills", () => {
   const loaded = skillEntry("loaded-one");
-  const nodes = skillsSectionNodes(
-    [skillEntry("loaded-one"), skillEntry("unloaded-one"), skillEntry("other", "acme")],
-    [loaded],
-  );
+  const nodes = skillsSectionNodes([loaded]);
   assert.deepEqual(
     nodes.map((n) => n.label),
-    ["fn (2)", "acme (1)"],
+    ["loaded-one"],
   );
-  const fn = nodes[0].children!;
-  assert.equal(fn.find((c) => c.id === skillId(loaded))?.label, "✓ loaded-one");
-  assert.equal(fn.find((c) => c.id === "skill-fn/unloaded-one")?.label, "unloaded-one");
+  assert.equal(nodes[0].id, skillId(loaded));
 });
 
-test("enter on an unloaded skill node in the skills section loads it", async () => {
+test("skills section shows the placeholder when nothing is enabled; search still loads", async () => {
   const loaded = new Set<string>();
   const catalog = [skillEntry("loaded-one"), skillEntry("unloaded-one")];
   const skills: PanelSkills = {
@@ -960,19 +957,24 @@ test("enter on an unloaded skill node in the skills section loads it", async () 
   const nodes: PanelNode[] = [
     { id: "tasks", label: "tasks", expanded: true, children: [] },
     { id: "context", label: "context", expanded: true, children: [] },
-    { id: "skills", label: "skills", expanded: true, children: skillsSectionNodes(catalog, []) },
+    { id: "skills", label: "skills", expanded: true, children: skillsSectionNodes([]) },
     { id: "documentation", label: "documentation", children: [] },
   ];
   const p = new GzeroPanel(nodes, theme as never, () => {}, undefined, undefined, skills);
   p.handleInput("\t"); // context
   p.handleInput("\t"); // skills section
-  // Expand the vendor node and land on unloaded-one.
-  p.handleInput("\r"); // expand the first vendor group
-  p.handleInput("j"); // loaded-one
-  p.handleInput("j"); // unloaded-one
-  p.handleInput("\r"); // enter on the skill loads it
+  // Nothing enabled: the tree is empty; navigation and enter stay safe.
+  p.handleInput("j");
+  p.handleInput("k");
+  p.handleInput("\r");
   await flushSkill();
-  assert.ok(loaded.has("skill-fn/unloaded-one"), "enter on an unloaded skill activates it");
+  assert.ok(loaded.size === 0, "enter on the empty section activates nothing");
+  // The catalog is still reachable through search.
+  p.handleInput("/");
+  p.handleInput("unloaded");
+  p.handleInput("\r"); // enter on the search hit loads it
+  await flushSkill();
+  assert.ok(loaded.has("skill-fn/unloaded-one"), "search hit load still works");
 });
 
 test("enter on a history prompt inserts its text and closes the panel", () => {

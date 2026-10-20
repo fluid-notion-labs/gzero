@@ -269,27 +269,16 @@ export function skillsToNodes(entries: SkillLike[]): PanelNode[] {
   }));
 }
 
-/** The skills section: the full catalog grouped by vendor, loaded
- * skills marked. Enter on an unloaded skill loads it; on a loaded
- * one it shows the body (leaf detail). */
-export function skillsSectionNodes(catalog: SkillLike[], loaded: SkillLike[]): PanelNode[] {
-  const loadedIds = new Set(loaded.map(skillId));
-  const byVendor = new Map<string, SkillLike[]>();
-  for (const entry of catalog) {
-    const list = byVendor.get(entry.vendor) ?? [];
-    list.push(entry);
-    byVendor.set(entry.vendor, list);
-  }
-  return [...byVendor.entries()].map(([vendor, entries]) => ({
-    id: `vendor-${vendor}`,
-    label: `${vendor} (${entries.length})`,
-    expanded: false,
-    children: entries.map((entry) => ({
-      id: skillId(entry),
-      label: loadedIds.has(skillId(entry)) ? `✓ ${entry.name}` : entry.name,
-      searchText: `${entry.description} ${entry.vendor}`,
-      detail: skillDetail(entry),
-    })),
+/** The skills section: enabled (session-loaded) skills only. The full
+ * catalog is not listed here — it stays reachable through /-search
+ * (a hit loads on enter) and the /skills picker. Enter on an enabled
+ * skill shows its body (leaf detail). */
+export function skillsSectionNodes(loaded: SkillLike[]): PanelNode[] {
+  return loaded.map((entry) => ({
+    id: skillId(entry),
+    label: entry.name,
+    searchText: `${entry.description} ${entry.vendor}`,
+    detail: skillDetail(entry),
   }));
 }
 
@@ -596,8 +585,10 @@ export class GzeroPanel implements Component, Focusable {
     this.skills = skills;
     this.presence = presence ?? "";
     this.onInsertText = onInsertText;
-    this.buildCorpus();
+    // Catalog first: the corpus includes unloaded catalog entries as
+    // synthetic search nodes, so it needs the catalog populated.
     this.buildCatalog();
+    this.buildCorpus();
   }
 
   /** Catalog entries minus already-loaded ones (those are in the tree). */
@@ -651,6 +642,22 @@ export class GzeroPanel implements Component, Focusable {
       }
     };
     walk(this.nodes, null);
+    // Unloaded catalog skills are not in the tree (the section lists
+    // enabled skills only) but stay searchable: synthetic nodes scoped
+    // to the skills section, enter on a hit loads the skill.
+    for (const c of this.catalog) {
+      this.corpus.push({
+        node: {
+          id: c.id,
+          label: c.entry.name,
+          searchText: `${c.entry.description} ${c.entry.vendor}`,
+          detail: skillDetail(c.entry),
+        },
+        category: 1,
+        text: c.text,
+        root: "skills",
+      });
+    }
   }
 
   get activeSection(): PanelNode | undefined {
@@ -996,12 +1003,12 @@ export class GzeroPanel implements Component, Focusable {
     if (!this.skills) return;
     const skillsNode = this.nodes.find((n) => n.id === "skills");
     if (skillsNode) {
-      skillsNode.children = skillsSectionNodes(this.skills.catalog(), this.skills.activated());
+      skillsNode.children = skillsSectionNodes(this.skills.activated());
       this.rows = flattenTree(this.activeSection?.children ?? []);
       if (this.cursor >= this.rows.length) this.cursor = Math.max(0, this.rows.length - 1);
     }
-    this.buildCorpus();
     this.buildCatalog();
+    this.buildCorpus();
     if (this.mode === "search") this.runSearch();
   }
 

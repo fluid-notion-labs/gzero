@@ -364,7 +364,7 @@ function gzeroTree(
     ? tiersToNodes(tiers)
     : placeholder("tiers-empty", "(nothing resolved)");
   const skillNodes = catalog
-    ? skillsSectionNodes(catalog, loadedSkills ?? [])
+    ? skillsSectionNodes(loadedSkills ?? [])
     : placeholder("skills-empty", "(no catalog — discovery warms on session start)");
   const docsNodes = docs && docs.length > 0 ? docsToNodes(docs) : placeholder("docs-empty", "(no ws sections)");
   const routerNodes = router
@@ -382,7 +382,15 @@ function gzeroTree(
   return [
     { id: "tasks", label: "tasks", expanded: true, children: guarded("tasks", "no work items", itemsNodes) },
     { id: "context", label: "context", expanded: true, children: guarded("context", "nothing resolved", tierNodes) },
-    { id: "skills", label: "skills", expanded: true, children: guarded("skills", "no skills", skillNodes) },
+    {
+      id: "skills",
+      label: "skills",
+      expanded: true,
+      children:
+        skillNodes.length > 0
+          ? skillNodes
+          : [{ id: "skills-empty", label: "(no skills enabled — press / to search the catalog)" }],
+    },
     { id: "router", label: "router", expanded: true, children: guarded("router", "router unavailable", routerNodes) },
     { id: "history", label: "history", expanded: true, children: guarded("history", "no prompts yet", historyNodes) },
     { id: "documentation", label: "documentation", children: guarded("documentation", "no ws sections", docsNodes) },
