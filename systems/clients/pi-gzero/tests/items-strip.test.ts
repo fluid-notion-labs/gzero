@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import {
   ItemsPane,
   initialStripMode,
+  panelVisibleRows,
   stripBoxWidth,
   stripCurrent,
   stripGlyph,
@@ -202,6 +203,10 @@ test("panel and strip cap task rows to 2/3 of the terminal", () => {
   assert.equal(taskRowCap(20), 11);
   assert.equal(taskRowCap(undefined), 24);
   assert.equal(taskRowCap(3), 1);
+  // panelVisibleRows: the same 2/3 budget minus 4 chrome lines and the
+  // reserved scroll-indicator slot; totals the strip's height.
+  assert.equal(panelVisibleRows(20), 8);
+  assert.equal(panelVisibleRows(undefined), 21);
 
   // Panel render: many rows are cut to the cap, with a +N more line.
   const origRows = process.stdout.rows;
@@ -216,14 +221,55 @@ test("panel and strip cap task rows to 2/3 of the terminal", () => {
     (pane as unknown as { theme: unknown }).theme = theme;
     const lines = pane.render(60);
     const taskLines = lines.filter((l) => l.includes("○"));
-    assert.equal(taskLines.length, 9); // taskRowCap(20)=11 minus 2 chrome
-    assert.ok(lines.some((l) => l.includes("+21 more")));
+    assert.equal(taskLines.length, 8); // panelVisibleRows(20)
+    assert.ok(lines.some((l) => l.includes("+22 more")));
+    assert.equal(lines.length, 4 + 8 + 1); // chrome + tasks + indicator ≤ ⌊20·⅔⌋
 
     // Strip on the same terminal: same total height as the panel
-    // (11 cells + 2 borders = 13 = 9 task rows + 4 chrome lines).
+    // (11 cells + 2 borders = 13 = 8 task rows + 4 chrome + indicator).
     pane.mode = "strip";
     const strip = pane.render(40);
     assert.equal(strip.length, 11 + 2); // cells + borders
+  } finally {
+    Object.defineProperty(process.stdout, "rows", { value: origRows, configurable: true });
+  }
+});
+
+test("focused panel scrolls with arrow keys and closes on escape", () => {
+  const origRows = process.stdout.rows;
+  Object.defineProperty(process.stdout, "rows", { value: 20, configurable: true });
+  try {
+    const pane = new ItemsPane();
+    pane.mode = "panel";
+    pane.rows = Array.from({ length: 30 }, (_, i) =>
+      row({ id: String(i).padStart(2, "0"), status: "open", created: i }),
+    );
+    const theme = { fg: (_c: string, s: string) => s } as never;
+    (pane as unknown as { theme: unknown }).theme = theme;
+    const closes: number[] = [];
+    pane.onClose = () => closes.push(1);
+
+    // Down arrow ×3: the window starts at row 03.
+    pane.handleInput("\x1b[B");
+    pane.handleInput("\x1b[B");
+    pane.handleInput("\x1b[B");
+    let lines = pane.render(60);
+    assert.ok(lines.some((l) => l.includes("03 ")));
+    assert.ok(!lines.some((l) => l.includes(" 00 ")));
+
+    // Page down jumps a full window (8 rows): 3 + 8 = 11.
+    pane.handleInput("\x1b[6~");
+    lines = pane.render(60);
+    assert.ok(lines.some((l) => l.includes("11 ")));
+
+    // Up arrow still works from there.
+    pane.handleInput("\x1b[A");
+    lines = pane.render(60);
+    assert.ok(lines.some((l) => l.includes("10 ")));
+
+    // Escape closes (routes to the controller via onClose).
+    pane.handleInput("\x1b");
+    assert.equal(closes.length, 1);
   } finally {
     Object.defineProperty(process.stdout, "rows", { value: origRows, configurable: true });
   }

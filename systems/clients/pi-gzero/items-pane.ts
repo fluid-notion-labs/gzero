@@ -1,20 +1,24 @@
 // items-pane.ts — the tasks sidebar: persistent right-side work items.
 //
-// A non-capturing overlay (never takes keyboard focus) anchored top-right,
-// a la Claude Code's task panel. Refreshed on session start, after each
-// agent run, and via `/tasks refresh`. Hidden automatically while the
-// repo has no items or the terminal is too narrow; `/tasks` toggles
-// (/items is an alias).
+// The strip and skills column are non-capturing overlays (never take
+// keyboard focus) anchored top-right; the full task panel (/tasks,
+// ctrl+q) is a focused overlay that scrolls with up/down/pgup/pgdn and
+// closes on escape (or ctrl+q again). Refreshed on session start, after
+// each agent run, and via `/tasks refresh`. The strip hides automatically
+// while the repo has no items or the terminal is too narrow.
 //
 // Data comes from MCP: the `item_list` tool in json mode, called with the
 // same server the model uses. The provider is injected by index.ts.
 
 import type {
   Component,
+  Keybinding,
+  KeybindingsManager,
+  KeyId,
   OverlayHandle,
   TUI,
 } from "@earendil-works/pi-tui";
-import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { buildItemTree, flattenTree, type RawItem } from "./items-tree.ts";
 import {
@@ -167,6 +171,29 @@ export function taskRowCap(rows: number | undefined): number {
   const r = rows ?? 40;
   return Math.max(1, Math.min(r - 6, Math.floor((r * 2) / 3) - 2));
 }
+
+/**
+ * Task rows the full panel shows at once on a terminal of `rows` lines:
+ * the same 2/3 budget minus the panel's 4 chrome lines and 1 reserved
+ * scroll-indicator slot, so the framed panel always fits under the cap
+ * and the strip (taskRowCap cells + 2 borders) totals the same height.
+ */
+export function panelVisibleRows(rows: number | undefined): number {
+  const budget = Math.floor(((rows ?? 40) * 2) / 3);
+  return Math.max(1, budget - 5);
+}
+
+/** Keybinding resolvers for the focused task panel: standard ids via the
+ * injected manager so user rebinds apply; fallbacks for raw matches.
+ * (Same pattern as history/panel.ts — plugins are blessed standalone.) */
+function id(binding: Keybinding, fallback: KeyId) {
+  return (data: string, kb?: KeybindingsManager) => (kb ? kb.matches(data, binding) : matchesKey(data, fallback));
+}
+const PANEL_CANCEL = id("tui.select.cancel", "escape");
+const PANEL_UP = id("tui.select.up", "up");
+const PANEL_DOWN = id("tui.select.down", "down");
+const PANEL_PAGE_UP = id("tui.select.pageUp", "pageUp");
+const PANEL_PAGE_DOWN = id("tui.select.pageDown", "pageDown");
 /** How many recently finished items float at the top of the pane. */
 const RECENT_FINISHED = 3;
 
@@ -182,6 +209,14 @@ export class ItemsPane implements Component {
   error: string | null = null;
   /** strip = 1-column status rail; panel = the full sidebar. */
   mode: "strip" | "panel" = "strip";
+  /** KeybindingsManager injected by the controller when the panel opens
+   * (focused overlay); lets user rebinds apply to the scroll keys. */
+  keybindings: KeybindingsManager | undefined;
+  /** Set by the controller when the panel opens: focused-overlay close
+   * (escape / ctrl+q) routes here. */
+  onClose: (() => void) | null = null;
+  /** Scroll offset for panel mode: first visible row index. */
+  private panelScroll = 0;
   private theme: Theme | null = null;
   private tui: TUI | null = null;
   private cacheKey = "";
@@ -230,6 +265,29 @@ export class ItemsPane implements Component {
 
   hasContent(): boolean {
     return this.rows.length > 0;
+  }
+
+  /** Keyboard input for the focused task panel: scroll the list, escape
+   * (or ctrl+q again) closes. Only meaningful in panel mode. */
+  handleInput(data: string): void {
+    if (this.mode !== "panel") return;
+    if (PANEL_CANCEL(data, this.keybindings) || matchesKey(data, "ctrl+q")) {
+      this.onClose?.();
+      return;
+    }
+    const visible = panelVisibleRows(process.stdout.rows);
+    const maxScroll = Math.max(0, this.rows.length - visible);
+    const before = this.panelScroll;
+    if (PANEL_UP(data, this.keybindings)) this.panelScroll -= 1;
+    else if (PANEL_DOWN(data, this.keybindings)) this.panelScroll += 1;
+    else if (PANEL_PAGE_UP(data, this.keybindings)) this.panelScroll -= visible;
+    else if (PANEL_PAGE_DOWN(data, this.keybindings)) this.panelScroll += visible;
+    else return;
+    this.panelScroll = Math.max(0, Math.min(maxScroll, this.panelScroll));
+    if (this.panelScroll !== before) {
+      this.invalidate();
+      this.tui?.requestRender();
+    }
   }
 
   /** Fetch items; returns true if the visible data changed. */
@@ -303,6 +361,11 @@ export class ItemsPane implements Component {
     if (key === this.cacheKey) return false;
     this.cacheKey = key;
     this.rows = rows;
+    // Keep the panel's scroll window inside the new row set.
+    this.panelScroll = Math.max(
+      0,
+      Math.min(this.panelScroll, Math.max(0, rows.length - panelVisibleRows(process.stdout.rows))),
+    );
     this.syncSpinner();
     this.invalidate();
     this.tui?.requestRender();
@@ -317,10 +380,11 @@ export class ItemsPane implements Component {
     const w = Math.min(width, 60);
     const inner = w - 4; // │ + space + content + space + │
     const lines: string[] = [];
-    // Same total height as the strip: taskRowCap is the strip's cell
-    // budget (cells + 2 borders); the panel swaps 2 of those cells for
-    // its title + rule chrome.
-    const maxRows = Math.max(1, taskRowCap(process.stdout.rows) - 2);
+    // Same total height as the strip: panelVisibleRows reserves the 4
+    // chrome lines and 1 scroll-indicator slot inside the same 2/3
+    // budget the strip's cells (taskRowCap) + 2 borders fill.
+    const maxRows = panelVisibleRows(process.stdout.rows);
+    const start = Math.max(0, Math.min(this.panelScroll, Math.max(0, this.rows.length - maxRows)));
 
     const title = truncateToWidth(" tasks ", inner);
     lines.push(
@@ -347,7 +411,7 @@ export class ItemsPane implements Component {
           theme.fg("borderMuted", " │"),
       );
     } else {
-      for (const row of this.rows.slice(0, maxRows)) {
+      for (const row of this.rows.slice(start, start + maxRows)) {
         const icon = STATUS_ICON[row.status] ?? STATUS_ICON.open;
         const blocked = row.blocked_by.length > 0 && row.status !== "closed";
         const glyph = blocked ? "⊘" : icon.icon;
@@ -368,8 +432,15 @@ export class ItemsPane implements Component {
             theme.fg("borderMuted", " │"),
         );
       }
-      if (this.rows.length > maxRows) {
-        const more = truncateToWidth(`… +${this.rows.length - maxRows} more`, inner);
+      // Reserved indicator slot: what's below the window, or "end"
+      // once scrolled to the bottom (keeps the frame height constant).
+      const below = this.rows.length - (start + maxRows);
+      const more = below > 0
+        ? truncateToWidth(`… +${below} more`, inner)
+        : this.rows.length > maxRows
+          ? truncateToWidth("… end", inner)
+          : "";
+      if (more) {
         lines.push(
           theme.fg("borderMuted", "│ ") +
             theme.fg("dim", more.padEnd(inner)) +
@@ -542,8 +613,12 @@ export class ItemsPaneController {
     }
     try {
       await ctx.ui.custom(
-        (tui, theme, _keybindings, done) => {
+        (tui, theme, keybindings, done) => {
           pane.attach(tui, theme);
+          pane.keybindings = keybindings;
+          pane.onClose = () => {
+            if (this.active) this.close();
+          };
           this.done = done;
           this.pane = pane;
           this.opening = false;
@@ -561,7 +636,8 @@ export class ItemsPaneController {
             maxHeight: TASKS_MAX_HEIGHT,
             anchor: "top-right",
             margin: { top: 2, right: 1 },
-            nonCapturing: true,
+            // Capturing: the panel takes keyboard focus so up/down/
+            // pgup/pgdn scroll it and escape (or ctrl+q again) closes.
             visible: (termWidth: number) => termWidth >= 100,
           }),
           onHandle: (handle) => {
