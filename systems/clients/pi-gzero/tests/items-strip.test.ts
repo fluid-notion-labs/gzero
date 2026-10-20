@@ -172,10 +172,12 @@ test("empty strip stays visible: bordered rail with a quiet placeholder", () => 
   assert.deepEqual(lines, ["╭───╮", "│ · │", "╰───╯"]);
 });
 
-test("panel and strip cap task rows to leave 2+ lines of chat", () => {
-  // taskRowCap: terminal rows minus headroom, floored at 1.
-  assert.equal(taskRowCap(20), 14);
-  assert.equal(taskRowCap(undefined), 34);
+test("panel and strip cap task rows to 2/3 of the terminal", () => {
+  // taskRowCap: min(rows - headroom, 2/3 of the terminal), floored at 1.
+  // The 2/3 bound wins on all realistic terminals, so the rails can't
+  // cover the chat however many tasks are active.
+  assert.equal(taskRowCap(20), 13);
+  assert.equal(taskRowCap(undefined), 26);
   assert.equal(taskRowCap(3), 1);
 
   // Panel render: many rows are cut to the cap, with a +N more line.
@@ -191,13 +193,13 @@ test("panel and strip cap task rows to leave 2+ lines of chat", () => {
     (pane as unknown as { theme: unknown }).theme = theme;
     const lines = pane.render(60);
     const taskLines = lines.filter((l) => l.includes("○"));
-    assert.equal(taskLines.length, 14);
-    assert.ok(lines.some((l) => l.includes("+16 more")));
+    assert.equal(taskLines.length, 13);
+    assert.ok(lines.some((l) => l.includes("+17 more")));
 
     // Strip on the same terminal: same row count as the panel's tasks.
     pane.mode = "strip";
     const strip = pane.render(40);
-    assert.equal(strip.length, 14 + 2); // cells + borders
+    assert.equal(strip.length, 13 + 2); // cells + borders
   } finally {
     Object.defineProperty(process.stdout, "rows", { value: origRows, configurable: true });
   }

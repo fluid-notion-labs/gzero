@@ -140,15 +140,23 @@ const STATUS_ICON: Record<string, { icon: string; color: "muted" | "accent" | "s
   closed: { icon: "✓", color: "success" },
 };
 
+/** Overlay maxHeight for every tasks surface (strip, skills column,
+ * panel): never more than 2/3 of the terminal height, so the rails
+ * can't cover the chat even when many tasks are active. Enforced twice
+ * — here for the render-side cap (rows/⋮ overflow marker) and via
+ * overlayOptions.maxHeight as the TUI-side safety net. */
+export const TASKS_MAX_HEIGHT = "66%";
+
 /**
- * Task rows a surface may show on a terminal of `rows` lines: enough
- * headroom that neither the strip nor the panel reaches the chat — the
- * rule is to leave 2 lines of space at the bottom. Both surfaces share
- * this cap so the panel is always the same height as the strip (its
- * extra title/rule chrome consumes the remaining headroom).
+ * Task rows a surface may show on a terminal of `rows` lines: the
+ * binding cap is 2/3 of the terminal (see TASKS_MAX_HEIGHT), with the
+ * bottom-headroom rule (2 lines) as a secondary bound. Both surfaces
+ * share this cap so the panel is always the same height as the strip
+ * (its extra title/rule chrome consumes the remaining headroom).
  */
 export function taskRowCap(rows: number | undefined): number {
-  return Math.max(1, (rows ?? 40) - 6);
+  const r = rows ?? 40;
+  return Math.max(1, Math.min(r - 6, Math.floor((r * 2) / 3)));
 }
 /** How many recently finished items float at the top of the pane. */
 const RECENT_FINISHED = 3;
@@ -501,8 +509,8 @@ export class ItemsPaneController {
           overlayOptions: () => ({
             width: 46,
             minWidth: 32,
-            // Never reach the chat: leave 2 lines at the bottom.
-            maxHeight: Math.max(1, (process.stdout.rows ?? 40) - 2),
+            // Same 2/3 cap as the rails: never reach the chat.
+            maxHeight: TASKS_MAX_HEIGHT,
             anchor: "top-right",
             margin: { top: 2, right: 1 },
             nonCapturing: true,
@@ -620,7 +628,7 @@ export class ItemsPaneController {
           overlayOptions: () => ({
             width,
             minWidth: width,
-            maxHeight: "96%",
+            maxHeight: TASKS_MAX_HEIGHT,
             anchor: "top-right",
             margin: { top: 2, right: 1 },
             nonCapturing: true,
@@ -667,7 +675,7 @@ export class ItemsPaneController {
           overlayOptions: () => ({
             width: SKILLS_STRIP_WIDTH,
             minWidth: SKILLS_STRIP_WIDTH,
-            maxHeight: "96%",
+            maxHeight: TASKS_MAX_HEIGHT,
             anchor: "top-right",
             margin: { top: 2, right: rightMargin },
             nonCapturing: true,
