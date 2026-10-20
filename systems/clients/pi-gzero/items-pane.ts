@@ -148,15 +148,16 @@ const STATUS_ICON: Record<string, { icon: string; color: "muted" | "accent" | "s
 export const TASKS_MAX_HEIGHT = "66%";
 
 /**
- * Task rows a surface may show on a terminal of `rows` lines: the
- * binding cap is 2/3 of the terminal (see TASKS_MAX_HEIGHT), with the
- * bottom-headroom rule (2 lines) as a secondary bound. Both surfaces
- * share this cap so the panel is always the same height as the strip
- * (its extra title/rule chrome consumes the remaining headroom).
+ * Task cells a surface may show on a terminal of `rows` lines: the
+ * binding cap is 2/3 of the terminal (see TASKS_MAX_HEIGHT) minus the
+ * strip's 2 border lines, with the bottom-headroom rule (2 lines) as a
+ * secondary bound. Both surfaces share this cap and end up the same
+ * total height — the strip draws cap cells + 2 borders, the panel cap−2
+ * task rows + 4 chrome lines (title, rule, borders).
  */
 export function taskRowCap(rows: number | undefined): number {
   const r = rows ?? 40;
-  return Math.max(1, Math.min(r - 6, Math.floor((r * 2) / 3)));
+  return Math.max(1, Math.min(r - 6, Math.floor((r * 2) / 3) - 2));
 }
 /** How many recently finished items float at the top of the pane. */
 const RECENT_FINISHED = 3;
@@ -308,10 +309,10 @@ export class ItemsPane implements Component {
     const w = Math.min(width, 60);
     const inner = w - 4; // │ + space + content + space + │
     const lines: string[] = [];
-    // Same height as the strip: the same taskRowCap governs both
-    // surfaces, so the old fixed 28-row cap cannot bind first on tall
-    // terminals and leave the panel shorter than the strip.
-    const maxRows = taskRowCap(process.stdout.rows);
+    // Same total height as the strip: taskRowCap is the strip's cell
+    // budget (cells + 2 borders); the panel swaps 2 of those cells for
+    // its title + rule chrome.
+    const maxRows = Math.max(1, taskRowCap(process.stdout.rows) - 2);
 
     const title = truncateToWidth(" tasks ", inner);
     lines.push(

@@ -173,11 +173,11 @@ test("empty strip stays visible: bordered rail with a quiet placeholder", () => 
 });
 
 test("panel and strip cap task rows to 2/3 of the terminal", () => {
-  // taskRowCap: min(rows - headroom, 2/3 of the terminal), floored at 1.
-  // The 2/3 bound wins on all realistic terminals, so the rails can't
-  // cover the chat however many tasks are active.
-  assert.equal(taskRowCap(20), 13);
-  assert.equal(taskRowCap(undefined), 26);
+  // taskRowCap: min(rows - headroom, 2/3 of the terminal minus the
+  // strip's 2 border lines), floored at 1 — so the strip's bottom
+  // border survives the TUI's maxHeight truncation.
+  assert.equal(taskRowCap(20), 11);
+  assert.equal(taskRowCap(undefined), 24);
   assert.equal(taskRowCap(3), 1);
 
   // Panel render: many rows are cut to the cap, with a +N more line.
@@ -193,13 +193,14 @@ test("panel and strip cap task rows to 2/3 of the terminal", () => {
     (pane as unknown as { theme: unknown }).theme = theme;
     const lines = pane.render(60);
     const taskLines = lines.filter((l) => l.includes("○"));
-    assert.equal(taskLines.length, 13);
-    assert.ok(lines.some((l) => l.includes("+17 more")));
+    assert.equal(taskLines.length, 9); // taskRowCap(20)=11 minus 2 chrome
+    assert.ok(lines.some((l) => l.includes("+21 more")));
 
-    // Strip on the same terminal: same row count as the panel's tasks.
+    // Strip on the same terminal: same total height as the panel
+    // (11 cells + 2 borders = 13 = 9 task rows + 4 chrome lines).
     pane.mode = "strip";
     const strip = pane.render(40);
-    assert.equal(strip.length, 13 + 2); // cells + borders
+    assert.equal(strip.length, 11 + 2); // cells + borders
   } finally {
     Object.defineProperty(process.stdout, "rows", { value: origRows, configurable: true });
   }
