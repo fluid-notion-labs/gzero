@@ -38,7 +38,7 @@ code and on GitHub. Historical identifier: the MCP server name
   across machines (`gzero sync`; the doc is written per mutation, and
   sessions pull at startup). The hub is a change log, not a merge
   engine — automerge on each replica does the merging. v0 hub:
-  `research/hub-v0.md`, repo `gzero-hub`.
+  `research/hub-v0.md`, in-repo at `systems/hub/`.
 
 ## Install
 
@@ -81,7 +81,10 @@ hub. `--no-plugin` and `--no-migrate` narrow the run.
 ## Repo map
 
 - `src/` — the Rust core: atom store, workflow store, MCP server, CLI
-- `gzero-plugin/` — the pi extension (blessed to
+- `systems/hub/` — the Cloudflare hub worker + Durable Objects
+  (gzero-hub v0, brought in from `fluid-notion-labs/gzero-hub`)
+- `systems/clients/flutter/` — the Flutter client (tablet/phone)
+- `systems/clients/pi-gzero/` — the pi extension (blessed to
   `~/.pi/agent/extensions/gzero`; plain pi runs that snapshot)
 - `sync/` — hub sync setup and exported atom snapshots
 - `tools/` — skills pipeline, session tooling, dev helpers
@@ -114,7 +117,7 @@ over keep working against the hub's legacy endpoints in the meantime.
 
 - Rust: `cargo build`, `cargo test`
 - Plugin: `npm test` and `tools/typecheck.sh` in
-  `gzero-plugin/` (`tools/bless-plugin.sh` refreshes the
+  `systems/clients/pi-gzero/` (`tools/bless-plugin.sh` refreshes the
   snapshot after merging)
 - Workflow: jj workspaces per task (`.jj/workspaces/<feature>`),
   conventional commits, merge to `main`, push

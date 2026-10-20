@@ -11,25 +11,18 @@
 #                                           restarted after: boot sync must
 #                                           converge, nothing lost
 #
-# Requires the gzero-hub checkout as a sibling of this repo (or set
-# HUB_DIR), and `cargo` + `wrangler` on PATH.
+# The hub lives in this repo at systems/hub (set HUB_DIR to point at
+# an external checkout instead). Requires `cargo` + `wrangler` on PATH.
 #
 #   scripts/syncd-convergence-test.sh
 set -e
 root="$(cd "$(dirname "$0")/.." && pwd)"
-hub="${HUB_DIR:-}"
-if [ -z "$hub" ]; then
-  d="$root"
-  while [ "$d" != "/" ]; do
-    [ -d "$d/gzero-hub" ] && { hub="$d/gzero-hub"; break; }
-    d="$(dirname "$d")"
-  done
-fi
+hub="${HUB_DIR:-$root/systems/hub}"
 port="${HUB_TEST_PORT:-8799}"
 token="token"
 bag="${CX_BAG_TEST:-syncd-convergence-test}"
 
-[ -d "$hub" ] || { echo "gzero-hub repo not found at $hub (set HUB_DIR)" >&2; exit 1; }
+[ -d "$hub" ] || { echo "hub not found at $hub (set HUB_DIR)" >&2; exit 1; }
 
 echo "building gzero-syncd and gzero-mcp..."
 cargo build --bin gzero-syncd --bin gzero-mcp

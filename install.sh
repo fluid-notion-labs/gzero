@@ -24,9 +24,8 @@
 set -eu
 
 REPO_URL="https://github.com/fluid-notion-labs/gzero.git"
-# Canonical location: ~/projects/gzero, with gzero-hub as a sibling
-# (the convergence scripts look there). Existing checkouts are found
-# wherever they live.
+# Canonical location: ~/projects/gzero. The hub lives in-repo at
+# systems/hub. Existing checkouts are found wherever they live.
 default_dir="$HOME/projects/gzero"
 do_plugin=1
 do_migrate=1
@@ -69,7 +68,7 @@ warn() { printf '    (skipped) %s\n' "$1" >&2; }
 
 # --- 1. locate or clone the repo -------------------------------------------
 repo=""
-if [ -f "./Cargo.toml" ] && [ -d "./gzero-plugin" ]; then
+if [ -f "./Cargo.toml" ] && [ -d "./systems/clients/pi-gzero" ]; then
   repo="$(pwd)"
   say "using checkout at $repo"
 elif [ -n "${GZERO_DIR:-}" ] && [ -f "$GZERO_DIR/Cargo.toml" ]; then
@@ -77,7 +76,7 @@ elif [ -n "${GZERO_DIR:-}" ] && [ -f "$GZERO_DIR/Cargo.toml" ]; then
   say "using checkout at \$GZERO_DIR"
 else
   for d in "$default_dir" "$HOME/projects/explorations/nursery/gzero" "$HOME/gzero"; do
-    [ -f "$d/Cargo.toml" ] && [ -d "$d/gzero-plugin" ] && { repo="$d"; break; }
+    [ -f "$d/Cargo.toml" ] && [ -d "$d/systems/clients/pi-gzero" ] && { repo="$d"; break; }
   done
 fi
 if [ -z "$repo" ]; then

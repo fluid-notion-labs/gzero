@@ -78,7 +78,11 @@ Transport / Hub+Sync DO) with a 3D diagram built in scene-mcp. No code.
    "contexture-hub", pushed 2026-10-10 — resolving plan3 finding 8.
    v0 evolves that repo in place with history intact, not a new repo.
    The original text said the source was lost and called for a
-   rewrite.)* The repo is TypeScript, Wrangler, Worker + Durable
+   rewrite.)* **Superseded 2026-10-20 (repo unification):** the hub no
+   longer evolves as a standalone repo — it was copied into the gzero
+   monorepo at `systems/hub/` without history; the standalone
+   `fluid-notion-labs/gzero-hub` stays on GitHub as archive/reference.
+   The repo is TypeScript, Wrangler, Worker + Durable
    Object; its old server-side atom merge (`src/merge.ts`) is kept for
    the legacy `stream:legacy-global` path.
 2. **The hub is a change log, not a merge engine (v0).** The DO stores

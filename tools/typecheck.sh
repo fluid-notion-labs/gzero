@@ -3,13 +3,13 @@
 # checkout, generate a throwaway tsconfig mapping @earendil-works/* to its
 # dist .d.ts files (and @types/node from the vendored tree), run tsc, and
 # remove the generated file. Runtime dep resolution for tests lives in
-# tests/deps.mjs. Pass the plugin directory name to check a different one
-# (default: gzero-plugin).
+# tests/deps.mjs. Pass the plugin directory path to check a different one
+# (default: systems/clients/pi-gzero).
 set -e
 root="$(cd "$(dirname "$0")/.." && pwd)"
 case "${1:-}" in
   /*) plugin="$1" ;;
-  *) plugin="$root/${1:-gzero-plugin}" ;;
+  *) plugin="$root/${1:-systems/clients/pi-gzero}" ;;
 esac
 pi=""
 d="$root"

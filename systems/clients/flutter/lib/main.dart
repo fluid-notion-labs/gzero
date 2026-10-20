@@ -1,6 +1,6 @@
 // main.dart — the gzero Flutter client.
 //
-// One repo, in-tree: this app lives at gzero-flutter/ inside the gzero
+// One repo, in-tree: this app lives at systems/clients/flutter/ inside the gzero
 // repository and speaks to the same hub the desktop machines do
 // (research/flutter-client.md). v0 surface: sync status card over the
 // system streams; projects list and messaging land as their data planes

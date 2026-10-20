@@ -16,21 +16,13 @@
 #         again -> the queued message rides the next write's push and
 #         B receives both
 #
-# Requires the gzero-hub checkout as a sibling of this repo (or set
-# HUB_DIR), and `cargo` + `wrangler` on PATH.
+# The hub lives in this repo at systems/hub (set HUB_DIR to point at
+# an external checkout instead). Requires `cargo` + `wrangler` on PATH.
 #
 #   scripts/comms-convergence-test.sh
 set -e
 root="$(cd "$(dirname "$0")/.." && pwd)"
-hub="${HUB_DIR:-}"
-if [ -z "$hub" ]; then
-  # Walk up from the checkout (a jj workspace lives under .jj/workspaces).
-  d="$root"
-  while [ "$d" != "/" ]; do
-    [ -d "$d/gzero-hub" ] && { hub="$d/gzero-hub"; break; }
-    d="$(dirname "$d")"
-  done
-fi
+hub="${HUB_DIR:-$root/systems/hub}"
 port="${HUB_TEST_PORT:-8798}"
 token="token"
 # Unique stream per run: wrangler dev persists its D1 state in
@@ -38,7 +30,7 @@ token="token"
 # from previous runs into the assertions.
 bag="${CX_COMMS_STREAM_TEST:-comms-convergence-test-$(date +%s)}"
 
-[ -d "$hub" ] || { echo "gzero-hub repo not found at $hub (set HUB_DIR)" >&2; exit 1; }
+[ -d "$hub" ] || { echo "hub not found at $hub (set HUB_DIR)" >&2; exit 1; }
 
 echo "building gzero-mcp and gzero-syncd..."
 cargo build --bin gzero-mcp --bin gzero-syncd

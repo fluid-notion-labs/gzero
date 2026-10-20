@@ -18,7 +18,7 @@
 # packages), so the copied files run standalone.
 set -e
 root="$(cd "$(dirname "$0")/.." && pwd)"
-src="$root/gzero-plugin"
+src="$root/systems/clients/pi-gzero"
 dest="$HOME/.pi/agent/extensions/gzero"
 
 [ -f "$src/index.ts" ] || { echo "no plugin at $src" >&2; exit 1; }
