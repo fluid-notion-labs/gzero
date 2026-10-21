@@ -396,28 +396,27 @@ impl CommsStore {
             AutomergeStore::from_bytes(&bytes)?
         };
 
-        // Push the new epoch; truncate the superseded log. Works with
-        // or without a sidecar (in-memory replicas get a fresh cursor).
-        if let Some(hub) = StreamSync::from_env(&comms_stream()) {
-            let mut cursor = match &self.sidecar {
-                Some(sidecar) => {
-                    let mut c = SyncCursor::load(sidecar, &comms_stream())?;
-                    c.pushed_heads = Vec::new();
-                    c
-                }
-                None => SyncCursor::default(),
-            };
-            let pushed = hub.push(&mut self.store, &mut cursor)?;
-            if let Some(sidecar) = &self.sidecar {
+        // Push the new epoch; truncate the superseded log. Only
+        // file-backed replicas talk to the hub: an in-memory store is
+        // ephemeral (tests), has no cursor to resume from, and must
+        // never reach a production hub just because the ambient
+        // environment has credentials (this actually truncated the
+        // production comms log once).
+        if self.sidecar.is_some() {
+            if let Some(hub) = StreamSync::from_env(&comms_stream()) {
+                let sidecar = self.sidecar.as_ref().unwrap();
+                let mut cursor = SyncCursor::load(sidecar, &comms_stream())?;
+                cursor.pushed_heads = Vec::new();
+                let pushed = hub.push(&mut self.store, &mut cursor)?;
                 cursor.save(sidecar, &comms_stream())?;
-            }
-            if pushed > 0 {
-                if let Ok(head) = hub.head_seq() {
-                    let before = head.saturating_sub(pushed as u64);
-                    if before > 0 {
-                        // GC is best-effort: a hub without the
-                        // truncate endpoint just skips it.
-                        let _ = hub.truncate_before(before);
+                if pushed > 0 {
+                    if let Ok(head) = hub.head_seq() {
+                        let before = head.saturating_sub(pushed as u64);
+                        if before > 0 {
+                            // GC is best-effort: a hub without the
+                            // truncate endpoint just skips it.
+                            let _ = hub.truncate_before(before);
+                        }
                     }
                 }
             }
@@ -823,7 +822,17 @@ mod tests {
         );
         let hub = StreamSync::from_env(&comms_stream()).expect("hub config");
 
-        let mut a = store();
+        // File-backed: only real replicas (with a cursor sidecar) push
+        // an epoch roll to the hub.
+        let dir = std::env::temp_dir().join(format!(
+            "gzero-epoch-roll-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut a = CommsStore::open(Some(&dir.join("comms.ws"))).unwrap();
         a.send_message("sess-b", "sess-a", "survives the roll").unwrap();
         let mut b = CommsStore::in_memory().unwrap();
         b.store = AutomergeStore::from_bytes(&a.store.save_bytes()).unwrap();
