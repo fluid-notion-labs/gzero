@@ -111,7 +111,7 @@ export default function (pi: ExtensionAPI) {
         ? { summary: cache.summary, covered: cache.covered }
         : undefined;
     const prompt = buildPrompt(transcript, incremental);
-    const summary = await requestSummary((cmd, args) => pi.exec(cmd, args), prompt);
+    const summary = await requestSummary((cmd, args, opts) => pi.exec(cmd, args, opts), prompt);
     const state: SummaryState = { status: "ready", text: summary };
     saveSummaryCache(sessionFile, { summary, covered: transcript.length, updatedAt: new Date().toISOString() });
     return state;

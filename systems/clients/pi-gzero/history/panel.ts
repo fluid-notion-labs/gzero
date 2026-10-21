@@ -224,7 +224,7 @@ export class HistoryPanel {
       const glyph = SPINNER_FRAMES[this.frame % SPINNER_FRAMES.length];
       const label = s.status === "pending" ? "summarizing…" : "updating…";
       lines.push(
-        `│ ${this.theme.fg("accent", ` ${glyph}`)} ${this.theme.fg("dim", label.padEnd(content - 3))} │`,
+        `│ ${this.theme.fg("accent", ` ${glyph}`)} ${this.theme.fg("text", label.padEnd(content - 3))} │`,
       );
       if (s.status === "stale" && budget >= 2) {
         this.summaryLines(lines, s.text, content, budget - 1);
@@ -238,11 +238,12 @@ export class HistoryPanel {
     this.summaryLines(lines, s.text, content, budget);
   }
 
-  /** Word-wrap the summary into gutter-framed rows (up to `max`). */
+  /** Word-wrap the summary into gutter-framed rows (up to `max`).
+   * Newlines in the summary are preserved — blank lines give paragraphs. */
   private summaryLines(lines: string[], text: string, content: number, max: number): void {
     const wrapped = wrapTextWithAnsi(text.trim(), content - 2).slice(0, Math.max(1, max));
     for (const w of wrapped) {
-      lines.push(`│ ${this.theme.fg("dim", ` ${w}`.padEnd(content))} │`);
+      lines.push(`│ ${this.theme.fg("text", ` ${w}`.padEnd(content))} │`);
     }
   }
 }

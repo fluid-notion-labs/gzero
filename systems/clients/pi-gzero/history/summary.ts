@@ -13,9 +13,9 @@
 // re-dispatches when the session has grown, sending the previous summary
 // plus the new entries.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { isFiller } from "./filler.ts";
 import { cleanPrompt } from "./history.ts";
 
@@ -95,7 +95,9 @@ export function buildPrompt(
       "Below is a numbered transcript excerpt (user and agent turns) and the",
       "current summary of this coding session. Update the summary to include",
       "what happened in the newer turns, keeping it compact (max ~10 lines).",
+      "Write it as a few short paragraphs separated by blank lines.",
       "Cite the relevant [index] numbers inline, like [3] or [3][7].",
+      "Plain text only — no headings, no markdown.",
       "Output only the updated summary text, nothing else.",
       "",
       `Current summary (covers entries [1..${prev.covered}]):`,
@@ -108,7 +110,8 @@ export function buildPrompt(
   return [
     "Below is a numbered transcript of a coding-agent session (user and",
     "agent turns). Write a compact summary (max ~10 lines) of what the",
-    "person was working on and what got done. Cite the relevant [index]",
+    "person was working on and what got done. Write it as a few short",
+    "paragraphs separated by blank lines. Cite the relevant [index]",
     "numbers inline, like [3] or [3][7]. Plain text only — no headings,",
     "no markdown. Output only the summary.",
     "",
@@ -148,19 +151,50 @@ export function saveSummaryCache(sessionFile: string, cache: SummaryCache, baseD
   writeFileSync(path, JSON.stringify(cache, null, 2) + "\n");
 }
 
+/** Hard cap on a summarization request, so a hung child can never wedge
+ * the panel's spinner forever. */
+export const SUMMARY_TIMEOUT_MS = 120_000;
+
+export interface ExecLike {
+  (command: string, args: string[], options?: { timeout?: number }): Promise<{
+    stdout: string;
+    stderr: string;
+    code: number;
+    killed: boolean;
+  }>;
+}
+
 /**
  * Summarize via a fresh ephemeral pi session: `pi -p --no-session
- * --no-extensions --no-mcp -nt <prompt>`. Ephemeral is essential — a saved
- * session would land in the same sessions folder and pollute the history
- * the panel shows (and its own summary input).
+ * --no-extensions --no-mcp -nt @<file>`. The numbered transcript goes to a
+ * temp file attached with pi's `@file` syntax — the command line stays
+ * small (a multi-KB argv prompt made the child hang) and the child's
+ * context is just the transcript, not the whole session (a full-session
+ * fork was tested and is far too slow).
+ *
+ * Ephemeral is essential — a saved session would land in the same sessions
+ * folder and pollute the history the panel shows (and its own summary input).
  */
-export async function requestSummary(
-  exec: (command: string, args: string[]) => Promise<{ stdout: string; stderr: string; code: number }>,
-  prompt: string,
-): Promise<string> {
-  const res = await exec("pi", ["-p", "--no-session", "--no-extensions", "--no-mcp", "-nt", prompt]);
-  if (res.code !== 0) throw new Error(res.stderr.trim() || `pi exited with code ${res.code}`);
-  const text = res.stdout.trim();
-  if (!text) throw new Error("empty summary response");
-  return text;
+export async function requestSummary(exec: ExecLike, prompt: string): Promise<string> {
+  const dir = mkdtempSync(join(tmpdir(), "gzero-summary-"));
+  const file = join(dir, "transcript.txt");
+  try {
+    writeFileSync(file, prompt);
+    const res = await exec(
+      "pi",
+      ["-p", "--no-session", "--no-extensions", "--no-mcp", "-nt", `@${file}`],
+      { timeout: SUMMARY_TIMEOUT_MS },
+    );
+    if (res.killed) throw new Error("summarization timed out");
+    if (res.code !== 0) throw new Error(res.stderr.trim() || `pi exited with code ${res.code}`);
+    const text = res.stdout.trim();
+    if (!text) throw new Error("empty summary response");
+    return text;
+  } finally {
+    try {
+      rmSync(dir, { recursive: true, force: true });
+    } catch {
+      // best effort
+    }
+  }
 }

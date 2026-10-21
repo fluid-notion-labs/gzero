@@ -4,6 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { SUMMARY_TIMEOUT_MS } from "../history/summary.ts";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HistoryPanel } from "../history/panel.ts";
@@ -101,12 +102,16 @@ test("summary cache: roundtrip and load of a missing/corrupt file", () => {
   assert.ok(readFileSync(join(nested, "sess.json"), "utf8").includes('"covered": 1'));
 });
 
-test("requestSummary: runs pi headless and surfaces failures", async () => {
-  const calls: Array<{ cmd: string; args: string[] }> = [];
+test("requestSummary: attaches the transcript file, caps runtime, cleans up", async () => {
+  const calls: Array<{ cmd: string; args: string[]; opts?: { timeout?: number } }> = [];
+  let fileArg = "";
+  let sawFileDuringCall = false;
   const text = await requestSummary(
-    (cmd, args) => {
-      calls.push({ cmd, args });
-      return Promise.resolve({ stdout: "  the summary \n", stderr: "", code: 0 });
+    (cmd, args, opts) => {
+      calls.push({ cmd, args, opts });
+      fileArg = args.find((a) => a.startsWith("@")) ?? "";
+      sawFileDuringCall = readFileSync(fileArg.slice(1), "utf8").includes("summarize this");
+      return Promise.resolve({ stdout: "  the summary \n", stderr: "", code: 0, killed: false });
     },
     "summarize this",
   );
@@ -116,14 +121,24 @@ test("requestSummary: runs pi headless and surfaces failures", async () => {
   for (const flag of ["--no-session", "--no-extensions", "--no-mcp", "-nt", "-p"]) {
     assert.ok(calls[0].args.includes(flag), `missing ${flag}`);
   }
+  // transcript travels via a temp file attachment, not as a giant argv
+  assert.ok(fileArg.startsWith("@"), "prompt must be passed as @file");
+  assert.ok(sawFileDuringCall, "file content must hold the prompt");
+  assert.equal(calls[0].opts?.timeout, SUMMARY_TIMEOUT_MS);
+  // temp dir is removed afterwards
+  assert.throws(() => readFileSync(fileArg.slice(1), "utf8"));
 
   await assert.rejects(
-    requestSummary(() => Promise.resolve({ stdout: "", stderr: "boom", code: 1 }), "p"),
+    requestSummary(() => Promise.resolve({ stdout: "", stderr: "boom", code: 1, killed: false }), "p"),
     /boom/,
   );
   await assert.rejects(
-    requestSummary(() => Promise.resolve({ stdout: "  \n", stderr: "", code: 0 }), "p"),
+    requestSummary(() => Promise.resolve({ stdout: "  \n", stderr: "", code: 0, killed: false }), "p"),
     /empty summary/,
+  );
+  await assert.rejects(
+    requestSummary(() => Promise.resolve({ stdout: "", stderr: "", code: 0, killed: true }), "p"),
+    /timed out/,
   );
 });
 
@@ -145,6 +160,16 @@ test("panel: summary block renders below the list, wrapped and budgeted", () => 
   assert.ok(lines.some((l) => l.includes("├─ summary")));
   assert.ok(lines.some((l) => l.includes("Worked on things.")));
   assert.ok(lines.some((l) => l.includes("[1][2].")));
+});
+
+test("panel: newlines in the summary become separate paragraph rows", () => {
+  const p = panelWith([{ text: "t", timestamp: "", sessionId: "s" }]);
+  p.setSummary({ status: "ready", text: "First paragraph here.\n\nSecond paragraph after a blank line." });
+  const lines = p.render(80);
+  const textLines = lines.filter((l) => l.includes("paragraph"));
+  assert.equal(textLines.length, 2);
+  assert.ok(lines.some((l) => l.includes("First paragraph here.")));
+  assert.ok(lines.some((l) => l.includes("Second paragraph")));
 });
 
 test("panel: pending shows one animated spinner row; error surfaces the message", () => {
