@@ -130,7 +130,7 @@ class _ChatComposerState extends State<ChatComposer> {
               decoration: InputDecoration(
                 hintText: comms.sender.isEmpty
                     ? 'set a sender identity in settings first'
-                    : 'message ${widget.dest}…',
+                    : 'message…',
                 border: const OutlineInputBorder(),
                 isDense: true,
               ),

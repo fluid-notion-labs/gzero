@@ -132,9 +132,12 @@ class _SessionRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final session = summary.session;
+    // Machine is in the title already (or label replaces it); show the
+    // cwd, and the machine only when a label is hiding it.
     final subtitle = [
-      if (session.machine.isNotEmpty) session.machine,
       if (session.cwd.isNotEmpty) session.cwd,
+      if (session.label.isNotEmpty && session.machine.isNotEmpty)
+        session.machine,
     ].join(' · ');
 
     return Card(

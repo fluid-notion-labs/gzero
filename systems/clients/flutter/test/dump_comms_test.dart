@@ -40,7 +40,7 @@ void main() {
     stdout.writeln('sessions (${sessions.length}):');
     for (final e in sessions.entries) {
       final v = e.value as Map;
-      stdout.writeln('  ${e.key}: machine=${v['machine']} scope=${v['scope']} label=${v['label']} last_seen=${v['last_seen']}');
+      stdout.writeln('  ${e.key}: machine=${v['machine']} scope=${v['scope']} cwd=${v['cwd']} pid=${v['pid']} label=${v['label']} last_seen=${v['last_seen']}');
     }
     stdout.writeln('messages (${messages.length}):');
     for (final e in messages.entries) {

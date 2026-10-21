@@ -67,7 +67,17 @@ class CommsSession {
   final int startedAt;
   final int lastSeen;
 
-  String get title => label.isNotEmpty ? '$label ($machine)' : '$machine · ${scope.split('/').last}';
+  /// Display name: the label when sessions carry one, else
+  /// "scope-tail · machine" with the machine shortened (ids are often
+  /// UUIDs; 8 chars is enough to tell machines apart).
+  String get title {
+    final tail = scope.split('/').where((p) => p.isNotEmpty).lastOrNull;
+    if (label.isNotEmpty) return label;
+    if (machine.isEmpty) return tail ?? 'session';
+    return tail == null || tail == machine ? _short(machine) : '$tail · ${_short(machine)}';
+  }
+
+  static String _short(String s) => s.length <= 8 ? s : s.substring(0, 8);
 }
 
 /// Result of one comms sync.

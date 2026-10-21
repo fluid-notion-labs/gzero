@@ -49,8 +49,8 @@ void main() {
 
     final sessions = controller.sessions();
     expect(sessions.map((s) => s.id).toList(), ['s-recent', 's-live'], reason: 'stale presence dropped, newest first');
-    expect(sessions[1].title, 'panel dev (grater)');
-    expect(sessions[0].title, contains('laptop'));
+    expect(sessions[1].title, 'panel dev', reason: 'label wins, machine stays in the subtitle');
+    expect(sessions[0].title, 'gzero · laptop', reason: 'scope tail + short machine');
   });
 
   test('sender validation: send is a no-op without identity or store', () async {
