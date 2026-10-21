@@ -2,5 +2,6 @@ target
 vendor/
 node_modules
 tmp/
-# native lib is a build artifact: rebuild with gzero-flutter/tool/build-ffi.sh
-gzero-flutter/android/app/src/main/jniLibs/
+# native lib is a build artifact: rebuild with
+# systems/clients/flutter/tool/build-ffi.sh
+systems/clients/flutter/android/app/src/main/jniLibs/
