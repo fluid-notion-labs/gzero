@@ -56,11 +56,14 @@ class ProjectScreen extends StatelessWidget {
                     .where((p) => _tail(p.scope) == _tail(scope))
                     .firstOrNull;
             final sessions = summary?.sessions ?? const <SessionSummary>[];
+            // Only current (alive) sessions are listed outright; everything
+            // else — recent or long gone — hides in a collapsed stale
+            // section so a long tail of dead sessions never buries them.
             final shown = sessions
-                .where((s) => s.presence != PresenceBucket.stale)
+                .where((s) => s.presence == PresenceBucket.alive)
                 .toList();
-            final older = sessions
-                .where((s) => s.presence == PresenceBucket.stale)
+            final stale = sessions
+                .where((s) => s.presence != PresenceBucket.alive)
                 .toList();
 
             return RefreshIndicator(
@@ -69,7 +72,7 @@ class ProjectScreen extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                 children: [
                   const SectionHeader(title: 'agent sessions'),
-                  if (shown.isEmpty && older.isEmpty)
+                  if (shown.isEmpty && stale.isEmpty)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 8),
                       child: Text(
@@ -79,14 +82,15 @@ class ProjectScreen extends StatelessWidget {
                     ),
                   for (final s in shown)
                     _SessionRow(summary: s, comms: comms, controller: controller),
-                  if (older.isNotEmpty)
+                  if (stale.isNotEmpty)
                     ExpansionTile(
+                      initiallyExpanded: false,
                       title: Text(
-                        'older (${older.length})',
+                        'stale (${stale.length})',
                         style: Theme.of(context).textTheme.bodyMedium,
                       ),
                       children: [
-                        for (final s in older)
+                        for (final s in stale)
                           _SessionRow(
                             summary: s,
                             comms: comms,
