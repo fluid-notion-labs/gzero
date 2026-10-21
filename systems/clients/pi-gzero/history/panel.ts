@@ -18,10 +18,11 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { PromptEntry } from "./history.ts";
 import { SPINNER_FRAMES } from "../items-pane.ts";
 
-/** How many list lines render at once. */
+/** How many list lines render at once when there's room. */
 const WINDOW = 20;
-/** Hard ceiling on summary lines (more only fits if the list is short). */
-const SUMMARY_MAX = 5;
+/** The list never shrinks below this many rows to make room for the
+ * summary block; a longer summary gets cut instead. */
+const LIST_FLOOR = 10;
 /** Overall line budget of the overlay (its maxHeight). */
 const MAX_LINES = 28;
 
@@ -61,6 +62,9 @@ export class HistoryPanel {
   private readonly kb: KeybindingsManager | undefined;
   private readonly opts: HistoryPanelOptions;
   private summary: SummaryState = { status: "idle" };
+  /** List rows the last render actually showed (can be < WINDOW when the
+   * summary block takes space); page keys and scroll clamping use it. */
+  private viewRows = WINDOW;
   /** Spinner animation; only ticks while the summary is in flight. */
   private tui: TUI | null = null;
   private frame = 0;
@@ -120,10 +124,11 @@ export class HistoryPanel {
   invalidate(): void {}
 
   private keepVisible(): void {
+    const rows = this.viewRows;
     if (this.selected < this.scroll) this.scroll = this.selected;
-    if (this.selected >= this.scroll + WINDOW) this.scroll = this.selected - WINDOW + 1;
+    if (this.selected >= this.scroll + rows) this.scroll = this.selected - rows + 1;
     if (this.scroll < 0) this.scroll = 0;
-    const maxScroll = Math.max(0, this.entries.length - WINDOW);
+    const maxScroll = Math.max(0, this.entries.length - rows);
     if (this.scroll > maxScroll) this.scroll = maxScroll;
   }
 
@@ -145,9 +150,9 @@ export class HistoryPanel {
     } else if (DOWN(data, this.kb) || data === "j") {
       this.selected = Math.min(last, this.selected + 1);
     } else if (PAGE_UP(data, this.kb) || data === "g") {
-      this.selected = Math.max(0, this.selected - WINDOW);
+      this.selected = Math.max(0, this.selected - this.viewRows);
     } else if (PAGE_DOWN(data, this.kb) || data === "G") {
-      this.selected = Math.min(last, this.selected + WINDOW);
+      this.selected = Math.min(last, this.selected + this.viewRows);
     }
     this.keepVisible();
   }
@@ -160,7 +165,6 @@ export class HistoryPanel {
 
   render(width: number): string[] {
     const total = this.entries.length;
-    this.keepVisible();
 
     // Box spans width-1 columns; the trailing column stays empty so no row
     // reaches the terminal's wrap column (the margin the unbordered panel
@@ -169,29 +173,41 @@ export class HistoryPanel {
     const outer = Math.max(9, width - 1);
     const content = outer - 4; // │ + gutter space on each side
 
-    const title = `prompt history — ${total} prompt${total === 1 ? "" : "s"}, filler filtered`;
-    const footer =
-      "↑ older · ↓ newer · enter insert · esc/f1 close" +
-      (total > WINDOW ? ` · ${this.scroll + 1}-${Math.min(total, this.scroll + WINDOW)} of ${total}` : "");
-
     // Border row: `${open}─ ${text} ${dashes}${close}`, sized so the total
     // is always exactly `outer` columns — text yields room to the fill.
     const edge = (open: string, close: string, text: string): string =>
       this.edgeRow(open, close, text, outer);
+
+    // The summary block is laid out FIRST so the list can yield room to
+    // it: a section list deserves to be shown in full, with the list
+    // shrinking (down to a floor) rather than the summary being cut.
+    const contentBudget = MAX_LINES - 2 - 1; // borders + summary rule
+    const summaryRows = this.summaryRows(content, Math.max(1, contentBudget - LIST_FLOOR));
+    const listRows = total === 0 ? 1 : Math.max(1, Math.min(WINDOW, contentBudget - summaryRows.length));
+    this.viewRows = listRows;
+    this.keepVisible();
+
+    const title = `prompt history — ${total} prompt${total === 1 ? "" : "s"}, filler filtered`;
+    const footer =
+      "↑ older · ↓ newer · enter insert · esc/f1 close" +
+      (total > listRows ? ` · ${this.scroll + 1}-${Math.min(total, this.scroll + listRows)} of ${total}` : "");
 
     const lines: string[] = [];
     lines.push(edge("┌", "┐", title));
     if (total === 0) {
       lines.push(`│ ${this.theme.fg("dim", " no prompts yet".padEnd(content))} │`);
     } else {
-      for (let i = this.scroll; i < Math.min(total, this.scroll + WINDOW); i++) {
+      for (let i = this.scroll; i < Math.min(total, this.scroll + listRows); i++) {
         const marker = i === this.selected ? "▸ " : "  ";
         const body = ` ${marker}${truncate(this.label(this.entries[i]), content - 3)}`;
         // full-width blue block inside the gutter, like a chat user message
         lines.push(`│ ${this.theme.bg("userMessageBg", body.padEnd(content))} │`);
       }
     }
-    this.renderSummary(lines, content, outer);
+    if (summaryRows.length > 0) {
+      lines.push(this.edgeRow("├", "┤", "summary", outer));
+      lines.push(...summaryRows);
+    }
     lines.push(edge("└", "┘", footer));
     return lines;
   }
@@ -207,35 +223,32 @@ export class HistoryPanel {
     );
   }
 
-  /** Append the summary section below the list: a ├─ summary ─┤ rule,
-   * then the wrapped summary text — or a placeholder while the request
-   * is in flight. Fits inside the overlay's line budget: list lines the
-   * scroll window didn't use give the summary extra room. */
-  private renderSummary(lines: string[], content: number, outer: number): void {
-    const shown = lines.length - 1; // rows between the two border lines
-    const budget = Math.max(0, MAX_LINES - 2 - shown - 1); // borders, list, rule
+  /** Build the summary section's rows (without the rule): the spinner
+   * row while a request runs, the wrapped summary text, or an error line.
+   * Capped at `max` rows — a long list of sections gets cut, not the
+   * whole panel. */
+  private summaryRows(content: number, max: number): string[] {
     const s = this.summary;
-    const rule = this.edgeRow("├", "┤", "summary", outer);
-    if (s.status === "idle") return;
-    if (budget < 1) return;
-    lines.push(rule);
+    if (s.status === "idle" || max < 1) return [];
+    const rows: string[] = [];
     if (s.status === "pending" || s.status === "stale") {
       // One animated spinner row while the request runs.
       const glyph = SPINNER_FRAMES[this.frame % SPINNER_FRAMES.length];
       const label = s.status === "pending" ? "summarizing…" : "updating…";
-      lines.push(
+      rows.push(
         `│ ${this.theme.fg("accent", ` ${glyph}`)} ${this.theme.fg("text", label.padEnd(content - 3))} │`,
       );
-      if (s.status === "stale" && budget >= 2) {
-        this.summaryLines(lines, s.text, content, budget - 1);
+      if (s.status === "stale" && max >= 2) {
+        this.summaryLines(rows, s.text, content, max - 1);
       }
-      return;
+      return rows;
     }
     if (s.status === "error") {
-      lines.push(`│ ${this.theme.fg("warning", truncate(`summary failed: ${s.text}`, content).padEnd(content))} │`);
-      return;
+      rows.push(`│ ${this.theme.fg("warning", truncate(`summary failed: ${s.text}`, content).padEnd(content))} │`);
+      return rows;
     }
-    this.summaryLines(lines, s.text, content, budget);
+    this.summaryLines(rows, s.text, content, max);
+    return rows;
   }
 
   /** Word-wrap the summary into gutter-framed rows (up to `max`).

@@ -164,12 +164,28 @@ test("panel: summary block renders below the list, wrapped and budgeted", () => 
 
 test("panel: newlines in the summary become separate paragraph rows", () => {
   const p = panelWith([{ text: "t", timestamp: "", sessionId: "s" }]);
-  p.setSummary({ status: "ready", text: "First paragraph here.\n\nSecond paragraph after a blank line." });
+  p.setSummary({ status: "ready", text: "First section line here.\n  nested sub-point under it\nSecond section line." });
   const lines = p.render(80);
-  const textLines = lines.filter((l) => l.includes("paragraph"));
+  assert.ok(lines.some((l) => l.includes("First section line here.")));
+  assert.ok(lines.some((l) => l.includes("nested sub-point under it")));
+  assert.ok(lines.some((l) => l.includes("Second section line.")));
+  // three rows plus no blank-line padding: one line in, one row out
+  const textLines = lines.filter((l) => l.includes("section line"));
   assert.equal(textLines.length, 2);
-  assert.ok(lines.some((l) => l.includes("First paragraph here.")));
-  assert.ok(lines.some((l) => l.includes("Second paragraph")));
+});
+
+test("panel: a long summary list yields list rows but keeps the list floor", () => {
+  const p = panelWith(Array.from({ length: 40 }, (_, i) => ({ text: `prompt ${i}`, timestamp: "", sessionId: "s" })));
+  // 14 section lines: the list shrinks below WINDOW but not below the floor
+  const summaryText = Array.from({ length: 14 }, (_, i) => `section ${i}: did some things [${i}]`).join("\n");
+  p.setSummary({ status: "ready", text: summaryText });
+  const lines = p.render(80);
+  assert.ok(lines.length <= 28, `total ${lines.length} exceeds overlay budget`);
+  const listRows = lines.filter((l) => l.includes("userMessageBg") || /prompt \d+/.test(l));
+  assert.ok(listRows.length >= 10, `list shrank to ${listRows.length} rows`);
+  // summary is cut at the cap, not the whole panel truncated
+  assert.ok(lines.some((l) => l.includes("├─ summary")));
+  assert.ok(lines.some((l) => l.includes("section 0:")));
 });
 
 test("panel: pending shows one animated spinner row; error surfaces the message", () => {

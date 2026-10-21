@@ -83,6 +83,23 @@ function payloadLine(entry: TranscriptEntry): string {
   return `[${entry.index}] ${who}: ${clipped}`;
 }
 
+/** The summary's format contract: one short line per section of work,
+ * nested sub-points indented, no filler narration. Shared by the full and
+ * incremental prompts so the style never drifts between refreshes. */
+const FORMAT = [
+  "Format the summary as a plain list:",
+  "- one short line per distinct section of work (a task, feature, fix or",
+  "  investigation), in the order it happened;",
+  "- nest sub-points under their section with two leading spaces when needed;",
+  "- keep every line under about 90 characters — terse, not sentences of prose;",
+  "- skip filler, continuations and small talk entirely (they are already",
+  "  filtered from the transcript, do not narrate them);",
+  "- cite the relevant [index] numbers inline, like [3] or [3][7];",
+  "- plain text: a leading '- ' per section line is fine, but no headings,",
+  "  no markdown syntax, no bold/italics.",
+  "Output only the summary text, nothing else.",
+].join("\n");
+
 /** Build the summarization prompt: full transcript, or the previous
  * summary plus only the entries it doesn't yet cover. */
 export function buildPrompt(
@@ -93,12 +110,10 @@ export function buildPrompt(
     const fresh = entries.filter((e) => e.index > prev.covered);
     return [
       "Below is a numbered transcript excerpt (user and agent turns) and the",
-      "current summary of this coding session. Update the summary to include",
-      "what happened in the newer turns, keeping it compact (max ~10 lines).",
-      "Write it as a few short paragraphs separated by blank lines.",
-      "Cite the relevant [index] numbers inline, like [3] or [3][7].",
-      "Plain text only — no headings, no markdown.",
-      "Output only the updated summary text, nothing else.",
+      "current summary of this coding session. Update the summary to cover",
+      "the newer turns, keeping the existing sections that are still current.",
+      "",
+      FORMAT,
       "",
       `Current summary (covers entries [1..${prev.covered}]):`,
       prev.summary,
@@ -109,11 +124,9 @@ export function buildPrompt(
   }
   return [
     "Below is a numbered transcript of a coding-agent session (user and",
-    "agent turns). Write a compact summary (max ~10 lines) of what the",
-    "person was working on and what got done. Write it as a few short",
-    "paragraphs separated by blank lines. Cite the relevant [index]",
-    "numbers inline, like [3] or [3][7]. Plain text only — no headings,",
-    "no markdown. Output only the summary.",
+    "agent turns). Summarise what the person worked on and what got done.",
+    "",
+    FORMAT,
     "",
     ...entries.map(payloadLine),
   ].join("\n");
