@@ -9,6 +9,7 @@
 //! repeated. Used for applying changes (in) and fetching changes (out);
 //! heads use the same framing with fixed 32-byte hashes.
 
+use automerge::transaction::Transactable;
 use automerge::{AutoCommit, Change, ChangeHash, ObjId, ObjType, Prop, ReadDoc, Value, ROOT};
 use serde_json::Value as Json;
 use std::slice;
@@ -78,6 +79,18 @@ macro_rules! ffi_shims {
         }
         fn gz_buf_free(ptr: *mut u8, len: usize) {
             unsafe { super::gz_buf_free(ptr, len) }
+        }
+        fn gz_comms_send(
+            doc: *mut GzDoc,
+            dest: *const std::ffi::c_char,
+            sender: *const std::ffi::c_char,
+            text: *const std::ffi::c_char,
+            out_len: *mut usize,
+        ) -> *mut u8 {
+            unsafe { super::gz_comms_send(doc, dest, sender, text, out_len) }
+        }
+        fn gz_comms_mark_read(doc: *mut GzDoc, dest: *const std::ffi::c_char, out_len: *mut usize) -> *mut u8 {
+            unsafe { super::gz_comms_mark_read(doc, dest, out_len) }
         }
     };
 }
@@ -321,6 +334,209 @@ fn scalar_to_json(s: &automerge::ScalarValue) -> Json {
     }
 }
 
+// ─── comms (Track S doc: mutations only; reading is gz_doc_json) ───────
+//
+// The comms doc schema lives in the main crate (src/comms.rs):
+//
+//   ROOT/messages/<id>/{dest, sender, text, created}
+//   ROOT/reads/<msg id>            (unix-seconds scalar, absent = unread)
+//
+// Mirrored here, write-side only: the tablet reads through the generic
+// JSON view and filters in Dart. Keeping mutations in Rust means the
+// id scheme and schema stay exactly what the desktop replicas speak.
+//
+// The comms doc has no TTL logic here — expiry is client-side filtering
+// in the main crate, and the FFI copy just writes what it's told.
+
+use std::collections::HashSet;
+use std::ffi::{c_char, CStr};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+fn comms_now() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+fn comms_map(doc: &AutoCommit, key: &str) -> Option<ObjId> {
+    match doc.get(ROOT, key) {
+        Ok(Some((Value::Object(ObjType::Map), id))) => Some(id),
+        _ => None,
+    }
+}
+
+fn comms_map_or_create(doc: &mut AutoCommit, key: &str) -> ObjId {
+    if let Some(id) = comms_map(doc, key) {
+        return id;
+    }
+    doc.put_object(ROOT, key, ObjType::Map)
+        .unwrap_or_else(|e| panic!("comms: create root map {key}: {e}"))
+}
+
+fn comms_sval(doc: &AutoCommit, obj: &ObjId, key: &str) -> String {
+    match doc.get(obj, key) {
+        Ok(Some((Value::Scalar(s), _))) => match &*s {
+            automerge::ScalarValue::Str(v) => v.to_string(),
+            _ => String::new(),
+        },
+        _ => String::new(),
+    }
+}
+
+fn comms_ival(doc: &AutoCommit, obj: &ObjId, key: &str) -> i64 {
+    match doc.get(obj, key) {
+        Ok(Some((Value::Scalar(s), _))) => match &*s {
+            automerge::ScalarValue::Int(v) => *v,
+            _ => 0,
+        },
+        _ => 0,
+    }
+}
+
+/// Collision-free id among `existing` — same scheme as the main crate's
+/// `fresh_id` (hash of time + salt, widening on collision).
+fn comms_fresh_id(existing: &HashSet<String>) -> String {
+    use std::hash::{Hash, Hasher};
+    for len in [4usize, 6, 8, 12] {
+        for salt in 0..64u64 {
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            let nanos = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_nanos() as u64)
+                .unwrap_or(0);
+            (nanos, salt, std::process::id()).hash(&mut h);
+            let id = format!("{:016x}", h.finish())[..len].to_string();
+            if !existing.contains(&id) {
+                return id;
+            }
+        }
+    }
+    format!("{:016x}", u64::MAX)
+}
+
+/// Write a message into the comms doc: `messages/<fresh id>/{dest,
+/// sender, text, created}`. Returns the full message as JSON
+/// (including `read_at: 0`), or null on empty/invalid input.
+///
+/// # Safety
+///
+/// `doc` must be a valid `GzDoc` pointer or null (null returns null);
+/// `dest`, `sender` and `text` must be NUL-terminated UTF-8 C strings or
+/// null (any null returns null); `out_len` must be writable or null.
+#[no_mangle]
+pub unsafe extern "C" fn gz_comms_send(
+    doc: *mut GzDoc,
+    dest: *const c_char,
+    sender: *const c_char,
+    text: *const c_char,
+    out_len: *mut usize,
+) -> *mut u8 {
+    if doc.is_null() || out_len.is_null() {
+        return std::ptr::null_mut();
+    }
+    let read_str = |p: *const c_char| -> String {
+        if p.is_null() {
+            String::new()
+        } else {
+            unsafe { CStr::from_ptr(p).to_string_lossy().into_owned() }
+        }
+    };
+    let dest = read_str(dest).trim().to_string();
+    let sender = read_str(sender).trim().to_string();
+    let text = read_str(text).trim().to_string();
+    if dest.is_empty() || sender.is_empty() || text.is_empty() {
+        return std::ptr::null_mut();
+    }
+    let doc = unsafe { &mut *doc };
+    let messages = comms_map_or_create(&mut doc.doc, "messages");
+    let existing: HashSet<String> = doc.doc.keys(&messages).collect();
+    let id = comms_fresh_id(&existing);
+    let created = comms_now();
+    let rec = doc
+        .doc
+        .put_object(&messages, &id, ObjType::Map)
+        .unwrap_or_else(|e| panic!("comms: create message rec: {e}"));
+    doc.doc
+        .put(&rec, "dest", dest.as_str())
+        .unwrap_or_else(|e| panic!("comms: put dest: {e}"));
+    doc.doc
+        .put(&rec, "sender", sender.as_str())
+        .unwrap_or_else(|e| panic!("comms: put sender: {e}"));
+    doc.doc
+        .put(&rec, "text", text.as_str())
+        .unwrap_or_else(|e| panic!("comms: put text: {e}"));
+    doc.doc
+        .put(&rec, "created", created)
+        .unwrap_or_else(|e| panic!("comms: put created: {e}"));
+
+    let json = serde_json::json!({
+        "id": id,
+        "dest": dest,
+        "sender": sender,
+        "text": text,
+        "created": created,
+        "read_at": 0,
+    })
+    .to_string();
+    let bytes = json.into_bytes();
+    unsafe { *out_len = bytes.len() };
+    Box::into_raw(bytes.into_boxed_slice()) as *mut u8
+}
+
+/// Mark all unread messages addressed to `dest` as read (writes the
+/// current time to `reads/<msg id>`). Returns `{"marked": n}` as JSON,
+/// or null on invalid input. No TTL filter — matches the main crate.
+///
+/// # Safety
+///
+/// `doc` must be a valid `GzDoc` pointer or null (null returns null);
+/// `dest` must be a NUL-terminated UTF-8 C string or null (null returns
+/// null); `out_len` must be writable or null.
+#[no_mangle]
+pub unsafe extern "C" fn gz_comms_mark_read(
+    doc: *mut GzDoc,
+    dest: *const c_char,
+    out_len: *mut usize,
+) -> *mut u8 {
+    if doc.is_null() || dest.is_null() || out_len.is_null() {
+        return std::ptr::null_mut();
+    }
+    let dest = unsafe { CStr::from_ptr(dest) }.to_string_lossy().trim().to_string();
+    if dest.is_empty() {
+        return std::ptr::null_mut();
+    }
+    let doc = unsafe { &mut *doc };
+    let Some(messages) = comms_map(&doc.doc, "messages") else {
+        let bytes = b"{\"marked\":0}".to_vec();
+        unsafe { *out_len = bytes.len() };
+        return Box::into_raw(bytes.into_boxed_slice()) as *mut u8;
+    };
+    let reads = comms_map_or_create(&mut doc.doc, "reads");
+    let t = comms_now();
+    let mut marked = 0usize;
+    for id in doc.doc.keys(&messages).collect::<Vec<_>>() {
+        let rec = match doc.doc.get(&messages, &id) {
+            Ok(Some((Value::Object(ObjType::Map), rec))) => rec,
+            _ => continue,
+        };
+        if comms_sval(&doc.doc, &rec, "dest") != dest {
+            continue;
+        }
+        if comms_ival(&doc.doc, &reads, &id) > 0 {
+            continue;
+        }
+        doc.doc
+            .put(&reads, &id, t)
+            .unwrap_or_else(|e| panic!("comms: mark read: {e}"));
+        marked += 1;
+    }
+    let json = serde_json::json!({ "marked": marked }).to_string();
+    let bytes = json.into_bytes();
+    unsafe { *out_len = bytes.len() };
+    Box::into_raw(bytes.into_boxed_slice()) as *mut u8
+}
+
 /// Free a buffer returned by gz_doc_save / gz_doc_changes_since /
 /// gz_doc_heads / gz_doc_json. Null or zero-length buffers are no-ops —
 /// empty results come back as null, never a dangling pointer.
@@ -409,6 +625,98 @@ mod tests {
         assert_eq!(gz_doc_apply(doc, bad.as_ptr(), bad.len()), -1);
         gz_doc_free(doc);
         assert!(gz_doc_open(b"not a doc".as_ptr(), 9).is_null());
+    }
+
+    // ── comms ──
+
+    fn cstr(s: &str) -> std::ffi::CString {
+        std::ffi::CString::new(s).unwrap()
+    }
+
+    fn read_json(ptr: *mut u8, len: usize) -> Json {
+        assert!(!ptr.is_null(), "expected a JSON payload");
+        let bytes = unsafe { slice::from_raw_parts(ptr, len) }.to_vec();
+        gz_buf_free(ptr, len);
+        serde_json::from_slice(&bytes).unwrap()
+    }
+
+    #[test]
+    fn comms_send_writes_the_message_schema() {
+        let doc = gz_doc_new();
+        let mut len = 0usize;
+        let ptr = gz_comms_send(doc, cstr("agent-1").as_ptr(), cstr("tablet").as_ptr(), cstr("hello there").as_ptr(), &mut len);
+        let msg = read_json(ptr, len);
+        assert_eq!(msg["dest"], "agent-1");
+        assert_eq!(msg["sender"], "tablet");
+        assert_eq!(msg["text"], "hello there");
+        assert_eq!(msg["read_at"], 0);
+        let id = msg["id"].as_str().unwrap().to_string();
+        assert!(!id.is_empty());
+        assert!(msg["created"].as_i64().unwrap() > 0);
+
+        // the doc's JSON view shows the same record under messages/<id>
+        let mut jlen = 0usize;
+        let jptr = gz_doc_json(doc, &mut jlen);
+        let view = read_json(jptr, jlen);
+        let rec = &view["messages"][&id];
+        assert_eq!(rec["dest"], "agent-1");
+        assert_eq!(rec["text"], "hello there");
+
+        // empty fields rejected
+        assert!(gz_comms_send(doc, cstr("").as_ptr(), cstr("t").as_ptr(), cstr("x").as_ptr(), &mut len).is_null());
+        assert!(gz_comms_send(doc, cstr("d").as_ptr(), cstr(" ").as_ptr(), cstr("x").as_ptr(), &mut len).is_null());
+        gz_doc_free(doc);
+    }
+
+    #[test]
+    fn comms_send_ids_do_not_collide_and_messages_survive_roundtrip() {
+        let doc = gz_doc_new();
+        let mut len = 0usize;
+        let mut ids = Vec::new();
+        for i in 0..5 {
+            let ptr = gz_comms_send(doc, cstr("a").as_ptr(), cstr("s").as_ptr(), cstr(&format!("m{i}")).as_ptr(), &mut len);
+            let msg = read_json(ptr, len);
+            ids.push(msg["id"].as_str().unwrap().to_string());
+        }
+        let unique: std::collections::HashSet<_> = ids.iter().collect();
+        assert_eq!(unique.len(), 5, "ids must not collide");
+
+        // save/open roundtrip preserves messages (same bytes as the hub)
+        let mut slen = 0usize;
+        let sptr = gz_doc_save(doc, &mut slen);
+        let bytes = unsafe { slice::from_raw_parts(sptr, slen) }.to_vec();
+        gz_buf_free(sptr, slen);
+        let doc2 = gz_doc_open(bytes.as_ptr(), bytes.len());
+        let mut jlen = 0usize;
+        let jptr = gz_doc_json(doc2, &mut jlen);
+        let view = read_json(jptr, jlen);
+        assert_eq!(view["messages"].as_object().unwrap().len(), 5);
+        gz_doc_free(doc2);
+        gz_doc_free(doc);
+    }
+
+    #[test]
+    fn comms_mark_read_stamps_only_unread_to_dest() {
+        let doc = gz_doc_new();
+        let mut len = 0usize;
+        gz_comms_send(doc, cstr("agent-1").as_ptr(), cstr("s").as_ptr(), cstr("m1").as_ptr(), &mut len);
+        gz_comms_send(doc, cstr("agent-1").as_ptr(), cstr("s").as_ptr(), cstr("m2").as_ptr(), &mut len);
+        gz_comms_send(doc, cstr("agent-2").as_ptr(), cstr("s").as_ptr(), cstr("other").as_ptr(), &mut len);
+
+        let ptr = gz_comms_mark_read(doc, cstr("agent-1").as_ptr(), &mut len);
+        let res = read_json(ptr, len);
+        assert_eq!(res["marked"], 2);
+
+        // second call is a no-op
+        let ptr = gz_comms_mark_read(doc, cstr("agent-1").as_ptr(), &mut len);
+        assert_eq!(read_json(ptr, len)["marked"], 0);
+
+        // reads visible in the JSON view, other dest untouched
+        let mut jlen = 0usize;
+        let jptr = gz_doc_json(doc, &mut jlen);
+        let view = read_json(jptr, jlen);
+        assert_eq!(view["reads"].as_object().unwrap().len(), 2);
+        gz_doc_free(doc);
     }
 }
 
