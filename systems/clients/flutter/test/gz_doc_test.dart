@@ -95,4 +95,42 @@ void main() {
     expect(decoded[1], [3]);
     expect(decoded[2], isEmpty);
   });
+
+  test('applyBatchHashes reports the applied changes\' hashes', () {
+    final a = GzDoc.empty();
+    final c = GzDoc.empty();
+    a.commsSend(dest: 'x', sender: 's', text: 'trigger a change');
+    final outgoing = a.changesSince(const []);
+    expect(outgoing, isNotEmpty);
+
+    final hashes = c.applyBatchHashes(outgoing);
+    expect(hashes, hasLength(outgoing.length));
+    expect(c.heads(), a.heads(), reason: 'applied changes converge to the same heads');
+    // feeding those hashes back as "have": nothing left to send
+    expect(c.changesSince(hashes), isEmpty);
+    a.dispose();
+    c.dispose();
+  });
+
+  test('commsSend writes the message schema; commsMarkRead stamps reads', () {
+    final doc = GzDoc.empty();
+    final m1 = doc.commsSend(dest: 'agent-1', sender: 'tablet-x', text: 'hello');
+    expect(m1['dest'], 'agent-1');
+    expect(m1['text'], 'hello');
+    expect(m1['read_at'], 0);
+    final m2 = doc.commsSend(dest: 'agent-1', sender: 'tablet-x', text: 'again');
+    expect(m2['id'], isNot(m1['id']), reason: 'ids must not collide');
+    expect(() => doc.commsSend(dest: '', sender: 's', text: 'x'), throwsArgumentError);
+
+    final view = jsonDecode(doc.json()) as Map<String, dynamic>;
+    expect((view['messages'] as Map).length, 2);
+
+    expect(doc.commsMarkRead(dest: 'agent-1'), 2);
+    expect(doc.commsMarkRead(dest: 'agent-1'), 0, reason: 'second pass is a no-op');
+    final view2 = jsonDecode(doc.json()) as Map<String, dynamic>;
+    final reads = view2['reads'] as Map;
+    expect(reads.length, 2);
+    expect((reads[m1['id']] as num).toInt(), greaterThan(0));
+    doc.dispose();
+  });
 }

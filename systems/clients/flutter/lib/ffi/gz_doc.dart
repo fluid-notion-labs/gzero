@@ -65,6 +65,31 @@ final void Function(Pointer<Uint8>, int) _bufFree = _lib
     .lookup<NativeFunction<Void Function(Pointer<Uint8>, IntPtr)>>('gz_buf_free')
     .asFunction();
 
+final Pointer<Uint8> Function(
+  Pointer<Void>,
+  Pointer<Utf8>,
+  Pointer<Utf8>,
+  Pointer<Utf8>,
+  Pointer<IntPtr>,
+) _commsSend = _lib
+    .lookup<
+        NativeFunction<
+            Pointer<Uint8> Function(
+                Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, Pointer<IntPtr>)>>('gz_comms_send')
+    .asFunction();
+
+final Pointer<Uint8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<IntPtr>) _commsMarkRead = _lib
+    .lookup<NativeFunction<
+        Pointer<Uint8> Function(Pointer<Void>, Pointer<Utf8>, Pointer<IntPtr>)>>('gz_comms_mark_read')
+    .asFunction();
+
+final Pointer<Uint8> Function(Pointer<Void>, Pointer<Uint8>, int, Pointer<IntPtr>) _docApplyHashes = _lib
+    .lookup<
+        NativeFunction<
+            Pointer<Uint8> Function(
+                Pointer<Void>, Pointer<Uint8>, IntPtr, Pointer<IntPtr>)>>('gz_doc_apply_hashes')
+    .asFunction();
+
 /// Framing: [u32 LE length][bytes], repeated.
 Uint8List encodeBatch(List<Uint8List> blobs) {
   final out = BytesBuilder();
@@ -155,6 +180,72 @@ class GzDoc {
     calloc.free(buf);
     if (n < 0) throw const FormatException('gz_doc_apply: rejected batch');
     return n;
+  }
+
+  /// Apply a batch of raw changes and return the applied changes' hashes
+  /// (32 bytes each) — the push cursor records these so pulled changes
+  /// are never re-pushed to the hub.
+  List<Uint8List> applyBatchHashes(List<Uint8List> changes) {
+    final ptr = _require();
+    final batch = encodeBatch(changes);
+    final buf = calloc<Uint8>(batch.length);
+    buf.asTypedList(batch.length).setAll(0, batch);
+    final outLen = calloc<IntPtr>();
+    final data = _docApplyHashes(ptr, buf, batch.length, outLen);
+    calloc.free(buf);
+    final len = outLen.value;
+    calloc.free(outLen);
+    if (data == Pointer.fromAddress(0)) {
+      if (len != 0) throw const FormatException('gz_doc_apply_hashes: rejected batch');
+      return const [];
+    }
+    final raw = Uint8List.fromList(data.asTypedList(len));
+    _bufFree(data, len);
+    return [
+      for (var i = 0; i + 32 <= raw.length; i += 32) Uint8List.sublistView(raw, i, i + 32),
+    ];
+  }
+
+  /// Write a message into the comms doc. Returns the message as a JSON
+  /// map (id, dest, sender, text, created, read_at). Throws when any
+  /// field is empty (matching the main crate's validation).
+  Map<String, dynamic> commsSend({required String dest, required String sender, required String text}) {
+    final ptr = _require();
+    final destPtr = dest.toNativeUtf8();
+    final senderPtr = sender.toNativeUtf8();
+    final textPtr = text.toNativeUtf8();
+    final outLen = calloc<IntPtr>();
+    final data = _commsSend(ptr, destPtr, senderPtr, textPtr, outLen);
+    calloc.free(destPtr);
+    calloc.free(senderPtr);
+    calloc.free(textPtr);
+    final len = outLen.value;
+    calloc.free(outLen);
+    if (data == Pointer.fromAddress(0)) {
+      throw ArgumentError('gz_comms_send: empty dest/sender/text');
+    }
+    final bytes = Uint8List.fromList(data.asTypedList(len));
+    _bufFree(data, len);
+    return jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
+  }
+
+  /// Mark all unread messages to [dest] read. Returns how many were
+  /// marked.
+  int commsMarkRead({required String dest}) {
+    final ptr = _require();
+    final destPtr = dest.toNativeUtf8();
+    final outLen = calloc<IntPtr>();
+    final data = _commsMarkRead(ptr, destPtr, outLen);
+    calloc.free(destPtr);
+    final len = outLen.value;
+    calloc.free(outLen);
+    if (data == Pointer.fromAddress(0)) {
+      throw ArgumentError('gz_comms_mark_read: empty dest');
+    }
+    final bytes = Uint8List.fromList(data.asTypedList(len));
+    _bufFree(data, len);
+    final res = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
+    return (res['marked'] as num?)?.toInt() ?? 0;
   }
 
   /// Changes this doc has that a peer with [have] (32-byte hashes) hasn't.

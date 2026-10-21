@@ -92,6 +92,9 @@ macro_rules! ffi_shims {
         fn gz_comms_mark_read(doc: *mut GzDoc, dest: *const std::ffi::c_char, out_len: *mut usize) -> *mut u8 {
             unsafe { super::gz_comms_mark_read(doc, dest, out_len) }
         }
+        fn gz_doc_apply_hashes(doc: *mut GzDoc, bytes: *const u8, len: usize, out_len: *mut usize) -> *mut u8 {
+            unsafe { super::gz_doc_apply_hashes(doc, bytes, len, out_len) }
+        }
     };
 }
 
@@ -231,6 +234,57 @@ pub unsafe extern "C" fn gz_doc_changes_since(
     }
     unsafe { *out_len = batch.len() };
     Box::into_raw(batch.into_boxed_slice()) as *mut u8
+}
+
+/// Apply a batch of raw changes and return the applied changes' hashes
+/// as a batch of 32-byte blobs (u32 LE length framing). The Dart sync
+/// controller records these as the push cursor — pulled changes are by
+/// definition already on the hub and must never be re-pushed (the hub
+/// does not dedupe). Returns null on a parse/apply error.
+///
+/// # Safety
+///
+/// `doc` must be a valid `GzDoc` pointer or null (null returns null);
+/// `bytes` must point to `len` readable bytes or be null; `out_len` must
+/// be writable or null. The returned buffer is owned by the caller and
+/// freed with `gz_buf_free`.
+#[no_mangle]
+pub unsafe extern "C" fn gz_doc_apply_hashes(
+    doc: *mut GzDoc,
+    bytes: *const u8,
+    len: usize,
+    out_len: *mut usize,
+) -> *mut u8 {
+    if doc.is_null() || bytes.is_null() || out_len.is_null() {
+        return std::ptr::null_mut();
+    }
+    let doc = unsafe { &mut *doc };
+    let slice = unsafe { slice::from_raw_parts(bytes, len) };
+    let blobs = match parse_batch(slice) {
+        Ok(b) => b,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    let changes = match blobs
+        .iter()
+        .map(|b| Change::from_bytes(b.to_vec()))
+        .collect::<Result<Vec<_>, _>>()
+    {
+        Ok(c) => c,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    let hashes: Vec<u8> = changes
+        .iter()
+        .flat_map(|c| c.hash().as_ref().to_vec())
+        .collect();
+    if doc.doc.apply_changes(changes).is_err() {
+        return std::ptr::null_mut();
+    }
+    if hashes.is_empty() {
+        unsafe { *out_len = 0 };
+        return std::ptr::null_mut();
+    }
+    unsafe { *out_len = hashes.len() };
+    Box::into_raw(hashes.into_boxed_slice()) as *mut u8
 }
 
 /// The doc's head hashes, `count` * 32 bytes. Caller frees.
@@ -693,6 +747,40 @@ mod tests {
         assert_eq!(view["messages"].as_object().unwrap().len(), 5);
         gz_doc_free(doc2);
         gz_doc_free(doc);
+    }
+
+    #[test]
+    fn apply_hashes_reports_applied_change_hashes() {
+        let mut a = GzDoc {
+            doc: AutoCommit::new(),
+        };
+        make_change(&mut a, "k", "v");
+
+        let c = gz_doc_new();
+        let mut out_len = 0usize;
+        let out = gz_doc_changes_since(&mut a, std::ptr::null(), 0, &mut out_len);
+        assert!(out_len > 0, "sender has a change to give");
+        let batch = unsafe { slice::from_raw_parts(out, out_len) }.to_vec();
+        gz_buf_free(out, out_len);
+
+        // expected heads of c after applying = a's heads
+        let mut hcount = 0usize;
+        let hptr = gz_doc_heads(&mut a, &mut hcount);
+        let heads = unsafe { slice::from_raw_parts(hptr, hcount * 32) }.to_vec();
+        gz_buf_free(hptr, hcount * 32);
+
+        let mut rlen = 0usize;
+        let rptr = gz_doc_apply_hashes(c, batch.as_ptr(), batch.len(), &mut rlen);
+        assert!(!rptr.is_null());
+        let hashes = unsafe { slice::from_raw_parts(rptr, rlen) }.to_vec();
+        gz_buf_free(rptr, rlen);
+        assert_eq!(hashes, heads, "applied hashes == resulting heads");
+
+        // feed those hashes back as "have": the doc has nothing new for them
+        let out = gz_doc_changes_since(c, hashes.as_ptr(), (hashes.len() / 32) as usize, &mut out_len);
+        assert_eq!(out_len, 0);
+        gz_buf_free(out, out_len);
+        gz_doc_free(c);
     }
 
     #[test]

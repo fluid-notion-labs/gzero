@@ -8,8 +8,10 @@
 import 'package:flutter/material.dart';
 
 import '../settings/settings_store.dart';
+import '../state/comms.dart';
 import '../state/projects.dart';
 import '../state/sync_controller.dart';
+import 'messages_screen.dart';
 import 'projects_screen.dart';
 import 'settings_screen.dart';
 
@@ -17,11 +19,13 @@ class HomeScreen extends StatelessWidget {
   const HomeScreen({
     super.key,
     required this.controller,
+    required this.comms,
     required this.onSettingsChanged,
     this.settingsStore,
   });
 
   final SyncController controller;
+  final CommsController comms;
   final VoidCallback onSettingsChanged;
   final SettingsStore? settingsStore;
 
@@ -54,7 +58,60 @@ class HomeScreen extends StatelessWidget {
             children: [
               _SyncCard(controller: controller),
               const SizedBox(height: 16),
+              _MessagesCard(comms: comms),
+              const SizedBox(height: 16),
               _ProjectsCard(controller: controller),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MessagesCard extends StatelessWidget {
+  const _MessagesCard({required this.comms});
+
+  final CommsController comms;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final sessions = comms.sessions();
+    final unread = [for (final s in sessions) ...comms.messages(s.id)].where((m) => m.unread).length;
+
+    return Card(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => MessagesScreen(comms: comms)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Icon(Icons.forum_outlined, color: unread > 0 ? theme.colorScheme.primary : null),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Messages', style: theme.textTheme.titleMedium),
+                    const SizedBox(height: 2),
+                    Text(
+                      sessions.isEmpty
+                          ? 'no active agents'
+                          : '${sessions.length} active session${sessions.length == 1 ? '' : 's'}'
+                          '${unread > 0 ? ' · $unread unread' : ''}',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+              if (unread > 0)
+                Badge(label: Text('$unread'))
+              else
+                const Icon(Icons.chevron_right),
             ],
           ),
         ),

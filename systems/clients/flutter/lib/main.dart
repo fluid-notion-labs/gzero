@@ -13,6 +13,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'api/hub_client.dart';
 import 'settings/settings_store.dart';
+import 'state/comms.dart';
 import 'state/sync_controller.dart';
 import 'ui/home_screen.dart';
 
@@ -44,6 +45,7 @@ class GzeroApp extends StatefulWidget {
 class _GzeroAppState extends State<GzeroApp> {
   late Settings _settings;
   late SyncController _controller;
+  late CommsController _comms;
   late HubClient _client;
   bool _loaded = false;
 
@@ -71,7 +73,8 @@ class _GzeroAppState extends State<GzeroApp> {
 
   void _rebuild() {
     _client = HubClient(baseUrl: _settings.hubUrl, token: _settings.token);
-    _controller = SyncController(_client, docStoreDir: widget.docStoreDir);
+    _comms = CommsController(client: _client, storeDir: widget.docStoreDir, sender: _settings.sender);
+    _controller = SyncController(_client, docStoreDir: widget.docStoreDir, comms: _comms);
     _controller.refresh();
   }
 
@@ -88,6 +91,7 @@ class _GzeroAppState extends State<GzeroApp> {
       ),
       home: HomeScreen(
         controller: _controller,
+        comms: _comms,
         onSettingsChanged: _load,
         settingsStore: widget.store,
       ),

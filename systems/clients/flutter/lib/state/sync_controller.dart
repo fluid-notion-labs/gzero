@@ -28,16 +28,19 @@ class StreamStatus {
 }
 
 class SyncController extends ChangeNotifier {
-  SyncController(this._client, {this.streams = systemStreams, Directory? docStoreDir})
-      : commsDoc = docStoreDir == null ? null : DocSync(stream: 'comms', client: _client, storeDir: docStoreDir),
+  SyncController(this._client, {this.streams = systemStreams, Directory? docStoreDir, DocSyncLike? comms})
+      : commsDoc = comms ??
+            (docStoreDir == null ? null : DocSync(stream: 'comms', client: _client, storeDir: docStoreDir)),
         contextDoc = docStoreDir == null ? null : DocSync(stream: 'context', client: _client, storeDir: docStoreDir);
 
   final HubClient _client;
   final List<String> streams;
 
-  /// The comms doc replica, when the app has a store directory. Null in
-  /// tests and desktop dev without a doc store — the rest keeps working.
-  final DocSync? commsDoc;
+  /// The comms data plane, when the app has a store directory: the
+  /// messaging controller when provided (pull + push), else the plain
+  /// pull-only replica. Null in tests and desktop dev without a doc
+  /// store — the rest keeps working.
+  final DocSyncLike? commsDoc;
 
   /// The context doc replica — the projects data plane reads its JSON
   /// view. Same null rules as [commsDoc].

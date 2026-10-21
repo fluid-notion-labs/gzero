@@ -30,7 +30,15 @@ class DocSyncResult {
   bool get ok => error == null;
 }
 
-class DocSync {
+/// What a per-stream data plane offers the sync controller: one sync
+/// step and a status line. DocSync is the pull-only implementation;
+/// the comms controller implements the same surface with push added.
+abstract interface class DocSyncLike {
+  Future<DocSyncResult> sync();
+  String? get statusLine;
+}
+
+class DocSync implements DocSyncLike {
   DocSync({required this.stream, required this.client, required this.storeDir});
 
   final String stream;
@@ -43,6 +51,7 @@ class DocSync {
   String? docJson;
   String? error;
 
+  @override
   Future<DocSyncResult> sync() async {
     try {
       return await _sync();
@@ -117,6 +126,7 @@ class DocSync {
   }
 
   /// One-line status for the sync card, null before the first sync.
+  @override
   String? get statusLine {
     if (error != null) return 'doc: $error';
     if (lastSeq == null) return null;

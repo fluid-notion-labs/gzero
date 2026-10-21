@@ -56,6 +56,25 @@ class HubClient {
     }
   }
 
+  /// Push local changes (base64 automerge blobs) to the stream.
+  /// Returns the new head seq — the push half of sync.
+  Future<int> push(String stream, List<String> changes, {String? machineId}) async {
+    final res = await _http.post(
+      _uri('/stream/$stream/changes'),
+      headers: {..._headers, 'content-type': 'application/json'},
+      body: jsonEncode({'changes': changes, 'machine_id': ?machineId}),
+    );
+    if (res.statusCode != 200) {
+      throw HubException(res.statusCode, 'push($stream) failed');
+    }
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    final last = body['last_seq'];
+    if (last is! int) {
+      throw HubException(res.statusCode, 'push($stream): missing last_seq');
+    }
+    return last;
+  }
+
   /// One page of changes after [since] — the pull half of sync.
   Future<ChangesPage> changes(String stream, int since) async {
     final res = await _http.get(
