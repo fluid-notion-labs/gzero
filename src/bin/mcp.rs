@@ -109,11 +109,40 @@ impl App {
     }
 }
 
+/// Presence TTL is five minutes, but resolve (the per-turn heartbeat)
+/// only fires when the user prompts: a long agent work stretch leaves
+/// the session stale on every other machine's screen. This tick keeps
+/// the heartbeat running while the session process lives.
+const HEARTBEAT_SECS: u64 = 60;
+
+/// One background heartbeat: refresh this session's row and push it to
+/// the hub (the doc store's heartbeat syncs internally). Best-effort —
+/// a failed tick just waits for the next one.
+fn presence_tick(app: &mut App) {
+    let Some(beat) = current_beat() else { return };
+    let layer = app.comms.layer();
+    let _ = layer.heartbeat(&beat);
+    let _ = layer.sweep();
+}
+
 fn main() {
     let mut app = App::new();
     startup(&mut app);
-    let stdin = std::io::stdin();
     let mut out = std::io::stdout().lock();
+    // Stdin moves to a reader thread; the main loop waits on the
+    // channel with a timeout so it can heartbeat between requests.
+    let (tx, rx) = std::sync::mpsc::channel::<String>();
+    std::thread::spawn(move || {
+        let stdin = std::io::stdin();
+        for line in stdin.lock().lines() {
+            let Ok(line) = line else { break };
+            if tx.send(line).is_err() {
+                break; // main loop gone; nothing left to feed
+            }
+        }
+    });
+    let tick = std::time::Duration::from_secs(HEARTBEAT_SECS);
+    let one_shot = one_shot(); // short-lived spawns: no heartbeat timer
     // Request timing: every request over CX_SLOW_MS (default 50) is
     // logged with its method and duration; CX_TRACE=1 logs all. This
     // is the outermost clock — the gzero-sync lines inside attribute
@@ -124,8 +153,18 @@ fn main() {
         .unwrap_or(50);
     let trace = !matches!(std::env::var("CX_TRACE").as_deref(), Ok("0"))
         && matches!(std::env::var("CX_TRACE").as_deref(), Ok(_));
-    for line in stdin.lock().lines() {
-        let Ok(line) = line else { break };
+    loop {
+        let line = match rx.recv_timeout(tick) {
+            Ok(line) => line,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                if !one_shot {
+                    presence_tick(&mut app);
+                }
+                continue;
+            }
+            // Stdin closed: the parent is done with this session.
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+        };
         if line.trim().is_empty() {
             continue;
         }
@@ -577,27 +616,35 @@ fn handoff_block() -> Option<String> {
     ))
 }
 
-/// Heartbeat this session, sweep expired rows, and return an "also
-/// here" block when other live sessions share this scope. Presence is
-/// best-effort: failures never break resolve.
-fn presence_block(store: &mut dyn gzero::comms::CommsLayer) -> Option<String> {
+/// This session's presence row as of right now. Shared by the resolve
+/// heartbeat and the background heartbeat tick.
+fn current_beat() -> Option<gzero::sessions::SessionInfo> {
     let project = gzero::repo_identity()?;
     let (session_id, machine) = gzero::sessions::session_identity();
     let cwd = std::env::current_dir()
         .map(|p| p.display().to_string())
         .unwrap_or_default();
     let workspace = gzero::sessions::current_workspace();
-    let beat = gzero::sessions::SessionInfo {
-        session_id: session_id.clone(),
+    Some(gzero::sessions::SessionInfo {
+        session_id,
         machine,
-        scope: project.clone(),
+        scope: project,
         cwd,
         pid: std::process::id() as i64,
         label: String::new(),
         workspace,
         started_at: 0, // ignored by the upsert on conflict
         last_seen: gzero::sessions::now(),
-    };
+    })
+}
+
+/// Heartbeat this session, sweep expired rows, and return an "also
+/// here" block when other live sessions share this scope. Presence is
+/// best-effort: failures never break resolve.
+fn presence_block(store: &mut dyn gzero::comms::CommsLayer) -> Option<String> {
+    let project = gzero::repo_identity()?;
+    let (session_id, _) = gzero::sessions::session_identity();
+    let beat = current_beat()?;
     store.heartbeat(&beat).ok()?;
     let _ = store.sweep();
     let peers = store
