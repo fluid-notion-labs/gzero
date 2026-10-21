@@ -55,13 +55,16 @@ class CommsMessage {
   }
 }
 
-/// An active session (presence) — a candidate destination.
+/// A session (presence) — the shell's agent rows and the chat
+/// destination.
 class CommsSession {
-  CommsSession({required this.id, required this.machine, required this.scope, required this.label, required this.lastSeen});
+  CommsSession({required this.id, required this.machine, required this.scope, required this.label, required this.cwd, required this.startedAt, required this.lastSeen});
   final String id;
   final String machine;
   final String scope;
   final String label;
+  final String cwd;
+  final int startedAt;
   final int lastSeen;
 
   String get title => label.isNotEmpty ? '$label ($machine)' : '$machine · ${scope.split('/').last}';
@@ -265,14 +268,15 @@ class CommsController extends ChangeNotifier implements DocSyncLike {
     return out;
   }
 
-  /// Active sessions (recent heartbeats), newest first — the
-  /// destination picker's options.
-  List<CommsSession> sessions() {
+  /// Sessions with a heartbeat newer than [within], newest first.
+  /// The shell passes a longer window to show recent (not just alive)
+  /// agents; [sessions] stays the alive-only shorthand.
+  List<CommsSession> sessions({Duration within = presenceTtl}) {
     final doc = _parsed();
     if (doc == null) return const [];
     final sessions = doc['sessions'];
     if (sessions is! Map) return const [];
-    final cutoff = DateTime.now().millisecondsSinceEpoch ~/ 1000 - presenceTtl.inSeconds;
+    final cutoff = DateTime.now().millisecondsSinceEpoch ~/ 1000 - within.inSeconds;
     final out = <CommsSession>[];
     sessions.forEach((id, value) {
       if (value is! Map) return;
@@ -283,11 +287,23 @@ class CommsController extends ChangeNotifier implements DocSyncLike {
         machine: (value['machine'] as String?) ?? '',
         scope: (value['scope'] as String?) ?? '',
         label: (value['label'] as String?) ?? '',
+        cwd: (value['cwd'] as String?) ?? '',
+        startedAt: (value['started_at'] as num?)?.toInt() ?? 0,
         lastSeen: lastSeen,
       ));
     });
     out.sort((a, b) => b.lastSeen.compareTo(a.lastSeen));
     return out;
+  }
+
+  /// Unread messages addressed to [sessionId] — the count the shell's
+  /// badges show.
+  int unreadFor(String sessionId) {
+    var count = 0;
+    for (final m in messages(sessionId)) {
+      if (m.unread) count++;
+    }
+    return count;
   }
 
   Map<String, dynamic>? _parsed() {
