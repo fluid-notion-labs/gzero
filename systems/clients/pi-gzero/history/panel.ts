@@ -13,9 +13,10 @@
 // rebinds apply; q is a hardcoded extra since plugin-only keys can't be
 // rebindable actions.
 
-import { matchesKey, wrapTextWithAnsi, type Keybinding, type KeyId, type KeybindingsManager } from "@earendil-works/pi-tui";
+import { matchesKey, wrapTextWithAnsi, type Keybinding, type KeyId, type KeybindingsManager, type TUI } from "@earendil-works/pi-tui";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { PromptEntry } from "./history.ts";
+import { SPINNER_FRAMES } from "../items-pane.ts";
 
 /** How many list lines render at once. */
 const WINDOW = 20;
@@ -60,6 +61,10 @@ export class HistoryPanel {
   private readonly kb: KeybindingsManager | undefined;
   private readonly opts: HistoryPanelOptions;
   private summary: SummaryState = { status: "idle" };
+  /** Spinner animation; only ticks while the summary is in flight. */
+  private tui: TUI | null = null;
+  private frame = 0;
+  private spinnerTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     // chronological, oldest first (as loadHistory now returns)
@@ -76,10 +81,40 @@ export class HistoryPanel {
     this.selected = Math.max(0, entries.length - 1);
   }
 
+  /** Give the panel the tui so the spinner can drive re-renders. */
+  attach(tui: TUI): void {
+    this.tui = tui;
+    this.syncSpinner();
+  }
+
+  /** Release the spinner timer; the overlay calls dispose on close. */
+  dispose(): void {
+    if (this.spinnerTimer) {
+      clearInterval(this.spinnerTimer);
+      this.spinnerTimer = null;
+    }
+  }
+
   /** Update the summary block (call again when the async request settles,
    * then requestRender on the tui — the panel doesn't own the tui). */
   setSummary(state: SummaryState): void {
     this.summary = state;
+    this.syncSpinner();
+  }
+
+  /** Run the spinner timer only while the summary block is animating
+   * (pending or refreshing); otherwise no idle re-renders. */
+  private syncSpinner(): void {
+    const spinning = this.summary.status === "pending" || this.summary.status === "stale";
+    if (spinning && this.tui && !this.spinnerTimer) {
+      this.spinnerTimer = setInterval(() => {
+        this.frame = (this.frame + 1) % SPINNER_FRAMES.length;
+        this.tui?.requestRender();
+      }, 120);
+    } else if (!spinning && this.spinnerTimer) {
+      clearInterval(this.spinnerTimer);
+      this.spinnerTimer = null;
+    }
   }
 
   invalidate(): void {}
@@ -185,10 +220,14 @@ export class HistoryPanel {
     if (budget < 1) return;
     lines.push(rule);
     if (s.status === "pending" || s.status === "stale") {
-      const text = s.status === "stale" ? s.text : "summarizing…";
-      this.summaryLines(lines, text, content, budget - (s.status === "stale" ? 1 : 0));
+      // One animated spinner row while the request runs.
+      const glyph = SPINNER_FRAMES[this.frame % SPINNER_FRAMES.length];
+      const label = s.status === "pending" ? "summarizing…" : "updating…";
+      lines.push(
+        `│ ${this.theme.fg("accent", ` ${glyph}`)} ${this.theme.fg("dim", label.padEnd(content - 3))} │`,
+      );
       if (s.status === "stale" && budget >= 2) {
-        lines.push(`│ ${this.theme.fg("dim", " updating…".padEnd(content))} │`);
+        this.summaryLines(lines, s.text, content, budget - 1);
       }
       return;
     }

@@ -62,6 +62,7 @@ export default function (pi: ExtensionAPI) {
             done(undefined);
           },
         });
+        panel.attach(tui);
         panel.setSummary(initial);
         requestRender = () => tui.requestRender();
         return panel;

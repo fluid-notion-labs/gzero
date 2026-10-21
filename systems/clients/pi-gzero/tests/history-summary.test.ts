@@ -7,6 +7,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HistoryPanel } from "../history/panel.ts";
+import { SPINNER_FRAMES } from "../items-pane.ts";
 import {
   buildPrompt,
   extractTranscript,
@@ -146,15 +147,39 @@ test("panel: summary block renders below the list, wrapped and budgeted", () => 
   assert.ok(lines.some((l) => l.includes("[1][2].")));
 });
 
-test("panel: pending shows a placeholder; error surfaces the message", () => {
+test("panel: pending shows one animated spinner row; error surfaces the message", () => {
   const p = panelWith([{ text: "t", timestamp: "", sessionId: "s" }]);
   p.setSummary({ status: "pending" });
   let lines = p.render(80);
-  assert.ok(lines.some((l) => l.includes("summarizing…")));
+  const spinners = lines.filter((l) => SPINNER_FRAMES.some((f) => l.includes(` ${f}`)));
+  assert.equal(spinners.length, 1);
+  assert.ok(spinners[0].includes("summarizing…"));
+
+  // Settling to ready stops the spinner (no spinner row, no timer).
+  p.setSummary({ status: "ready", text: "done" });
+  lines = p.render(80);
+  assert.ok(!lines.some((l) => SPINNER_FRAMES.some((f) => l.includes(` ${f}`))));
 
   p.setSummary({ status: "error", text: "pi exited 1" });
   lines = p.render(80);
   assert.ok(lines.some((l) => l.includes("summary failed: pi exited 1")));
+});
+
+test("panel: spinner timer runs only while pending/stale, cleared on dispose", () => {
+  const p = panelWith([{ text: "t", timestamp: "", sessionId: "s" }]);
+  const s = p as unknown as { spinnerTimer: unknown; syncSpinner: () => void };
+  p.setSummary({ status: "pending" });
+  p.syncSpinner(); // no tui yet: no timer
+  assert.equal(s.spinnerTimer, null);
+  p.attach({ requestRender: () => {} } as never);
+  p.syncSpinner();
+  assert.notEqual(s.spinnerTimer, null);
+  p.setSummary({ status: "ready", text: "x" });
+  assert.equal(s.spinnerTimer, null);
+  p.setSummary({ status: "stale", text: "old" });
+  assert.notEqual(s.spinnerTimer, null);
+  p.dispose();
+  assert.equal(s.spinnerTimer, null);
 });
 
 test("panel: idle adds nothing; block respects the 28-line overlay budget", () => {
