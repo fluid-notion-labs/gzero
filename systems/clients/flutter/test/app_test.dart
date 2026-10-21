@@ -17,20 +17,31 @@ void main() {
     PathProviderPlatform.instance = FakePathProvider();
   });
 
-  testWidgets('app shell: sync card, streams, projects placeholder, settings entry', (
+  testWidgets('app shell: org root with offline banner and settings entry', (
     tester,
   ) async {
     // Unroutable port: connection refused immediately and deterministically,
-    // so the card ends in the unreachable state without network.
+    // so the shell ends in the unreachable state without network.
     await tester.pumpWidget(
       const GzeroApp(initialSettings: Settings(hubUrl: 'http://127.0.0.1:1')),
     );
     await tester.pumpAndSettle();
     expect(find.text('gzero'), findsOneWidget);
-    expect(find.byIcon(Icons.refresh), findsOneWidget);
-    expect(find.text('projects'), findsOneWidget);
-    expect(find.text('hub unreachable'), findsOneWidget);
-    expect(find.byIcon(Icons.cloud_off), findsOneWidget);
+    expect(find.textContaining('hub unreachable'), findsOneWidget);
+    expect(find.byIcon(Icons.cloud_off), findsNWidgets(2)); // banner + app bar
+    expect(find.byTooltip('Settings'), findsOneWidget);
+    expect(find.byTooltip('Sync status'), findsOneWidget);
+  });
+
+  testWidgets('sync status sheet opens from the app bar indicator', (tester) async {
+    await tester.pumpWidget(
+      const GzeroApp(initialSettings: Settings(hubUrl: 'http://127.0.0.1:1')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Sync status'));
+    await tester.pumpAndSettle();
+    expect(find.text('hub unreachable'), findsOneWidget); // sheet headline
+    expect(find.byTooltip('Refresh'), findsOneWidget);
   });
 
   testWidgets('settings screen opens, saves, and pops', (tester) async {

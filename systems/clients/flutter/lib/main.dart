@@ -2,9 +2,8 @@
 //
 // One repo, in-tree: this app lives at systems/clients/flutter/ inside the gzero
 // repository and speaks to the same hub the desktop machines do
-// (research/flutter-client.md). v0 surface: sync status card over the
-// system streams; projects list and messaging land as their data planes
-// come online.
+// (research/flutter-client.md). Shell (3d88): organization → project →
+// session drill-down; sync status behind the app bar's indicator.
 
 import 'dart:io';
 
@@ -15,7 +14,7 @@ import 'api/hub_client.dart';
 import 'settings/settings_store.dart';
 import 'state/comms.dart';
 import 'state/sync_controller.dart';
-import 'ui/home_screen.dart';
+import 'ui/org_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -89,7 +88,7 @@ class _GzeroAppState extends State<GzeroApp> {
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF3D5AFE)),
         useMaterial3: true,
       ),
-      home: HomeScreen(
+      home: OrgScreen(
         controller: _controller,
         comms: _comms,
         onSettingsChanged: _load,
