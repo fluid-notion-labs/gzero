@@ -13,12 +13,24 @@
 // rebinds apply; q is a hardcoded extra since plugin-only keys can't be
 // rebindable actions.
 
-import { matchesKey, type Keybinding, type KeyId, type KeybindingsManager } from "@earendil-works/pi-tui";
+import { matchesKey, wrapTextWithAnsi, type Keybinding, type KeyId, type KeybindingsManager } from "@earendil-works/pi-tui";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { PromptEntry } from "./history.ts";
 
 /** How many list lines render at once. */
 const WINDOW = 20;
+/** Hard ceiling on summary lines (more only fits if the list is short). */
+const SUMMARY_MAX = 5;
+/** Overall line budget of the overlay (its maxHeight). */
+const MAX_LINES = 28;
+
+/** The summary block below the prompt list. */
+export type SummaryState =
+  | { status: "idle" } // no transcript to summarize
+  | { status: "pending" } // request in flight, nothing to show yet
+  | { status: "ready"; text: string }
+  | { status: "stale"; text: string } // cached, but refreshing
+  | { status: "error"; text: string };
 
 function id(binding: Keybinding, fallback: KeyId) {
   return (data: string, kb?: KeybindingsManager) => (kb ? kb.matches(data, binding) : matchesKey(data, fallback));
@@ -47,6 +59,7 @@ export class HistoryPanel {
   private readonly theme: Theme;
   private readonly kb: KeybindingsManager | undefined;
   private readonly opts: HistoryPanelOptions;
+  private summary: SummaryState = { status: "idle" };
 
   constructor(
     // chronological, oldest first (as loadHistory now returns)
@@ -61,6 +74,12 @@ export class HistoryPanel {
     this.opts = opts;
     // start on the newest prompt (bottom row, by the editor)
     this.selected = Math.max(0, entries.length - 1);
+  }
+
+  /** Update the summary block (call again when the async request settles,
+   * then requestRender on the tui — the panel doesn't own the tui). */
+  setSummary(state: SummaryState): void {
+    this.summary = state;
   }
 
   invalidate(): void {}
@@ -122,14 +141,8 @@ export class HistoryPanel {
 
     // Border row: `${open}─ ${text} ${dashes}${close}`, sized so the total
     // is always exactly `outer` columns — text yields room to the fill.
-    const edge = (open: string, close: string, text: string): string => {
-      const vis = Math.min(visibleLen(text), outer - 5);
-      const dashes = outer - 5 - vis;
-      return (
-        this.theme.fg("dim", `${open}─ ${clip(text, vis)} `) +
-        this.theme.fg("dim", "─".repeat(dashes) + close)
-      );
-    };
+    const edge = (open: string, close: string, text: string): string =>
+      this.edgeRow(open, close, text, outer);
 
     const lines: string[] = [];
     lines.push(edge("┌", "┐", title));
@@ -143,8 +156,55 @@ export class HistoryPanel {
         lines.push(`│ ${this.theme.bg("userMessageBg", body.padEnd(content))} │`);
       }
     }
+    this.renderSummary(lines, content, outer);
     lines.push(edge("└", "┘", footer));
     return lines;
+  }
+
+  /** Border row sized so the total is always exactly `outer` columns —
+   * text yields room to the dash fill. */
+  private edgeRow(open: string, close: string, text: string, outer: number): string {
+    const vis = Math.min(visibleLen(text), outer - 5);
+    const dashes = outer - 5 - vis;
+    return (
+      this.theme.fg("dim", `${open}─ ${clip(text, vis)} `) +
+      this.theme.fg("dim", "─".repeat(dashes) + close)
+    );
+  }
+
+  /** Append the summary section below the list: a ├─ summary ─┤ rule,
+   * then the wrapped summary text — or a placeholder while the request
+   * is in flight. Fits inside the overlay's line budget: list lines the
+   * scroll window didn't use give the summary extra room. */
+  private renderSummary(lines: string[], content: number, outer: number): void {
+    const shown = lines.length - 1; // rows between the two border lines
+    const budget = Math.max(0, MAX_LINES - 2 - shown - 1); // borders, list, rule
+    const s = this.summary;
+    const rule = this.edgeRow("├", "┤", "summary", outer);
+    if (s.status === "idle") return;
+    if (budget < 1) return;
+    lines.push(rule);
+    if (s.status === "pending" || s.status === "stale") {
+      const text = s.status === "stale" ? s.text : "summarizing…";
+      this.summaryLines(lines, text, content, budget - (s.status === "stale" ? 1 : 0));
+      if (s.status === "stale" && budget >= 2) {
+        lines.push(`│ ${this.theme.fg("dim", " updating…".padEnd(content))} │`);
+      }
+      return;
+    }
+    if (s.status === "error") {
+      lines.push(`│ ${this.theme.fg("warning", truncate(`summary failed: ${s.text}`, content).padEnd(content))} │`);
+      return;
+    }
+    this.summaryLines(lines, s.text, content, budget);
+  }
+
+  /** Word-wrap the summary into gutter-framed rows (up to `max`). */
+  private summaryLines(lines: string[], text: string, content: number, max: number): void {
+    const wrapped = wrapTextWithAnsi(text.trim(), content - 2).slice(0, Math.max(1, max));
+    for (const w of wrapped) {
+      lines.push(`│ ${this.theme.fg("dim", ` ${w}`.padEnd(content))} │`);
+    }
   }
 }
 

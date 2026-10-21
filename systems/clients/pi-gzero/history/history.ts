@@ -17,7 +17,7 @@ export interface PromptEntry {
 }
 
 /** Strip injected blocks and trim; returns "" when nothing user-typed remains. */
-function cleanPrompt(text: string): string {
+export function cleanPrompt(text: string): string {
   let t = text;
   const cut = t.indexOf("<context>");
   if (cut !== -1) t = t.slice(0, cut);
