@@ -236,7 +236,7 @@ export class HistoryPanel {
       const glyph = SPINNER_FRAMES[this.frame % SPINNER_FRAMES.length];
       const label = s.status === "pending" ? "summarizing…" : "updating…";
       rows.push(
-        `│ ${this.theme.fg("accent", ` ${glyph}`)} ${this.theme.fg("text", label.padEnd(content - 3))} │`,
+        `│ ${this.theme.fg("accent", glyph)} ${this.theme.fg("text", label.padEnd(content - 2))} │`,
       );
       if (s.status === "stale" && max >= 2) {
         this.summaryLines(rows, s.text, content, max - 1);
@@ -251,12 +251,13 @@ export class HistoryPanel {
     return rows;
   }
 
-  /** Word-wrap the summary into gutter-framed rows (up to `max`).
-   * Newlines in the summary are preserved — blank lines give paragraphs. */
+  /** Word-wrap the summary into gutter-framed rows (up to `max`),
+   * padded exactly 1 character from the frame wall. Newlines in the
+   * summary are preserved — one line in, one row out. */
   private summaryLines(lines: string[], text: string, content: number, max: number): void {
-    const wrapped = wrapTextWithAnsi(text.trim(), content - 2).slice(0, Math.max(1, max));
+    const wrapped = wrapTextWithAnsi(text.trim(), content - 1).slice(0, Math.max(1, max));
     for (const w of wrapped) {
-      lines.push(`│ ${this.theme.fg("text", ` ${w}`.padEnd(content))} │`);
+      lines.push(`│ ${this.theme.fg("text", w.padEnd(content))} │`);
     }
   }
 }
