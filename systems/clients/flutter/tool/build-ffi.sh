@@ -5,7 +5,7 @@
 #
 #   systems/clients/flutter/tool/build-ffi.sh
 set -e
-root="$(cd "$(dirname "$0")/../../.." && pwd)"
+root="$(cd "$(dirname "$0")/../../../.." && pwd)"
 cd "$root/gzero-ffi"
 
 ndk="${ANDROID_NDK_HOME:-$(ls -d "${ANDROID_HOME:-$HOME/projects/android/Android/Sdk}"/ndk/* 2>/dev/null | tail -1)}"

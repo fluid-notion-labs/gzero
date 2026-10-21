@@ -282,10 +282,8 @@ class _SyncCard extends StatelessWidget {
                   ],
                 ),
               ),
-              for (final s in c.statuses)
-                if (s.name == 'context' || s.name == 'comms')
-                  if ((s.name == 'context' ? c.contextDoc : c.commsDoc)?.statusLine
-                      case final line?)
+              if ((s.name == 'context' ? c.contextDoc : c.commsDoc)?.statusLine
+                  case final line?)
                     Padding(
                       padding: const EdgeInsets.only(left: 26, bottom: 4),
                       child: Text(

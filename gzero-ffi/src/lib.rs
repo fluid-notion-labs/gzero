@@ -606,6 +606,21 @@ pub unsafe extern "C" fn gz_buf_free(ptr: *mut u8, len: usize) {
     }
 }
 
+/// Test-only JSON dump of a saved doc (used by diagnostics).
+#[cfg(any(test, feature = "diagnostics"))]
+pub fn gz_doc_open_test(bytes: &[u8]) -> String {
+    let doc = AutoCommit::load(bytes).expect("valid doc");
+    obj_to_json(&doc, &ROOT, ObjType::Map).to_string()
+}
+
+/// Test-only: (change count, head count) of a saved doc.
+#[cfg(feature = "diagnostics")]
+pub fn gz_doc_changes_test(bytes: &[u8]) -> (usize, usize) {
+    let mut doc = AutoCommit::load(bytes).expect("valid doc");
+    let count = doc.get_changes(&[]).len();
+    (count, doc.get_heads().len())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
