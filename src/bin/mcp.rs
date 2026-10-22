@@ -54,6 +54,10 @@ const DEFAULT_NODE: &str = "notes";
 /// concurrent CLI writers (same-file whole-save LWW).
 struct App {
     comms: CommsHandle,
+    /// The agent's cross-repo inbox (3472 step 1): a second comms doc
+    /// synced under `inbox-<handle>`. Absent when comms is in legacy
+    /// mode or the inbox failed to open — never fatal.
+    inbox: Option<gzero::comms::CommsStore>,
     atoms: Box<dyn Fn() -> Result<Atoms, String> + Send>,
 }
 
@@ -98,8 +102,20 @@ fn open_comms() -> CommsHandle {
 
 impl App {
     fn new() -> App {
+        let inbox = if legacy_db() {
+            None
+        } else {
+            match gzero::comms::CommsStore::open_inbox() {
+                Ok(s) => Some(s),
+                Err(e) => {
+                    eprintln!("gzero-mcp: inbox unavailable ({e}); cross-repo mail disabled");
+                    None
+                }
+            }
+        };
         App {
             comms: open_comms(),
+            inbox,
             atoms: Box::new(Atoms::open),
         }
     }
@@ -123,6 +139,12 @@ fn presence_tick(app: &mut App) {
     let layer = app.comms.layer();
     let _ = layer.heartbeat(&beat);
     let _ = layer.sweep();
+    // The inbox rides the same 60s tick (3472): mail sent while the
+    // session is alive shows up within a minute, not at next restart.
+    if let Some(inbox) = app.inbox.as_mut() {
+        use gzero::comms::CommsLayer as _;
+        let _ = inbox.sync();
+    }
 }
 
 fn main() {
@@ -245,6 +267,14 @@ fn startup(app: &mut App) {
         }
         eprintln!("gzero-mcp: startup comms.sync: {}ms", t.elapsed().as_millis());
         let t = std::time::Instant::now();
+        // The inbox rides the same sync moment (3472): pull mail that
+        // accumulated while no session was running.
+        if let Some(inbox) = app.inbox.as_mut() {
+            use gzero::comms::CommsLayer as _;
+            if let Err(e) = inbox.sync() {
+                eprintln!("gzero-mcp: inbox sync failed: {e}");
+            }
+        }
         if let Err(e) = atoms.write(|s| {
             gzero::reconcile_seeds(s)
                 .map(|_| ())
@@ -420,7 +450,7 @@ fn call_tool(params: &serde_json::Value, app: &mut App) -> Result<serde_json::Va
         "resolve" | "search" | "tags" | "teams" => {
             let mut atoms = app.open_atoms()?;
             match name {
-                "resolve" => tool_resolve(&args, atoms.storage(), &mut *app.comms.layer())?,
+                "resolve" => tool_resolve(&args, atoms.storage(), &mut *app.comms.layer(), &mut app.inbox)?,
                 "search" => tool_search(&args, atoms.storage())?,
                 "teams" => gzero::teams::render(
                     &gzero::teams::list_teams(atoms.storage()).map_err(|e| e.to_string())?
@@ -453,7 +483,7 @@ fn call_tool(params: &serde_json::Value, app: &mut App) -> Result<serde_json::Va
         }
         "msg_send" | "msg_read" | "broadcast" => match name {
             "msg_send" => tool_msg_send(&args, &mut *app.comms.layer())?,
-            "msg_read" => tool_msg_read(&mut *app.comms.layer())?,
+            "msg_read" => tool_msg_read(&mut *app.comms.layer(), &mut app.inbox)?,
             _ => tool_broadcast(&args, &mut *app.comms.layer())?,
         },
         "item_add" | "item_list" | "item_ready" | "item_get" | "item_edit" | "item_note"
@@ -523,6 +553,7 @@ fn tool_resolve(
     args: &serde_json::Value,
     store: &mut dyn Storage,
     comms: &mut dyn gzero::comms::CommsLayer,
+    inbox: &mut Option<gzero::comms::CommsStore>,
 ) -> Result<String, String> {
     // Browse mode: a scope_prefix (even empty) bypasses tier defaults and
     // returns every atom whose scope starts with it — for inspection UIs.
@@ -543,7 +574,7 @@ fn tool_resolve(
     // Conversation layer (S3/S3b): unread messages for this session;
     // unseen broadcasts delivered and drained. Ephemeral sweeps ride
     // on the same piggyback.
-    if let Some(block) = comms_block(comms) {
+    if let Some(block) = comms_block(comms, inbox) {
         out.push_str(&block);
     }
     // Handoff slot (S2): the newest open handoff in this scope, unless
@@ -562,11 +593,15 @@ fn tool_resolve(
 /// Messages show until read via msg_read; broadcasts drain on this
 /// delivery (per-session seen state). Also sweeps expired rows. Best-
 /// effort: failures never break resolve.
-fn comms_block(store: &mut dyn gzero::comms::CommsLayer) -> Option<String> {
+fn comms_block(
+    store: &mut dyn gzero::comms::CommsLayer,
+    inbox: &mut Option<gzero::comms::CommsStore>,
+) -> Option<String> {
     let (me, _) = gzero::sessions::session_identity();
     let unread = store.unread_messages(&me).ok()?;
     let broadcasts = store.unseen_broadcasts(&me).ok()?;
-    if unread.is_empty() && broadcasts.is_empty() {
+    let mail = gzero::comms::inbox_unread(inbox);
+    if unread.is_empty() && broadcasts.is_empty() && mail.is_empty() {
         return None;
     }
     let mut out = String::new();
@@ -579,6 +614,19 @@ fn comms_block(store: &mut dyn gzero::comms::CommsLayer) -> Option<String> {
             out.push_str(&format!("- from `{}`: {}\n", m.sender, m.text));
         }
         out.push_str("- msg_read drains these; reply with msg_send {to, text}\n");
+    }
+    if !mail.is_empty() {
+        out.push_str(&format!(
+            "\n\n## cross-repo mail\n{} in your inbox — each one is a session message:\n",
+            mail.len()
+        ));
+        for m in mail.iter().take(5) {
+            out.push_str(&format!(
+                "<session-message from='{}'>{}</session-message>\n",
+                m.sender, m.text
+            ));
+        }
+        out.push_str("- msg_read drains these too; msg_send {@handle, text} replies across repos\n");
     }
     if !broadcasts.is_empty() {
         out.push_str(&format!(
@@ -625,13 +673,14 @@ fn current_beat() -> Option<gzero::sessions::SessionInfo> {
         .map(|p| p.display().to_string())
         .unwrap_or_default();
     let workspace = gzero::sessions::current_workspace();
+    let label = gzero::sessions::session_label(&session_id);
     Some(gzero::sessions::SessionInfo {
         session_id,
         machine,
         scope: project,
         cwd,
         pid: std::process::id() as i64,
-        label: String::new(),
+        label,
         workspace,
         started_at: 0, // ignored by the upsert on conflict
         last_seen: gzero::sessions::now(),
@@ -667,9 +716,14 @@ fn presence_block(store: &mut dyn gzero::comms::CommsLayer) -> Option<String> {
         if peers.len() == 1 { "" } else { "s" }
     );
     for p in peers.iter().take(5) {
+        let name = if p.label.is_empty() {
+            p.session_id[..p.session_id.len().min(8)].to_string()
+        } else {
+            format!("{} ({})", p.label, &p.session_id[..p.session_id.len().min(8)])
+        };
         out.push_str(&format!(
-            "- `{}` — {} on {}, last seen {} ago\n",
-            &p.session_id[..p.session_id.len().min(8)],
+            "- {} — {} on {}, last seen {} ago\n",
+            name,
             p.cwd,
             p.machine,
             ago(p.last_seen)
@@ -1203,6 +1257,15 @@ fn tool_msg_send(
         .map(str::trim)
         .filter(|t| !t.is_empty())
         .ok_or("msg_send: text is required")?;
+    // Cross-repo addressing: '@handle' routes to the recipient's agent
+    // inbox stream — the handle is identity, the repo is not the route.
+    if let Some(handle) = to.strip_prefix('@').filter(|h| !h.is_empty()) {
+        let m = gzero::comms::send_to_inbox(handle, text).map_err(|e| e.to_string())?;
+        return Ok(format!(
+            "message {} delivered to @{handle}'s inbox — their next sync picks it up; expires in 7 days",
+            m.id
+        ));
+    }
     let (me, _) = gzero::sessions::session_identity();
     let m = store
         .send_message(to, &me, text)
@@ -1215,17 +1278,37 @@ fn tool_msg_send(
 
 /// msg_read (S3): drain this session's unread messages (marks them
 /// read).
-fn tool_msg_read(store: &mut dyn gzero::comms::CommsLayer) -> Result<String, String> {
+fn tool_msg_read(
+    store: &mut dyn gzero::comms::CommsLayer,
+    inbox: &mut Option<gzero::comms::CommsStore>,
+) -> Result<String, String> {
+    // Pull before checking: mail sent moments ago should be visible
+    // immediately, not at the next tick.
+    if let Some(inbox) = inbox.as_mut() {
+        use gzero::comms::CommsLayer as _;
+        let _ = inbox.sync();
+    }
     let (me, _) = gzero::sessions::session_identity();
     let unread = store.unread_messages(&me).map_err(|e| e.to_string())?;
-    if unread.is_empty() {
+    let mail = gzero::comms::inbox_unread(inbox);
+    if unread.is_empty() && mail.is_empty() {
         return Ok("no unread messages".to_string());
     }
-    let mut out = format!("{} unread message(s):\n", unread.len());
-    for m in unread.iter().take(10) {
-        out.push_str(&format!("- [{}] from `{}`: {}\n", m.id, m.sender, m.text));
+    let mut out = String::new();
+    if !unread.is_empty() {
+        out.push_str(&format!("{} unread message(s):\n", unread.len()));
+        for m in unread.iter().take(10) {
+            out.push_str(&format!("- [{}] from `{}`: {}\n", m.id, m.sender, m.text));
+        }
+        store.mark_messages_read(&me).map_err(|e| e.to_string())?;
     }
-    store.mark_messages_read(&me).map_err(|e| e.to_string())?;
+    if !mail.is_empty() {
+        out.push_str(&format!("\n{} in your cross-repo inbox:\n", mail.len()));
+        for m in mail.iter().take(10) {
+            out.push_str(&format!("- [{}] from `{}` (cross-repo): {}\n", m.id, m.sender, m.text));
+        }
+        gzero::comms::inbox_mark_read(inbox);
+    }
     out.push_str("marked read; reply with msg_send {to, text}");
     Ok(out)
 }
@@ -1921,11 +2004,11 @@ const TOOLS: &str = r#"[
   },
   {
     "name": "msg_send",
-    "description": "Send a short message to another session in this repo (S3): conversation, not memory — ephemeral, expires in 7 days, never stored in the durable store. 'to' is the recipient session id (see the 'also here' presence block for who is active; sibling sessions show their session id). Their next resolve shows it; msg_read drains.",
+    "description": "Send a short message (S3): conversation, not memory — ephemeral, expires in 7 days, never stored in the durable store. Intra-repo: 'to' is the recipient session id (see the 'also here' presence block; sibling sessions show their session id); their next resolve shows it. Cross-repo: 'to' is '@handle' — routes to that agent's inbox by durable handle, delivered on their next sync; msg_read drains.",
     "inputSchema": {
       "type": "object",
       "properties": {
-        "to": { "type": "string", "description": "Recipient session id." },
+        "to": { "type": "string", "description": "Recipient session id, or '@handle' for cross-repo delivery to an agent inbox." },
         "text": { "type": "string", "description": "The message. Keep it conversational and short." }
       },
       "required": ["to", "text"]
@@ -2060,6 +2143,7 @@ mod tests {
         ));
         App {
             comms: CommsHandle::Legacy(SqliteStore::in_memory().unwrap()),
+            inbox: None,
             atoms: Box::new(move || {
                 let store = AutomergeStore::open(Some(&path)).unwrap();
                 Ok(Atoms::Doc(Box::new(store)))
@@ -2090,6 +2174,7 @@ mod tests {
         let path = std::env::temp_dir().join(format!("gzero-mcp-legacy-{}.db", std::process::id()));
         App {
             comms: CommsHandle::Legacy(SqliteStore::in_memory().unwrap()),
+            inbox: None,
             atoms: Box::new(move || {
                 let store = SqliteStore::open(path.to_str().unwrap()).map_err(|e| e.to_string())?;
                 Ok(Atoms::Legacy(store))

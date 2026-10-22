@@ -37,7 +37,7 @@ use automerge::{ObjId, ObjType, ReadDoc, ROOT, Value};
 use crate::automerge_store::AutomergeStore;
 use crate::stream_sync::{self, StreamSync, SyncCursor};
 use crate::messages::{Broadcast, Message, MESSAGE_TTL_SECS};
-use crate::sessions::{SessionInfo, PRESENCE_TTL_SECS};
+use crate::sessions::{session_label, SessionInfo, PRESENCE_TTL_SECS};
 use crate::{items::fresh_id, Result};
 
 /// How much dead weight a comms stream accumulates before a replica rolls
@@ -65,6 +65,45 @@ pub fn comms_stream() -> String {
         .ok()
         .filter(|b| !b.is_empty())
         .unwrap_or_else(|| COMMS_STREAM.to_string())
+}
+
+/// Handle-addressed delivery (cross-repo): build a one-message doc and
+/// push it to the recipient's inbox stream. The stream, not the repo,
+/// is the address — works across repositories with no new hub code.
+/// The sender is attributed handle@label — who sent it and from which
+/// session — so the recipient's context can inject it as a
+/// `<session-message from='…'>` without further lookup.
+pub fn send_to_inbox(to_handle: &str, text: &str) -> Result<Message> {
+    let (session_id, _) = crate::sessions::session_identity();
+    let from = format!("{}@{}", agent_handle(), session_label(&session_id));
+    let mut doc = CommsStore::in_memory()?;
+    let m = doc.send_message(to_handle, &from, text)?;
+    let Some(hub) = StreamSync::from_env(&inbox_bag(to_handle)) else {
+        return Err("inbox send: no hub configured".into());
+    };
+    let mut cursor = SyncCursor::default();
+    hub.push(&mut doc.store, &mut cursor)?;
+    Ok(m)
+}
+
+/// An inbox store's unread messages for this machine's handle, with a
+/// safe no-op when the inbox isn't open.
+pub fn inbox_unread(inbox: &mut Option<CommsStore>) -> Vec<Message> {
+    match inbox {
+        Some(s) => {
+            let handle = agent_handle();
+            s.unread_messages(&handle).unwrap_or_default()
+        }
+        None => Vec::new(),
+    }
+}
+
+/// Drain the inbox: mark the handle's messages read.
+pub fn inbox_mark_read(inbox: &mut Option<CommsStore>) {
+    if let Some(s) = inbox {
+        let handle = agent_handle();
+        let _ = s.mark_messages_read(&handle);
+    }
 }
 
 pub fn now() -> i64 {
@@ -105,19 +144,123 @@ pub fn comms_db_path() -> PathBuf {
     Path::new(&home).join(".pi/agent/comms.ws")
 }
 
+/// The machine's inbox doc (`CX_INBOX_DB` overrides).
+pub fn inbox_db_path() -> PathBuf {
+    if let Ok(p) = std::env::var("CX_INBOX_DB") {
+        if !p.is_empty() {
+            return PathBuf::from(p);
+        }
+    }
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+    Path::new(&home).join(".pi/agent/inbox.ws")
+}
+
+/// The inbox stream for an agent handle.
+pub fn inbox_bag(handle: &str) -> String {
+    format!("inbox-{}", handle)
+}
+
+/// This machine's durable agent handle: the cross-repo address other
+/// agents send to. `CX_AGENT_HANDLE` overrides; otherwise persisted in
+/// `~/.pi/agent/agent.id`, derived once from hostname + a random
+/// suffix. Short and human-mentionable on purpose.
+pub fn agent_handle() -> String {
+    if let Ok(h) = std::env::var("CX_AGENT_HANDLE") {
+        if !h.is_empty() {
+            return h;
+        }
+    }
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+    let path = Path::new(&home).join(".pi/agent/agent.id");
+    if let Ok(existing) = std::fs::read_to_string(&path) {
+        let h = existing.trim().to_string();
+        if !h.is_empty() {
+            return h;
+        }
+    }
+    let host = std::env::var("CX_MACHINE_ID")
+        .ok()
+        .filter(|m| !m.is_empty())
+        .map(|m| m.split('-').next().unwrap_or(&m).to_string())
+        .or_else(|| {
+            std::fs::read_to_string("/etc/hostname")
+                .ok()
+                .map(|h| h.trim().to_lowercase())
+                .filter(|h| !h.is_empty())
+        })
+        .unwrap_or_else(|| "agent".to_string());
+    let host = host
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '-' })
+        .collect::<String>()
+        .trim_matches('-')
+        .to_string();
+    let suffix: String = (0..4)
+        .map(|_| format!("{:x}", rand_suffix_byte()))
+        .collect();
+    let handle = format!("{}-{}", if host.is_empty() { "agent" } else { &host }, suffix);
+    let _ = std::fs::create_dir_all(path.parent().unwrap_or(Path::new(".")));
+    let _ = std::fs::write(&path, &handle);
+    handle
+}
+
+fn rand_suffix_byte() -> u32 {
+    // No external rand crate here; read a byte of OS entropy.
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static STATE: AtomicU64 = AtomicU64::new(0);
+    let mut s = STATE.load(Ordering::Relaxed);
+    if s == 0 {
+        s = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.subsec_nanos() as u64 ^ (d.as_secs() << 20))
+            .unwrap_or(0x9e3779b97f4a7c15)
+            | 1;
+    }
+    s ^= s << 13;
+    s ^= s >> 7;
+    s ^= s << 17;
+    STATE.store(s, Ordering::Relaxed);
+    (s & 0xf) as u32
+}
+
 /// The automerge comms store: one doc per machine, merged through the
 /// hub's change log (stream `comms`).
 pub struct CommsStore {
     pub(crate) store: AutomergeStore,
     sidecar: Option<PathBuf>,
+    /// Which hub stream this store syncs under; None = the default
+    /// comms bag. The inbox doc uses `inbox-<handle>`.
+    bag: Option<String>,
 }
 
 impl CommsStore {
     /// Open (or create) the comms doc. `None` = in-memory (tests).
     pub fn open(path: Option<&Path>) -> Result<Self> {
+        Self::open_in_bag(path, &comms_stream())
+    }
+
+    /// Open a store synced under an explicit stream (e.g. an inbox).
+    pub fn open_in_bag(path: Option<&Path>, bag: &str) -> Result<Self> {
         let store = AutomergeStore::open(path)?;
         let sidecar = path.map(stream_sync::sidecar_path);
-        Ok(Self { store, sidecar })
+        Ok(Self {
+            store,
+            sidecar,
+            bag: Some(bag.to_string()),
+        })
+    }
+
+    fn bag(&self) -> String {
+        self.bag
+            .clone()
+            .unwrap_or_else(comms_stream)
+    }
+
+    /// Open this machine's inbox: a second doc synced under
+    /// `inbox-<handle>`, addressed by the durable agent handle.
+    pub fn open_inbox() -> Result<Self> {
+        let handle = agent_handle();
+        Self::open_in_bag(Some(&inbox_db_path()), &inbox_bag(&handle))
     }
 
     pub fn in_memory() -> Result<Self> {
@@ -403,12 +546,13 @@ impl CommsStore {
         // environment has credentials (this actually truncated the
         // production comms log once).
         if self.sidecar.is_some() {
-            if let Some(hub) = StreamSync::from_env(&comms_stream()) {
+            let bag = self.bag();
+            if let Some(hub) = StreamSync::from_env(&bag) {
                 let sidecar = self.sidecar.as_ref().unwrap();
-                let mut cursor = SyncCursor::load(sidecar, &comms_stream())?;
+                let mut cursor = SyncCursor::load(sidecar, &bag)?;
                 cursor.pushed_heads = Vec::new();
                 let pushed = hub.push(&mut self.store, &mut cursor)?;
-                cursor.save(sidecar, &comms_stream())?;
+                cursor.save(sidecar, &bag)?;
                 if pushed > 0 {
                     if let Ok(head) = hub.head_seq() {
                         let before = head.saturating_sub(pushed as u64);
@@ -650,10 +794,11 @@ impl CommsLayer for CommsStore {
         let Some(path) = self.store.path().map(|p| p.to_path_buf()) else {
             return Ok((0, 0));
         };
-        let Some(hub) = StreamSync::from_env(&comms_stream()) else {
+        let bag = self.bag();
+        let Some(hub) = StreamSync::from_env(&bag) else {
             return Ok((0, 0));
         };
-        stream_sync::sync_store(&mut self.store, &hub, &stream_sync::sidecar_path(&path), &comms_stream())
+        stream_sync::sync_store(&mut self.store, &hub, &stream_sync::sidecar_path(&path), &bag)
             .map_err(|e| e.into())
     }
 }
@@ -869,5 +1014,44 @@ mod tests {
         assert_eq!(live, vec!["keep me".to_string()]);
         // Presence survives the roll.
         assert_eq!(s.all_sessions().unwrap().len(), 1);
+    }
+
+    /// 3472 step 1: handle-addressed inboxes. The hub push/pull is
+    /// simulated with the exact primitives it uses — changes_for +
+    /// apply_changes. Sender addresses a handle; the recipient's inbox
+    /// doc (opened under the inbox bag) sees it; drain marks read.
+    #[test]
+    fn inbox_handoff_across_repos() {
+        let mut inbox = CommsStore::open_in_bag(None, &inbox_bag("alder")).unwrap();
+        assert!(inbox.unread_messages("alder").unwrap().is_empty());
+
+        // Sender: a one-message doc addressed to the handle.
+        let mut outgoing = CommsStore::in_memory().unwrap();
+        outgoing
+            .send_message("alder", "other-agent", "gnite from across the repos")
+            .unwrap();
+        let shipped = outgoing.store.changes_for(&[]);
+
+        // Delivery: the recipient's inbox doc applies the shipped changes.
+        inbox.store.apply_changes(shipped).unwrap();
+
+        let unread = inbox.unread_messages("alder").unwrap();
+        assert_eq!(unread.len(), 1);
+        assert_eq!(unread[0].sender, "other-agent");
+        assert_eq!(unread[0].text, "gnite from across the repos");
+
+        // Drain marks read; a second read is empty.
+        inbox.mark_messages_read("alder").unwrap();
+        assert!(inbox.unread_messages("alder").unwrap().is_empty());
+    }
+
+    /// The handle is durable identity, not machine: CX_AGENT_HANDLE
+    /// overrides, and the inbox stream derives from it.
+    #[test]
+    fn agent_handle_is_stable_identity() {
+        std::env::set_var("CX_AGENT_HANDLE", "test-handle-xyz");
+        assert_eq!(agent_handle(), "test-handle-xyz");
+        assert_eq!(inbox_bag("test-handle-xyz"), "inbox-test-handle-xyz");
+        std::env::remove_var("CX_AGENT_HANDLE");
     }
 }

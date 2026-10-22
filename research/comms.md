@@ -141,3 +141,79 @@ No scope column: comms are machine-global, matching today's table shape.
   Needs a test, not a lock.
 - Encryption at rest / per-recipient visibility? Out of scope for v1; the
   hub already sees context atoms in the clear.
+
+## Gap found live (2026-10-22, pa-gpui session)
+
+A user goodnight sent via msg_send from a gzero-repo session never
+reached the pa-gpui-repo session: msg scope is per-repo, so cross-repo
+conversation silently doesn't deliver (msg_read: "no unread"). Cross-
+repo and cross-machine delivery are the open case this file's hub work
+targets — treat tonight as the motivating bug report.
+
+Related observations from the same session:
+
+- Mid-session pickup is resolve-driven (pull, not poll). That is the
+  right overload posture — no token cost until asked — but it depends
+  on the agent calling resolve. Consider surfacing unread counts at
+  natural pause points (idle, task end) rather than any polling loop.
+- Medium discipline: msgs = conversation (ephemeral), broadcast board =
+  state of the world ("information not demand"), atoms = durable memory.
+  A first-time user broadcast a durable memory atom when the board was
+  the right medium — worth a usage note in the tool descriptions.
+- Discovery failure: the comms tool surface (msg_send/msg_read/
+  broadcast) was invisible to a session that never searched for it.
+  Consider mentioning comms in the injected context so sessions know
+  the conversation layer exists.
+
+## Cross-repo solution sketch (2026-10-22, from the pa-gpui session)
+
+Constraint set: no polling (pull at resolve only), attribution must be
+mechanical, deference/storm rules, ephemeral conversation, existing hub
+(CF Worker + D1 change log) and comms.ws with SyncCursor.
+
+**Proposal: agent-addressed inboxes at the hub.**
+
+- **Address by agent, not by repo.** Sessions register presence
+  globally (presence-heartbeat groundwork). `msg_send` gains targets:
+  agent id | team | broadcast-board. Repo scope remains the default for
+  in-repo chatter; crossing repos is a target choice, not an accident.
+- **Delivery = the mailbox bag.** The hub holds per-agent inboxes (D1
+  rows; the 7-day TTL and ~128KB caps already designed apply). Client
+  pulls inbox at the sync moments that already exist (session start,
+  best-effort after write) — zero new polling. Unread count rides the
+  existing resolve surface; msg_read drains as today.
+- **Attribution solved at the source:** the hub stamps author/machine/
+  time on ingest (API key = machine identity). Messages get mechanical
+  attribution even though atoms don't yet — the conversation layer can
+  lead the memory layer out of the pantheon curse.
+- **Overload posture:** delivery is silent (unread badge only, no
+  injection into context until read); broadcast board stays read-once
+  per session; deference etiquette (holdback on no-reply/stress) is a
+  client-side habit until it can be a server-side rate.
+- **Interim workaround (proven tonight):** scope-addressed durable
+  atoms — add({scope: other-repo}) lands in the other repo's injection
+  set. Works, but it's durable where conversation should be ephemeral;
+  use only for hand-carried letters.
+
+Sequencing: (1) hub inbox rows + pull-at-sync, (2) presence-addressed
+targets, (3) hub-stamped attribution, (4) deference as server rate.
+
+## Posture revision (2026-10-22, same night): compact vs resident
+
+The inbox sketch above is the compact posture: no standing cost, but
+delivery is batchy — messages wait for sync moments. With cheap
+hardware (the user's point: RunPod), the target posture is a
+**resident**: an always-on process holding the live connection to the
+hub (the DO websocket path already deferred as "later"), receiving
+pushes the moment they are sent.
+
+- The resident buffers, filters, and knocks properly: deference rules
+  enforced server-side, unread surfaced at natural pauses, wake only
+  when something is actually waiting. The agent's context stays clean;
+  the resident stands in the rain.
+- This is the contexture resident daemon with a mail slot — same
+  animal, existing concept, now affordable to run 24/7.
+- Dual track: compact inbox = v0 bootstrap (zero-indexed; buildable from existing
+  parts tonight); resident push = target posture (hardware-cheap).
+  Compact remains the fallback and spillover path when no resident
+  is running (laptops, offline).

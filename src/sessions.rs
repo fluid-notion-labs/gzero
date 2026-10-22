@@ -90,6 +90,20 @@ fn run_str(args: &[&str]) -> Option<String> {
         })
 }
 
+/// The session's display name: CX_SESSION_LABEL (a chosen moniker)
+/// wins; otherwise a deterministic human name derived from the session
+/// id — same session, same name, forever. This is the default session
+/// identity shown in presence and used in cross-repo addressing.
+pub fn session_label(session_id: &str) -> String {
+    if let Ok(l) = std::env::var("CX_SESSION_LABEL") {
+        if !l.is_empty() {
+            return l;
+        }
+    }
+    let digest = md5::compute(session_id.as_bytes());
+    human_hash::humanize(&uuid::Uuid::from_bytes(digest.0), 2)
+}
+
 /// Session + machine identity from the environment. The pi plugin sets
 /// CX_SESSION_ID (one UUID per session) and CX_MACHINE_ID (stable
 /// machine-UUID file); CLI callers fall back to pid / hostname.
