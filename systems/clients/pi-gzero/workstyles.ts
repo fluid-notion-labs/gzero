@@ -9,7 +9,6 @@
 // `workstyle.key` entries; enter inserts the code at the cursor.
 
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
-import { Key } from "@earendil-works/pi-tui";
 import {
   Input,
   SelectList,
@@ -262,10 +261,8 @@ export function registerWorkstyles(
     }
     await openPicker(ctx, cxMcp, deps.mcpCall);
   };
-  pi.registerShortcut(Key.ctrl("space"), {
-    description: "Insert a workstyle directive (##workstyle.key)",
-    handler: open,
-  });
+  // Retired (for now): workstyles no longer claims ctrl-space — it's the
+  // find palette's key (semantic search). /workstyle still opens the picker.
   pi.registerCommand("workstyle", {
     description: "Insert a workstyle directive (##workstyle.key) — search, pick",
     handler: async (_args, ctx) => open(ctx),
