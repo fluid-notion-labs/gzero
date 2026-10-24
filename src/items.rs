@@ -1096,29 +1096,63 @@ fn created_millis() -> i64 {
         .unwrap_or(0)
 }
 
-/// Short random hex id: starts at 4 chars, widens on collision. Items
-/// are named, so ids only need to be unique within a scope.
+/// Descriptive id built from the human-hash crate (embedded, not a
+/// CLI): `<human-hash words>.<branch name>`, e.g.
+/// `august-yankee-lima-coffee.human-hash-ids`. Unique because the words
+/// are hashed from time + pid + salt and remapped on collision (word
+/// count widens when a scope is crowded); descriptive because every id
+/// names the branch it was created on. Items are named, so ids only
+/// need to be unique within a scope.
 pub fn fresh_id(existing: &HashSet<String>) -> String {
-    for len in [4usize, 6, 8, 12] {
+    let branch = branch_suffix();
+    for words in [4usize, 6, 8] {
         for salt in 0..64u64 {
-            let id = hashed_hex(len, salt);
+            let id = hashed_words(words, salt, &branch);
             if !existing.contains(&id) {
                 return id;
             }
         }
     }
-    hashed_hex(16, u64::MAX)
+    hashed_words(12, u64::MAX, &branch)
 }
 
-fn hashed_hex(len: usize, salt: u64) -> String {
-    let mut h = std::collections::hash_map::DefaultHasher::new();
+fn hashed_words(words: usize, salt: u64, branch: &str) -> String {
+    use std::collections::hash_map::DefaultHasher;
     use std::time::{SystemTime, UNIX_EPOCH};
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_nanos() as u64)
         .unwrap_or(0);
-    (nanos, salt, std::process::id()).hash(&mut h);
-    format!("{:016x}", h.finish())[..len].to_string()
+    let mut hi = DefaultHasher::new();
+    (nanos, salt, std::process::id()).hash(&mut hi);
+    let mut lo = DefaultHasher::new();
+    (salt, std::process::id(), nanos).hash(&mut lo);
+    // 128-bit seed: hi/lo differ only by argument order, which is enough
+    // to decorrelate them for salt == 0.
+    let uuid = uuid::Uuid::from_u128((hi.finish() as u128) << 64 | lo.finish() as u128);
+    format!("{}.{}", human_hash::humanize(&uuid, words), branch)
+}
+
+/// Branch name for id suffixes: the current jj workspace name (the
+/// feature branch, "default" at the repo root), sanitized to
+/// [a-z0-9-] so it stays a valid id component.
+fn branch_suffix() -> String {
+    let sanitized: String = crate::sessions::current_workspace()
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    let trimmed = sanitized.trim_matches('-').to_string();
+    if trimmed.is_empty() {
+        "unknown".to_string()
+    } else {
+        trimmed
+    }
 }
 
 #[cfg(test)]
@@ -1133,12 +1167,40 @@ mod tests {
         }
     }
 
+    /// `<human-hash words>.<branch>`: lowercase words separated by
+    /// hyphens, then a dot, then the sanitized branch name.
+    fn is_human_hash_id(id: &str) -> bool {
+        let (words, branch) = match id.split_once('.') {
+            Some(parts) => parts,
+            None => return false,
+        };
+        !words.is_empty()
+            && words
+                .split('-')
+                .all(|w| !w.is_empty() && w.chars().all(|c| c.is_ascii_lowercase()))
+            && !branch.is_empty()
+            && branch
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    }
+
+    #[test]
+    fn ids_are_human_hash_plus_branch() {
+        let mut s = AutomergeStore::in_memory().unwrap();
+        let a = s.item_add("sc", new("shape")).unwrap();
+        let n = s.item_note("sc", &a.id, "note id too").unwrap();
+        assert!(is_human_hash_id(&a.id), "item id: {}", a.id);
+        assert!(is_human_hash_id(&n), "note id: {}", n);
+        // Both ids share the same branch suffix.
+        assert_eq!(a.id.split_once('.').unwrap().1, n.split_once('.').unwrap().1);
+    }
+
     #[test]
     fn add_get_list_delete() {
         let mut s = AutomergeStore::in_memory().unwrap();
         let a = s.item_add("sc", new("first")).unwrap();
         assert_eq!(a.status, Status::Open);
-        assert_eq!(a.id.len(), 4);
+        assert!(is_human_hash_id(&a.id), "not a human-hash id: {}", a.id);
         let b = s.item_add("sc", new("second")).unwrap();
         assert_ne!(a.id, b.id);
         assert_eq!(s.item_list("sc").unwrap().len(), 2);
