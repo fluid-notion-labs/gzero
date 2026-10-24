@@ -37,6 +37,15 @@ cp "$src"/*.ts "$src/package.json" "$src/README.md" "$dest/"
 rm -rf "$dest/router" "$dest/history"
 cp -R "$src/router" "$src/history" "$dest/"
 
+# Runtime deps beyond the host-provided @earendil-/* set (the recall
+# engine: LanceDB, fastembed, arrow) need a node_modules tree here —
+# the source tree's own node_modules is not copied.
+if [ -f "$src/package.json" ] && grep -q '"dependencies"' "$src/package.json"; then
+  ( cd "$dest" && npm install --omit=dev --no-audit --no-fund >/dev/null 2>&1 \
+    && echo "deps installed in snapshot" ) \
+    || echo "WARNING: npm install failed in $dest — recall falls back to lexical-only"
+fi
+
 echo "blessed $src"
 echo "      -> $dest (snapshot: $(git -C "$root" log -1 --format=%h 2>/dev/null || echo '?'))"
 echo "plain pi runs this copy; re-bless after merging to main"

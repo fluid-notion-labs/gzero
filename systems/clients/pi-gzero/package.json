@@ -5,5 +5,10 @@
   "type": "module",
   "scripts": {
     "test": "node --test --test-timeout=5000 --import ./tests/deps.mjs tests/*.test.ts"
+  },
+  "dependencies": {
+    "@lancedb/lancedb": "^0.40.0",
+    "apache-arrow": "^18.1.0",
+    "fastembed": "^3.0.0"
   }
 }

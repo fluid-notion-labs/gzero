@@ -48,6 +48,15 @@ import {
   type RouterSnapshotLike,
 } from "./gzero-panel.ts";
 import { ItemsPaneController, setItemsProvider } from "./items-pane.ts";
+import {
+  collectEntries,
+  parseQuery as parseQueryText,
+  rank as recallRank,
+  RecallIndex,
+  type RecallEntry,
+  type ScoredEntry,
+} from "./recall.ts";
+import { Palette } from "./palette.ts";
 import { messageText, registerReview, type ReviewDeps } from "./review.ts";
 import routerSetup from "./router/index.ts";
 import { loadHistory, type PromptEntry } from "./history/history.ts";
@@ -846,6 +855,142 @@ export default function (pi: ExtensionAPI) {
       );
     },
   });
+
+  // ---- the find palette (ctrl+space / /find) ----
+  // One overlay searching everything: items, docs, atoms, branches,
+  // commits, skills (docs.palette plan). LanceDB sidecar at
+  // ~/.pi/agent/recall.lance with local fastembed vectors; lexical
+  // ranking over fresh data until the index is warm, so the palette is
+  // instant even on first ever run (model download included).
+  const recallIndex = new RecallIndex();
+  let recallFallback: RecallEntry[] = [];
+  let recallReady = false;
+  let recallRefreshing: Promise<void> | null = null;
+
+  const refreshRecall = async (): Promise<void> => {
+    const cxMcp = await findGzeroMcp();
+    const [atomsRes, itemsRes, docsRes] = await Promise.allSettled([
+      cxMcp ? mcpCall(cxMcp, "resolve", { scope_prefix: "" }) : Promise.resolve(""),
+      cxMcp ? fetchItems().catch(() => []) : Promise.resolve([]),
+      cxMcp ? loadDocSections().catch(() => []) : Promise.resolve([]),
+    ]);
+    const docs = docsRes.status === "fulfilled"
+      ? docsRes.value.map((s) => ({
+          name: s.label,
+          title: s.nodes[0]?.label ?? s.label,
+          body: s.nodes[0]?.text ?? "",
+        }))
+      : [];
+    try {
+      recallFallback = await collectEntries({
+        atoms: atomsRes.status === "fulfilled" ? () => Promise.resolve(atomsRes.value) : undefined,
+        items: itemsRes.status === "fulfilled" ? () => Promise.resolve(itemsRes.value) : undefined,
+        docs: () => Promise.resolve(docs),
+        skills: () => Promise.resolve(getSkillsCache()),
+        repoRoot: existsSync(path.join(process.cwd(), ".git")) ? process.cwd() : null,
+      });
+      await recallIndex.update(recallFallback);
+    } catch {
+      // One malformed source must not kill the session (unhandled
+      // rejection in the background refresh): keep the stale fallback
+      // and the stale index, the palette still works.
+    }
+    recallReady = recallIndex.available;
+  };
+
+  const ensureRecallFresh = (): Promise<void> => {
+    recallRefreshing ??= refreshRecall().finally(() => {
+      recallRefreshing = null;
+    });
+    return recallRefreshing;
+  };
+
+  const openFindPalette = async (ctx: ExtensionCommandContext | ExtensionContext): Promise<void> => {
+    if (ctx.mode !== "tui") {
+      ctx.ui.notify("The find palette needs TUI mode", "warning");
+      return;
+    }
+    // Kick the index refresh in the background; the palette shows
+    // lexical results from the fresh collection as soon as it lands
+    // (search awaits the same memoized refresh promise).
+    // Belt-and-braces: the refresh must never be an unhandled
+    // rejection — the body is fail-soft, this covers the seams.
+    void ensureRecallFresh().catch(() => {});
+    const search = async (query: string): Promise<ScoredEntry[]> => {
+      await ensureRecallFresh();
+      if (recallReady) return recallIndex.search(query, { limit: 12, fallbackEntries: recallFallback });
+      const parsed = parseQueryText(query);
+      const cands = recallFallback
+        .filter((e) => !parsed.region || e.region === parsed.region)
+        .map((e) => ({ entry: e }));
+      return recallRank(cands, parsed.text).slice(0, 12);
+    };
+    await ctx.ui.custom(
+      (tui, theme, keybindings, done) => {
+        const palette = new Palette(
+          {
+            search,
+            dashboard: () =>
+              recallFallback
+                .filter((e) => e.region === "item" || e.region === "doc")
+                .slice(0, 8)
+                .map((entry) => ({ entry, score: 0 })),
+            act: (entry) => paletteAct(ctx, entry),
+            notify: (text) => {
+              try {
+                ctx.ui.notify(text, "info");
+              } catch {
+                // ignore
+              }
+            },
+            done,
+            keybindings,
+          },
+          theme,
+          tui,
+        );
+        void palette.warm();
+        return palette;
+      },
+      {
+        overlay: true,
+        overlayOptions: { width: "70%", maxHeight: "50%", anchor: "center" },
+      },
+    );
+  };
+
+  pi.registerShortcut(Key.ctrl("space"), {
+    description: "Open the find palette (search everything)",
+    handler: (ctx) => {
+      void openFindPalette(ctx);
+    },
+  });
+
+  pi.registerCommand("find", {
+    description: "Search everything: items, docs, atoms, branches, commits, skills",
+    handler: async (args: string, ctx: ExtensionCommandContext) => {
+      await openFindPalette(ctx);
+    },
+  });
+
+  /** Palette enter-action: docs open the panel's documentation section;
+   * everything else inserts its action text into the editor. Runs after
+   * the palette overlay has closed. */
+  const paletteAct = async (
+    ctx: ExtensionCommandContext | ExtensionContext,
+    entry: RecallEntry,
+  ): Promise<string> => {
+    if (entry.region === "doc") {
+      await openGzeroPanel(ctx, loadTierSections, "documentation");
+      return "";
+    }
+    try {
+      ctx.ui.setEditorText(entry.ref ?? entry.title);
+    } catch {
+      // non-TUI contexts can't set editor text
+    }
+    return `inserted: ${entry.title}`;
+  };
 
   // Work guard: claim / park / release the repo so later sessions see
   // in-flight work via the injected context instead of clobbering it.
