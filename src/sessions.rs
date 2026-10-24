@@ -53,12 +53,18 @@ pub fn current_workspace() -> String {
     let ws_root = run_str(&["jj", "workspace", "root", "--no-pager"]);
     let git_common = run_str(&["git", "rev-parse", "--git-common-dir"]);
 
+    // git-common-dir may come back relative (e.g. ".git" at the repo
+    // root) — resolve it against the cwd before taking its parent.
     let repo_root = git_common
         .as_deref()
         .and_then(|g| {
-            std::path::Path::new(g)
-                .parent()
-                .map(|p| p.to_string_lossy().to_string())
+            let p = std::path::Path::new(g);
+            let p = if p.is_relative() {
+                std::env::current_dir().ok()?.join(p)
+            } else {
+                p.to_path_buf()
+            };
+            p.parent().map(|q| q.to_string_lossy().to_string())
         })
         .or_else(|| {
             std::env::current_dir()
