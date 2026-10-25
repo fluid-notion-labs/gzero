@@ -72,13 +72,6 @@ impl CommsHandle {
         }
     }
 
-    /// The legacy store doubles as the atom store in legacy mode.
-    fn legacy(&mut self) -> Option<&mut SqliteStore> {
-        match self {
-            CommsHandle::Legacy(s) => Some(s),
-            CommsHandle::Doc(_) => None,
-        }
-    }
 }
 
 fn open_comms() -> CommsHandle {
@@ -127,7 +120,14 @@ fn presence_tick(app: &mut App) {
 
 fn main() {
     let mut app = App::new();
-    startup(&mut app);
+    // Startup sync moves to a background thread: answer the MCP
+    // handshake first, sync the hub while the session loads.
+    if let Err(e) = std::thread::Builder::new()
+        .name("gzero-startup".into())
+        .spawn(startup)
+    {
+        eprintln!("gzero-mcp: startup thread failed: {e}");
+    }
     let mut out = std::io::stdout().lock();
     // Stdin moves to a reader thread; the main loop waits on the
     // channel with a timeout so it can heartbeat between requests.
@@ -207,22 +207,27 @@ fn one_shot() -> bool {
     matches!(std::env::var("CX_ONE_SHOT").as_deref(), Ok("1"))
 }
 
-/// Best-effort startup sync: pull the hub's content before anything
-/// local runs, so seeds and harvest reconcile land on a fresh doc.
-/// Never fatal: the session works without it.
-fn startup(app: &mut App) {
+/// Best-effort startup sync: pull the hub's content and reconcile
+/// seeds/harvest. Never fatal: the session works without it.
+///
+/// Runs on a BACKGROUND thread with its own store handles: the MCP
+/// handshake (initialize → tools/list) is answered immediately, so a
+/// session start never waits ~3–5s for hub round trips. The main loop
+/// opens handles lazily per call, so there is no shared mutable state;
+/// concurrent writers (gzero-syncd) are already the steady state.
+fn startup() {
     if one_shot() {
         eprintln!("gzero-mcp: one-shot, skipping startup sync");
         return;
     }
     if legacy_db() {
         // In legacy mode the comms handle is the atom store.
-        let Some(store) = app.comms.legacy() else { return };
-        pull_from_hub(store);
-        seed_on_startup(store);
-        reconcile_harvest_on_startup(store);
+        let mut store = open_store();
+        pull_from_hub(&mut store);
+        seed_on_startup(&mut store);
+        reconcile_harvest_on_startup(&mut store);
     } else {
-        let mut atoms = match app.open_atoms() {
+        let mut atoms = match Atoms::open() {
             Ok(a) => a,
             Err(e) => {
                 eprintln!("gzero-mcp: cannot open atom store: {e}");
@@ -238,9 +243,10 @@ fn startup(app: &mut App) {
         }
         eprintln!("gzero-mcp: startup atoms.sync: {}ms", t.elapsed().as_millis());
         let t = std::time::Instant::now();
+        let mut comms = open_comms();
         // Comms (stream `comms`): pull at session start so unread state
         // and presence from other machines is visible immediately.
-        if let Err(e) = app.comms.layer().sync() {
+        if let Err(e) = comms.layer().sync() {
             eprintln!("gzero-mcp: comms sync failed: {e}");
         }
         eprintln!("gzero-mcp: startup comms.sync: {}ms", t.elapsed().as_millis());
