@@ -110,6 +110,11 @@ No scope column: comms are machine-global, matching today's table shape.
   session start and best-effort after every write — the sender's process
   may exit right after sending, so the write must reach the hub then;
   offline failures are ignored and queue locally.
+- `msg_inbox` tool: this session's full inbox as JSON — every live
+  message with its read state plus every broadcast with the session's
+  seen time (0 = unseen). Read-only on purpose (drains nothing), for
+  UI clients: the pi plugin's traffic bar polls it over a long-lived
+  gzero-mcp child (gzero-syncd keeps the doc fresh between polls).
 - CLI: `gzero sessions` reads the doc store.
 - Legacy comms tables: dropped with the rest of the SQLite path when
   `CX_LEGACY_DB=1` is removed. No migration — ephemeral data dies with it.

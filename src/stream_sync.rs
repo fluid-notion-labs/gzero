@@ -86,7 +86,8 @@ impl StreamSync {
             "machine_id": machine_id(),
         });
         let t_net = std::time::Instant::now();
-        let resp: serde_json::Value = self.post("/changes", &body)?;
+        let resp: serde_json::Value =
+            crate::timing::with("hub POST /changes", || self.post("/changes", &body))?;
         let net_ms = t_net.elapsed().as_millis();
         if resp.get("last_seq").and_then(|v| v.as_u64()).is_none() {
             return Err("hub: missing last_seq in push response".to_string());
@@ -135,7 +136,8 @@ impl StreamSync {
         loop {
             let path = format!("/changes?since={}&limit={PAGE_LIMIT}", cursor.pulled_seq);
             let t_page = std::time::Instant::now();
-            let resp: serde_json::Value = self.get(&path)?;
+            let resp: serde_json::Value =
+                crate::timing::with("hub GET /changes (page)", || self.get(&path))?;
             let page_ms = t_page.elapsed().as_millis();
             let last = resp
                 .get("last_seq")
@@ -167,9 +169,11 @@ impl StreamSync {
                 sync_log(&self.stream, &format!("pull page: {page_ms}ms, {n} changes"));
             }
             let pulled_hashes: Vec<ChangeHash> = changes.iter().map(|c| c.hash()).collect();
-            store
-                .apply_changes(changes)
-                .map_err(|e| format!("hub: apply_changes: {e}"))?;
+            crate::timing::with("apply_changes+flush", || {
+                store
+                    .apply_changes(changes)
+                    .map_err(|e| format!("hub: apply_changes: {e}"))
+            })?;
             applied += n;
             // Pulled changes are, by definition, already on the hub —
             // record them in the push cursor so we never re-push what
@@ -272,19 +276,24 @@ pub fn sync_store(
     sidecar: &Path,
     stream: &str,
 ) -> Result<(usize, usize), String> {
+    use crate::timing::span;
+    // Nested spans under whatever trace is running (the MCP startup
+    // trace); free when no trace is active (steady-state writes).
+    let _lock = span("doc_lock (flock)");
     store.doc_lock();
     let out = (|| {
         // Adopt what other syncers (the daemon) flushed to disk since
         // this store was opened — the cursor below is shared, so a
         // skipped pull must not mean skipped content.
-        if let Err(e) = store.refresh() {
+        if let Err(e) = crate::timing::with("refresh (merge disk)", || store.refresh()) {
             sync_log(stream, &format!("refresh: FAILED: {e}"));
         }
-        let mut cursor = SyncCursor::load(sidecar, stream)?;
+        let mut cursor = crate::timing::with("cursor load", || SyncCursor::load(sidecar, stream))?;
         let t0 = std::time::Instant::now();
-        let result = sync_once(store, hub, &mut cursor);
+        let result = crate::timing::with("pull", || hub.pull(store, &mut cursor))
+            .and_then(|pulled| crate::timing::with("push", || hub.push(store, &mut cursor)).map(|pushed| (pushed, pulled)));
         let ms = t0.elapsed().as_millis();
-        cursor.save(sidecar, stream)?;
+        crate::timing::with("cursor save", || cursor.save(sidecar, stream))?;
         if matches!(std::env::var("CX_SYNC_LOG").as_deref(), Ok("detail")) {
             match &result {
                 Ok((pushed, pulled)) => {

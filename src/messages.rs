@@ -41,6 +41,29 @@ pub struct Broadcast {
     pub created: i64,
 }
 
+/// A broadcast as one session sees it: `seen_at` is 0 while unseen.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct BroadcastState {
+    pub id: String,
+    pub sender: String,
+    pub text: String,
+    pub created: i64,
+    /// Unix seconds when this session saw it; 0 = unseen.
+    pub seen_at: i64,
+}
+
+/// Everything live in one session's inbox, for read-only inspection
+/// (the `msg_inbox` tool, the pi plugin's traffic bar). Messages carry
+/// their read state; broadcasts carry the session's seen time. No
+/// drains, no sweeps — observing never delivers.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct Inbox {
+    /// Every live message addressed to the session, oldest first.
+    pub messages: Vec<Message>,
+    /// Every live broadcast (sender excluded), oldest first.
+    pub broadcasts: Vec<BroadcastState>,
+}
+
 fn now() -> i64 {
     crate::sessions::now()
 }
@@ -82,6 +105,18 @@ impl SqliteStore {
              FROM messages WHERE dest = ?1 AND read_at = 0 ORDER BY created",
         )?;
         let rows = stmt.query_map(params![dest], message_row)?;
+        rows.collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(Into::into)
+    }
+
+    /// All live (non-expired) messages addressed to `dest`, read state
+    /// included, oldest first.
+    pub fn all_messages_to(&self, dest: &str) -> Result<Vec<Message>> {
+        let mut stmt = self.conn().prepare(
+            "SELECT id, dest, sender, text, created, read_at
+             FROM messages WHERE dest = ?1 AND created >= ?2 ORDER BY created",
+        )?;
+        let rows = stmt.query_map(params![dest, now() - MESSAGE_TTL_SECS], message_row)?;
         rows.collect::<std::result::Result<Vec<_>, _>>()
             .map_err(Into::into)
     }
@@ -154,6 +189,39 @@ impl SqliteStore {
         Ok(())
     }
 
+    /// Live broadcasts with `session_id`'s seen state (0 = unseen),
+    /// excluding its own, oldest first.
+    pub fn broadcast_states(&self, session_id: &str) -> Result<Vec<BroadcastState>> {
+        let mut stmt = self.conn().prepare(
+            "SELECT b.id, b.sender, b.text, b.created, COALESCE(r.read_at, 0)
+             FROM broadcasts b
+             LEFT JOIN broadcast_reads r
+               ON r.broadcast_id = b.id AND r.session_id = ?1
+             WHERE b.sender != ?1 AND b.created >= ?2
+             ORDER BY b.created",
+        )?;
+        let rows = stmt.query_map(params![session_id, now() - MESSAGE_TTL_SECS], |r| {
+            Ok(BroadcastState {
+                id: r.get(0)?,
+                sender: r.get(1)?,
+                text: r.get(2)?,
+                created: r.get(3)?,
+                seen_at: r.get(4)?,
+            })
+        })?;
+        rows.collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(Into::into)
+    }
+
+    /// The session's full inbox: all its live messages plus all live
+    /// broadcasts with its seen state. Read-only — drains nothing.
+    pub fn session_inbox(&self, session: &str) -> Result<Inbox> {
+        Ok(Inbox {
+            messages: self.all_messages_to(session)?,
+            broadcasts: self.broadcast_states(session)?,
+        })
+    }
+
     /// Delete broadcasts older than the TTL plus their read state.
     /// Returns how many broadcasts expired.
     pub fn sweep_broadcasts(&self, ttl: i64) -> Result<usize> {
@@ -217,6 +285,29 @@ mod tests {
         // empty fields refused
         assert!(s.send_message("sess-b", "sess-a", "  ").is_err());
         assert!(s.send_message("", "sess-a", "x").is_err());
+    }
+
+    #[test]
+    fn inbox_reports_state_without_draining() {
+        let s = SqliteStore::in_memory().unwrap();
+        s.send_message("sess-b", "sess-a", "first").unwrap();
+        s.send_message("sess-b", "sess-a", "second").unwrap();
+        s.post_broadcast("sess-a", "heads up").unwrap();
+        let inbox = s.session_inbox("sess-b").unwrap();
+        assert_eq!(inbox.messages.len(), 2);
+        assert!(inbox.messages.iter().all(|m| m.read_at == 0));
+        // sender excluded, unseen until seen
+        assert_eq!(inbox.broadcasts.len(), 1);
+        assert_eq!(inbox.broadcasts[0].seen_at, 0);
+        // read elsewhere is reflected; the inbox itself drains nothing
+        s.mark_messages_read("sess-b").unwrap();
+        s.mark_broadcasts_seen("sess-b", &[inbox.broadcasts[0].id.clone()])
+            .unwrap();
+        let inbox = s.session_inbox("sess-b").unwrap();
+        assert!(inbox.messages.iter().all(|m| m.read_at > 0));
+        assert!(inbox.broadcasts[0].seen_at > 0);
+        // own broadcast excluded
+        assert!(s.session_inbox("sess-a").unwrap().broadcasts.is_empty());
     }
 
     #[test]

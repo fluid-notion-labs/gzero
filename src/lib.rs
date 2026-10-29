@@ -36,6 +36,7 @@ pub mod sessions;
 pub mod snapshot;
 pub mod sqlite;
 pub mod teams;
+pub mod timing;
 pub use automerge_store::AutomergeStore;
 pub use events::{ChangeEvent, ChangeFeed};
 pub use sessions::{SessionInfo, PRESENCE_TTL_SECS};
@@ -75,6 +76,15 @@ pub struct SyncStats {
 pub trait Storage {
     /// Replace all atoms contributed by `source` with `atoms`.
     fn sync_source(&mut self, source: &str, atoms: &[ParsedAtom]) -> Result<SyncStats>;
+    /// Replace several sources in one call. Default: sync_source per
+    /// entry; doc stores override to share the before-scan (one pass
+    /// over all texts instead of one per source).
+    fn sync_sources(&mut self, batch: &[(String, Vec<ParsedAtom>)]) -> Result<Vec<SyncStats>> {
+        batch
+            .iter()
+            .map(|(source, atoms)| self.sync_source(source, atoms))
+            .collect()
+    }
     /// All assertions, ordered by (source, text).
     fn all(&self) -> Result<Vec<Row>>;
     /// Remove assertions whose text contains `needle`, recording tombstones
@@ -93,6 +103,12 @@ pub trait Storage {
     /// (deletion-as-change), keep texts that other sources still assert.
     /// Returns the tombstoned atoms.
     fn forget_source(&mut self, source: &str) -> Result<Vec<snapshot::Atom>>;
+    /// Suppress per-operation persistence until [`Storage::end_batch`]
+    /// — multi-source reconciles (seeds, harvest) share one save.
+    /// Re-entrant; always pair with end_batch.
+    fn begin_batch(&mut self);
+    /// Leave the innermost batch, persisting once on exit.
+    fn end_batch(&mut self);
 }
 
 /// Parse a context file into atoms. See crate docs for the format.
@@ -324,6 +340,19 @@ pub fn reconcile_harvest(
     dir: &std::path::Path,
     take: bool,
 ) -> Result<ReconcileResult> {
+    // One refresh+save for the whole batch (per-file flushes reload and
+    // rewrite the whole doc per changed file).
+    store.begin_batch();
+    let out = reconcile_harvest_inner(store, dir, take);
+    store.end_batch();
+    out
+}
+
+fn reconcile_harvest_inner(
+    store: &mut dyn Storage,
+    dir: &std::path::Path,
+    take: bool,
+) -> Result<ReconcileResult> {
     let (root, scope) = harvest_root(dir);
     let present = candidate_files(&root, dir);
     let mut result = ReconcileResult::default();
@@ -397,14 +426,17 @@ pub const SEEDS: &[(&str, &str)] = &[
 
 /// Sync every seed document into the store. Returns per-seed stats.
 pub fn reconcile_seeds(store: &mut dyn Storage) -> Result<Vec<(String, SyncStats)>> {
-    SEEDS
+    // One refresh+save and one before-scan for the whole batch instead
+    // of one per seed: each used to reload the doc from disk and
+    // rewrite it whole.
+    let batch: Vec<(String, Vec<ParsedAtom>)> = SEEDS
         .iter()
-        .map(|(name, md)| {
-            let source = format!("seed:{name}");
-            let stats = store.sync_source(&source, &parse(md))?;
-            Ok((source, stats))
-        })
-        .collect()
+        .map(|(name, md)| (format!("seed:{name}"), parse(md)))
+        .collect();
+    store.begin_batch();
+    let stats = store.sync_sources(&batch)?;
+    store.end_batch();
+    Ok(batch.into_iter().map(|(s, _)| s).zip(stats).collect())
 }
 
 /// `git@host:owner/repo.git`, `https://host/owner/repo.git`,

@@ -55,6 +55,48 @@ pub struct AutomergeStore {
     /// processes still block. This is what makes gzero-syncd and
     /// sessions safe co-writers of the doc file.
     lock: Option<std::fs::File>,
+    /// Hash of the doc bytes last read from (open, refresh) or written
+    /// to (flush) disk. `refresh` compares against this to skip its
+    /// expensive load+merge when no co-writer has written since — the
+    /// common case for a session coexisting with an idle syncd.
+    disk_hash: Option<u64>,
+    /// Doc heads at the last successful flush save. A flush whose doc
+    /// has no changes beyond these is a no-op: nothing mutated since
+    /// the last save, so rewriting the file (and making every other
+    /// machine re-adopt it through the hub) buys nothing.
+    saved_heads: Vec<ChangeHash>,
+    /// `begin_batch`/`end_batch` nesting: while > 0, `flush` is a
+    /// no-op and `end_batch` flushes once on exit from 1. Lets
+    /// multi-source reconciles (seeds, harvest) share one refresh+save
+    /// instead of one per source.
+    batch_depth: usize,
+    /// Set when the hashes sidecar map changed since the last flush
+    /// write (set_source_hash, save_roots_state) — a sidecar-only
+    /// change must still flush even when the doc is unchanged.
+    hashes_dirty: bool,
+}
+
+/// Change-detection hash of doc bytes (std SipHash; collisions would
+/// just make one refresh redundant-safe — the doc hash sidecar below
+/// is unrelated).
+fn bytes_hash(bytes: &[u8]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    bytes.hash(&mut h);
+    h.finish()
+}
+
+impl AutomergeStore {
+    /// Record `hash` as what this store believes is on disk.
+    fn note_disk(&mut self, hash: u64) {
+        self.disk_hash = Some(hash);
+    }
+
+    /// Hash of the doc file as it is right now, if readable.
+    fn disk_hash_now(&self) -> Option<u64> {
+        let p = self.path.as_ref()?;
+        std::fs::read(p).ok().map(|b| bytes_hash(&b))
+    }
 }
 
 /// Hashes-sidecar key holding the reconciled root conflict counts.
@@ -67,10 +109,17 @@ impl AutomergeStore {
     /// Open (or create) the doc at `path`. The hashes sidecar is a
     /// sibling file. Pass `None` for an in-memory store (tests).
     pub fn open(path: Option<&Path>) -> Result<Self> {
-        let doc = match path {
-            Some(p) if p.exists() => AutoCommit::load(&std::fs::read(p)?)?,
+        use crate::timing::with;
+        let mut disk_hash = None;
+        let mut doc = match path {
+            Some(p) if p.exists() => {
+                let bytes = std::fs::read(p)?;
+                disk_hash = Some(bytes_hash(&bytes));
+                with("doc load (automerge)", || AutoCommit::load(&bytes))?
+            }
             _ => AutoCommit::new(),
         };
+        let saved_heads = doc.get_heads();
         let mut store = Self {
             doc,
             path: path.map(Path::to_path_buf),
@@ -78,6 +127,10 @@ impl AutomergeStore {
             subscribers: Vec::new(),
             roots_state: None,
             lock: None,
+            disk_hash,
+            saved_heads,
+            batch_depth: 0,
+            hashes_dirty: false,
         };
         if let Some(p) = &store.path {
             store.lock = Some(
@@ -128,6 +181,7 @@ impl AutomergeStore {
             ROOTS_STATE_KEY.to_string(),
             counts.map(|c| c.to_string()).join(","),
         );
+        self.hashes_dirty = true;
     }
 
     /// In-memory store for tests.
@@ -137,13 +191,19 @@ impl AutomergeStore {
 
     /// Load from `save_bytes` output (an independent fork).
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
+        let mut doc = AutoCommit::load(bytes)?;
+        let saved_heads = doc.get_heads();
         Ok(Self {
-            doc: AutoCommit::load(bytes)?,
+            doc,
             path: None,
             hashes: BTreeMap::new(),
             subscribers: Vec::new(),
             roots_state: None,
             lock: None,
+            disk_hash: None,
+            saved_heads,
+            batch_depth: 0,
+            hashes_dirty: false,
         })
     }
 
@@ -298,6 +358,56 @@ impl AutomergeStore {
         }
     }
 
+    fn sync_source_with_before(
+        &mut self,
+        source: &str,
+        atoms: &[ParsedAtom],
+        before: HashSet<String>,
+    ) -> Result<SyncStats> {
+        self.ensure_schema()?;
+        let now: HashSet<&str> = atoms.iter().map(|a| a.text.as_str()).collect();
+
+        // Drop this source from records not in the new set. Never
+        // touches `tombs` — file edits retract locally only, as ever.
+        for text in &before {
+            if !now.contains(text.as_str()) {
+                let rec = self.rec_id(text).expect("record was just there");
+                let sources = self.sources_id(&rec).expect("sources");
+                self.doc.delete(&sources, source)?;
+                self.doc.delete(&sources, source)?;
+            }
+        }
+
+        // Add/update each atom (records and shadows kept forever).
+        let atoms_obj = self
+            .atoms_id()
+            .expect("ensure_schema created the atoms object");
+        for atom in atoms {
+            let rec = match self.rec_id(&atom.text) {
+                Some(rec) => rec,
+                None => {
+                    let r = self
+                        .doc
+                        .put_object(&atoms_obj, atom.text.as_str(), ObjType::Map)?;
+                    self.doc.put_object(&r, "sources", ObjType::Map)?;
+                    r
+                }
+            };
+            let sources = self.sources_id(&rec).expect("sources");
+            self.write_payload(&sources, source, atom)?;
+        }
+        self.doc.commit();
+        self.flush()?;
+
+        let now_owned: HashSet<String> = now.iter().map(|s| s.to_string()).collect();
+        let kept = before.intersection(&now_owned).count();
+        Ok(SyncStats {
+            added: now.len() - kept,
+            removed: before.len() - kept,
+            kept,
+        })
+    }
+
     /// Persist doc + hashes sidecar (no-op in memory).
     ///
     /// Under the doc lock, first merge whatever is currently on disk
@@ -307,17 +417,89 @@ impl AutomergeStore {
     /// full-document save would clobber them — with it, every flush is
     /// a merge, and co-writers converge instead of racing.
     pub(crate) fn flush(&mut self) -> Result<()> {
+        use crate::timing::with;
         let Some(p) = self.path.clone() else {
             return Ok(());
         };
+        // A batch (seeds/harvest reconcile) defers to one flush at
+        // end_batch — see there.
+        if self.batch_depth > 0 {
+            return Ok(());
+        }
         self.doc_lock();
-        self.refresh()?;
-        let doc_bytes = self.doc.save();
+        self.flush_locked(p)
+    }
+
+    /// Texts `source` currently asserts (the per-source before-scan).
+    fn source_asserted_texts(&mut self, source: &str) -> Result<HashSet<String>> {
+        use crate::timing::with;
+        let mut before = HashSet::new();
+        with("sync_source: before scan", || -> crate::Result<()> {
+            for text in self.texts() {
+                if let Some(rec) = self.rec_id(&text) {
+                    if let Some(sources) = self.sources_id(&rec) {
+                        if self.has(&sources, source) {
+                            before.insert(text);
+                        }
+                    }
+                }
+            }
+            Ok(())
+        })?;
+        Ok(before)
+    }
+
+    /// The body of flush, called with the doc lock held.
+    fn flush_locked(&mut self, p: PathBuf) -> Result<()> {
+        use crate::timing::with;
+        // Adopt what co-writers flushed to disk since we last looked.
+        // A no-op when the file is unchanged (the common case: idle
+        // syncd) — this used to reload+remerge the whole doc per flush.
+        with("flush: refresh", || self.refresh())?;
+        // Skip the save entirely when the doc has no changes beyond
+        // what we last wrote: a byte-identical rewrite costs a full
+        // doc.save plus a hub round-trip for every other replica.
+        self.doc.commit();
+        let new_changes = self.doc.get_changes(&self.saved_heads);
+        if new_changes.is_empty()
+            && !self.hashes_dirty
+            && self.disk_hash == self.disk_hash_now()
+        {
+            self.doc_unlock();
+            return Ok(());
+        }
+        let doc_bytes = with("flush: doc.save", || self.doc.save());
         let hash_bytes = serde_json::to_vec(&self.hashes)?;
-        Self::atomic_write(&p, &doc_bytes)?;
-        Self::atomic_write(&Self::hash_path(&p), &hash_bytes)?;
+        let written = with("flush: atomic write", || {
+            Self::atomic_write(&p, &doc_bytes)?;
+            Self::atomic_write(&Self::hash_path(&p), &hash_bytes)
+        });
+        if written.is_ok() {
+            self.saved_heads = self.doc.get_heads();
+            self.hashes_dirty = false;
+            if let Some(h) = self.disk_hash_now() {
+                self.note_disk(h);
+            }
+        }
+        written?;
         self.doc_unlock();
         Ok(())
+    }
+
+    /// Suppress flushes until [`Self::end_batch`] — multi-source
+    /// reconciles share one refresh+save. Re-entrant.
+    pub(crate) fn begin_batch(&mut self) {
+        self.batch_depth += 1;
+    }
+
+    /// Leave the innermost batch, flushing once when it is the last.
+    pub(crate) fn end_batch(&mut self) {
+        self.batch_depth = self.batch_depth.saturating_sub(1);
+        if self.batch_depth == 0 {
+            if let Err(e) = self.flush() {
+                eprintln!("gzero: batch flush failed: {e}");
+            }
+        }
     }
 
     /// Adopt concurrent on-disk changes into memory without saving.
@@ -332,17 +514,27 @@ impl AutomergeStore {
         let Some(p) = self.path.clone() else {
             return Ok(());
         };
-        if let Ok(bytes) = std::fs::read(&p) {
-            if let Ok(mut disk) = AutoCommit::load(&bytes) {
-                if self.doc.merge(&mut disk).is_ok() {
-                    if let Ok(disk_hashes) = Self::read_hashes(&p) {
-                        for (k, v) in disk_hashes {
-                            self.hashes.entry(k).or_insert(v);
-                        }
+        let bytes = match std::fs::read(&p) {
+            Ok(b) => b,
+            Err(_) => return Ok(()),
+        };
+        // No co-writer has saved since we last read/wrote the file:
+        // loading + merging it again is pure waste (it was ~1.5s per
+        // flush on a large doc). The hash is exact — no mtime races.
+        let now = bytes_hash(&bytes);
+        if self.disk_hash == Some(now) {
+            return Ok(());
+        }
+        if let Ok(mut disk) = AutoCommit::load(&bytes) {
+            if self.doc.merge(&mut disk).is_ok() {
+                if let Ok(disk_hashes) = Self::read_hashes(&p) {
+                    for (k, v) in disk_hashes {
+                        self.hashes.entry(k).or_insert(v);
                     }
-                    self.doc.commit();
-                    self.reconcile_roots()?;
                 }
+                self.doc.commit();
+                self.reconcile_roots()?;
+                self.note_disk(now);
             }
         }
         Ok(())
@@ -470,60 +662,38 @@ impl AutomergeStore {
 }
 
 impl Storage for AutomergeStore {
-    fn sync_source(&mut self, source: &str, atoms: &[ParsedAtom]) -> Result<SyncStats> {
+    fn sync_sources(&mut self, batch: &[(String, Vec<ParsedAtom>)]) -> Result<Vec<SyncStats>> {
+        use crate::timing::with;
         self.ensure_schema()?;
-        // Before: texts this source currently asserts.
-        let mut before: HashSet<String> = HashSet::new();
-        for text in self.texts() {
-            if let Some(rec) = self.rec_id(&text) {
-                if let Some(sources) = self.sources_id(&rec) {
-                    if self.has(&sources, source) {
-                        before.insert(text);
+        // One before-scan shared by all sources in the batch: for each
+        // text, which of the batch's sources currently assert it.
+        // (Per-source scans re-walk the whole doc each time.)
+        let names: Vec<&str> = batch.iter().map(|(s, _)| s.as_str()).collect();
+        let mut befores: Vec<HashSet<String>> = vec![HashSet::new(); batch.len()];
+        with("sync_source: before scan (shared)", || -> crate::Result<()> {
+            for text in self.texts() {
+                if let Some(rec) = self.rec_id(&text) {
+                    if let Some(sources) = self.sources_id(&rec) {
+                        for (i, name) in names.iter().enumerate() {
+                            if self.has(&sources, name) {
+                                befores[i].insert(text.clone());
+                            }
+                        }
                     }
                 }
             }
+            Ok(())
+        })?;
+        let mut stats = Vec::with_capacity(batch.len());
+        for ((source, atoms), before) in batch.iter().zip(befores) {
+            stats.push(self.sync_source_with_before(source, atoms, before)?);
         }
-        let now: HashSet<&str> = atoms.iter().map(|a| a.text.as_str()).collect();
+        Ok(stats)
+    }
 
-        // Drop this source from records not in the new set. Never
-        // touches `tombs` — file edits retract locally only, as ever.
-        for text in &before {
-            if !now.contains(text.as_str()) {
-                let rec = self.rec_id(text).expect("record was just there");
-                let sources = self.sources_id(&rec).expect("sources");
-                self.doc.delete(&sources, source)?;
-                self.doc.delete(&sources, source)?;
-            }
-        }
-
-        // Add/update each atom (records and shadows kept forever).
-        let atoms_obj = self
-            .atoms_id()
-            .expect("ensure_schema created the atoms object");
-        for atom in atoms {
-            let rec = match self.rec_id(&atom.text) {
-                Some(rec) => rec,
-                None => {
-                    let r = self
-                        .doc
-                        .put_object(&atoms_obj, atom.text.as_str(), ObjType::Map)?;
-                    self.doc.put_object(&r, "sources", ObjType::Map)?;
-                    r
-                }
-            };
-            let sources = self.sources_id(&rec).expect("sources");
-            self.write_payload(&sources, source, atom)?;
-        }
-        self.doc.commit();
-        self.flush()?;
-
-        let now_owned: HashSet<String> = now.iter().map(|s| s.to_string()).collect();
-        let kept = before.intersection(&now_owned).count();
-        Ok(SyncStats {
-            added: now.len() - kept,
-            removed: before.len() - kept,
-            kept,
-        })
+    fn sync_source(&mut self, source: &str, atoms: &[ParsedAtom]) -> Result<SyncStats> {
+        let before = self.source_asserted_texts(source)?;
+        self.sync_source_with_before(source, atoms, before)
     }
 
     fn all(&self) -> Result<Vec<Row>> {
@@ -615,6 +785,7 @@ impl Storage for AutomergeStore {
                 self.hashes.remove(source);
             }
         }
+        self.hashes_dirty = true;
         self.flush()
     }
 
@@ -649,6 +820,14 @@ impl Storage for AutomergeStore {
         }
         self.tombstone(&dying)?;
         Ok(dying)
+    }
+
+    fn begin_batch(&mut self) {
+        AutomergeStore::begin_batch(self);
+    }
+
+    fn end_batch(&mut self) {
+        AutomergeStore::end_batch(self);
     }
 }
 

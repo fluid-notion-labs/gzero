@@ -27,7 +27,10 @@ code and on GitHub. Historical identifier: the MCP server name
   and a WIP limit; `plan_next` ranks what's ready.
 - **pi plugin** — injects global + local context at session start and
   adds the gzero panel (tasks / context / skills / router / history
-  / documentation), the skills picker, and session presence.
+  / documentation), the skills picker, session presence, and an
+  always-on traffic bar (top row: incoming messages with done
+  indicators, a 3-deep read queue, msg/sec | 10s | min rates, warn
+  above 1 msg/s; `msg_inbox` is the read-only tool behind it).
 - **Teams** — named groups of collaborators, agents now and humans
   soon: scope `team/<name>` in the atom store (source `team:<name>`),
   one `## purpose` node plus a `## member/<id>` node per member

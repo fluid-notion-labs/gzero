@@ -285,6 +285,10 @@ impl Storage for SqliteStore {
         )?;
         Ok(dying)
     }
+
+    // SQLite persists per statement; batching is a doc-store concept.
+    fn begin_batch(&mut self) {}
+    fn end_batch(&mut self) {}
 }
 
 #[cfg(test)]

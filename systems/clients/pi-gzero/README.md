@@ -76,6 +76,20 @@ gzero only via MCP — no direct SQLite or hub access.
   priority, auto-hidden when empty, with a rule under its title — the
   strip hides while the panel covers its corner. `CX_TASKS_STRIP=0`
   removes the strip and restores panel-only behavior
+- The **traffic bar** is always visible: a one-line horizontal bar
+  across the top row showing this session's incoming traffic — one
+  ▸ entry per unread message (S3) and unseen broadcast (S3b) with a
+  spinner while anything is pending, and done deliveries moving to a
+  'read' queue marked ✓ (only the last 3 stay). On the right, traffic
+  rates — `0.3/s · 3/10s · 8/min` — computed over sliding 1s/10s/60s
+  windows from fresh arrivals only (a weekend backlog doesn't count as
+  a burst), with a `⚠` + warning color above 1 msg/s. Data comes from a
+  long-lived `gzero-mcp` child polling the read-only `msg_inbox` tool
+  every 2s (gzero-syncd keeps the comms doc fresh between polls); the
+  bar drains nothing — `msg_read` and resolve delivery stay in charge.
+  `alt+m`, ctrl+m (where the terminal can tell it from enter), or
+  `/messages` opens the message view panel; `CX_INBOX_BAR=0` disables
+  it all.
 - A **loaded-skills column** sits left of the rail: one ✦-marked skill
   name per line for every skill loaded this session. Passive display
   only — loading happens in the skills picker or the gzero panel's

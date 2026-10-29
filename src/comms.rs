@@ -36,7 +36,7 @@ use automerge::{ObjId, ObjType, ReadDoc, ROOT, Value};
 
 use crate::automerge_store::AutomergeStore;
 use crate::stream_sync::{self, StreamSync, SyncCursor};
-use crate::messages::{Broadcast, Message, MESSAGE_TTL_SECS};
+use crate::messages::{Broadcast, BroadcastState, Inbox, Message, MESSAGE_TTL_SECS};
 use crate::sessions::{SessionInfo, PRESENCE_TTL_SECS};
 use crate::{items::fresh_id, Result};
 
@@ -84,6 +84,10 @@ pub trait CommsLayer {
     fn post_broadcast(&mut self, sender: &str, text: &str) -> Result<Broadcast>;
     fn unseen_broadcasts(&mut self, session_id: &str) -> Result<Vec<Broadcast>>;
     fn mark_broadcasts_seen(&mut self, session_id: &str, ids: &[String]) -> Result<()>;
+    /// Read-only inspection: the session's full inbox (messages with
+    /// read state, broadcasts with the session's seen time). Drains
+    /// nothing — `msg_read` and resolve delivery do that.
+    fn inbox(&mut self, session_id: &str) -> Result<Inbox>;
     fn heartbeat(&mut self, s: &SessionInfo) -> Result<()>;
     fn active_peers(&mut self, scope: &str, exclude: &str, ttl: i64) -> Result<Vec<SessionInfo>>;
     fn all_sessions(&mut self) -> Result<Vec<SessionInfo>>;
@@ -236,6 +240,45 @@ impl CommsStore {
             .keys(&m)
             .filter_map(|id| self.read_message(&id))
             .collect()
+    }
+
+    /// Live broadcasts with per-session seen state, oldest first
+    /// (sender excluded). Companion to `unseen_broadcasts` for
+    /// read-only inspection: seen, not unseen.
+    fn broadcast_states(&self, session_id: &str) -> Result<Vec<BroadcastState>> {
+        let cutoff = now() - MESSAGE_TTL_SECS;
+        let Some(b) = self.root_map("broadcasts") else {
+            return Ok(Vec::new());
+        };
+        let br = self.root_map("broadcast_reads");
+        let mut out = Vec::new();
+        for id in self.store.doc.keys(&b) {
+            let Some(rec) = Self::rec_of(&b, &self.store.doc, &id) else {
+                continue;
+            };
+            let created = Self::ival(&rec, "created", &self.store.doc);
+            if created < cutoff {
+                continue;
+            }
+            let sender = Self::sval(&rec, "sender", &self.store.doc);
+            if sender == session_id {
+                continue;
+            }
+            let seen_at = br
+                .as_ref()
+                .and_then(|br| Self::rec_of(br, &self.store.doc, &id))
+                .map(|per| Self::ival(&per, session_id, &self.store.doc))
+                .unwrap_or(0);
+            out.push(BroadcastState {
+                id,
+                sender,
+                text: Self::sval(&rec, "text", &self.store.doc),
+                created,
+                seen_at,
+            });
+        }
+        out.sort_by_key(|b| b.created);
+        Ok(out)
     }
 
     /// Epoch number (0 before the first roll).
@@ -573,6 +616,21 @@ impl CommsLayer for CommsStore {
         Ok(())
     }
 
+    fn inbox(&mut self, session_id: &str) -> Result<Inbox> {
+        // Adopt co-writers' on-disk changes before reading: a long-lived
+        // reader (the plugin's poller child) never flushes, so without
+        // this it would stay stale until its next write.
+        let _ = self.store.refresh();
+        let cutoff = now() - MESSAGE_TTL_SECS;
+        let messages: Vec<Message> = self
+            .all_messages_to(session_id)
+            .into_iter()
+            .filter(|m| m.created >= cutoff)
+            .collect();
+        let broadcasts = self.broadcast_states(session_id)?;
+        Ok(Inbox { messages, broadcasts })
+    }
+
     fn heartbeat(&mut self, s: &SessionInfo) -> Result<()> {
         let sess = self.map("sessions")?;
         let existing = Self::rec_of(&sess, &self.store.doc, &s.session_id);
@@ -679,6 +737,9 @@ impl CommsLayer for crate::sqlite::SqliteStore {
     fn mark_broadcasts_seen(&mut self, session_id: &str, ids: &[String]) -> Result<()> {
         crate::sqlite::SqliteStore::mark_broadcasts_seen(self, session_id, ids)
     }
+    fn inbox(&mut self, session_id: &str) -> Result<Inbox> {
+        crate::sqlite::SqliteStore::session_inbox(self, session_id)
+    }
     fn heartbeat(&mut self, s: &SessionInfo) -> Result<()> {
         crate::sqlite::SqliteStore::heartbeat(self, s)
     }
@@ -758,6 +819,53 @@ mod tests {
         assert!(s.unseen_broadcasts("sess-a").unwrap().is_empty()); // sender skips own
         s.mark_broadcasts_seen("sess-b", &[b.id.clone()]).unwrap();
         assert!(s.unseen_broadcasts("sess-b").unwrap().is_empty());
+    }
+
+    #[test]
+    fn inbox_reports_read_state_without_draining() {
+        let mut s = store();
+        s.send_message("sess-b", "sess-a", "first").unwrap();
+        s.send_message("sess-b", "sess-a", "second").unwrap();
+        let inbox = s.inbox("sess-b").unwrap();
+        assert_eq!(inbox.messages.len(), 2);
+        assert!(inbox.messages.iter().all(|m| m.read_at == 0));
+        assert!(inbox.broadcasts.is_empty());
+        // reading elsewhere is reflected; the inbox itself drains nothing
+        s.mark_messages_read("sess-b").unwrap();
+        let inbox = s.inbox("sess-b").unwrap();
+        assert!(inbox.messages.iter().all(|m| m.read_at > 0));
+        assert!(s.unread_messages("sess-b").unwrap().is_empty());
+    }
+
+    #[test]
+    fn inbox_carries_broadcast_seen_state() {
+        let mut s = store();
+        let b = s.post_broadcast("sess-a", "heads up").unwrap();
+        let inbox = s.inbox("sess-b").unwrap();
+        assert_eq!(inbox.broadcasts.len(), 1);
+        assert_eq!(inbox.broadcasts[0].seen_at, 0);
+        assert_eq!(inbox.broadcasts[0].text, "heads up");
+        s.mark_broadcasts_seen("sess-b", &[b.id.clone()]).unwrap();
+        let inbox = s.inbox("sess-b").unwrap();
+        assert!(inbox.broadcasts[0].seen_at > 0);
+        // sender excluded
+        assert!(s.inbox("sess-a").unwrap().broadcasts.is_empty());
+    }
+
+    #[test]
+    fn inbox_filters_expired() {
+        let mut s = store();
+        let m = s.send_message("sess-b", "sess-a", "old").unwrap();
+        let b = s.post_broadcast("sess-a", "old board").unwrap();
+        backdate(&mut s, &m.id);
+        // backdate the broadcast too
+        let bm = s.root_map("broadcasts").unwrap();
+        let rec = CommsStore::rec_of(&bm, &s.store.doc, &b.id).unwrap();
+        CommsStore::put_i64(&rec, "created", now() - MESSAGE_TTL_SECS - 10, &mut s.store.doc)
+            .unwrap();
+        let inbox = s.inbox("sess-b").unwrap();
+        assert!(inbox.messages.is_empty());
+        assert!(inbox.broadcasts.is_empty());
     }
 
     #[test]

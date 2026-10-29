@@ -48,6 +48,7 @@ import {
   type RouterSnapshotLike,
 } from "./gzero-panel.ts";
 import { ItemsPaneController, setItemsProvider } from "./items-pane.ts";
+import { InboxBarController } from "./inbox-bar.ts";
 import {
   collectEntries,
   parseQuery as parseQueryText,
@@ -61,6 +62,7 @@ import { messageText, registerReview, type ReviewDeps } from "./review.ts";
 import routerSetup from "./router/index.ts";
 import { loadHistory, type PromptEntry } from "./history/history.ts";
 import historySetup from "./history/index.ts";
+import { startTrace, span, timingReport, clearTimingReport, type Trace } from "./timing.ts";
 import { routerSnapshot } from "./router/state.ts";
 import { summarizeLedger } from "./router/ledger.ts";
 import {
@@ -603,6 +605,9 @@ export default function (pi: ExtensionAPI) {
   historySetup(pi);
 
   const itemsPane = new ItemsPaneController();
+  // The traffic bar: incoming messages/broadcasts, done indicators, a
+  // 3-deep read queue and traffic rates, always on the top row.
+  const inboxBar = new InboxBarController();
 
   // Presence identity: exported for every gzero-mcp spawn (the model's MCP
   // server and the plugin's own internal calls) via process.env.
@@ -668,9 +673,11 @@ export default function (pi: ExtensionAPI) {
    * Stamps the cache after resolving so our own resolve's store writes
    * (a fresh gzero-mcp pulls from the hub at startup) don't count as changes. */
   const resolveContext = async (cxMcp: string): Promise<string | null> => {
-    const text = await mcpCall(cxMcp, "resolve", {});
+    // Spans nest into whatever trace is running (the turn timer); one-shot
+    // spawn + initialize + resolve is the bulk of a cold turn.
+    const text = await span("mcpCall resolve (one-shot spawn)", () => mcpCall(cxMcp, "resolve", {}));
     const body = text.trim();
-    storeStampAtResolve = await storeStamp();
+    storeStampAtResolve = await span("storeStamp", () => storeStamp());
     if (!body || body === "(no matching context)") return null;
     return body;
   };
@@ -680,7 +687,7 @@ export default function (pi: ExtensionAPI) {
    * (an empty resolution is not cached; the next turn re-resolves so newly
    * added atoms appear without a manual reload). */
   const cachedResolved = async (cxMcp: string): Promise<string | null> => {
-    if (resolvedBody !== null && (await storeStamp()) > storeStampAtResolve) resolvedBody = null;
+    if (resolvedBody !== null && (await span("storeStamp (cache check)", () => storeStamp())) > storeStampAtResolve) resolvedBody = null;
     if (resolvedBody === null) resolvedBody = await resolveContext(cxMcp);
     return resolvedBody;
   };
@@ -700,9 +707,16 @@ export default function (pi: ExtensionAPI) {
     ) as Record<string, string>,
   });
 
+  // Startup timing: session start is where users feel gzero (spawn
+  // latencies, the tools/list probe, pane bring-up). One nested trace,
+  // printed to stderr when it closes.
+  const startTraceTimer = startTrace("session_start");
+
   pi.on("session_start", async (_event, ctx) => {
-    resolvedBody = null; // fresh session → resolve again
-    startDiscovery();
+    await startTraceTimer.span("discovery", async () => {
+      resolvedBody = null; // fresh session → resolve again
+      startDiscovery();
+    });
     if (!autocompleteInstalled && ctx.mode === "tui") {
       autocompleteInstalled = true;
       ctx.ui.addAutocompleteProvider(
@@ -727,13 +741,14 @@ export default function (pi: ExtensionAPI) {
           }),
       );
     }
-    const cxMcp = await findGzeroMcp();
+    const cxMcp = await startTraceTimer.span("find gzero-mcp", () => findGzeroMcp());
     if (!cxMcp) {
+      startTraceTimer.print("session start");
       if (!ctx.hasUI) {
         console.error(`gzero pi plugin: gzero-mcp not found; install with: ${INSTALL_CMD}`);
         return;
       }
-      if (!(await which("cargo"))) {
+      if (!(await startTraceTimer.span("which cargo", () => which("cargo")))) {
         ctx.ui.notify(
           `gzero is not installed and cargo is unavailable. Install manually from ${REPO}`,
           "warning",
@@ -760,11 +775,12 @@ export default function (pi: ExtensionAPI) {
         );
       });
       child.unref();
+      startTraceTimer.print("session start (installed)");
       return;
     }
     // Stale-install check: tools/list must show the full surface.
     try {
-      const tools = await mcpTools(cxMcp);
+      const tools = await startTraceTimer.span("tools/list (one-shot spawn)", () => mcpTools(cxMcp));
       const missing = EXPECTED_TOOLS.filter((t) => !tools.includes(t));
       if (missing.length > 0) {
         ctx.ui.notify(
@@ -776,10 +792,14 @@ export default function (pi: ExtensionAPI) {
       // tools/list failure shouldn't block the session; injection degrades anyway.
     }
     // The pane's custom interaction stays pending by design, so nothing
-    // may await it. It opens fire-and-forget.
+    // may await it. It opens fire-and-forget (still traced, but the
+    // trace prints before these report back — they continue in the
+    // background).
     if (ctx.mode === "tui") {
       void itemsPane.start(ctx);
+      void inboxBar.start(ctx, cxMcp);
     }
+    startTraceTimer.print("session start");
   });
 
   pi.on("agent_end", async () => {
@@ -788,6 +808,43 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_shutdown", () => {
     itemsPane.shutdown();
+    inboxBar.shutdown();
+  });
+
+  // ctrl+m toggles the message view panel; /messages does the same.
+  // The bar itself is always on. alt+m is deliberately NOT bound: pi's
+  // TUI decodes legacy ESC+key as alt+key, so Escape-then-m (closing a
+  // panel, aborting autocomplete, then typing) fired it constantly.
+  const toggleMessages = (ctx: ExtensionContext) => inboxBar.toggleView(ctx);
+  pi.registerShortcut(Key.ctrl("m"), {
+    description: "Toggle the message view (incoming messages and traffic)",
+    handler: toggleMessages,
+  });
+  pi.registerCommand("messages", {
+    description: "Toggle the message view (incoming messages, read queue, traffic)",
+    handler: async (_args: string, ctx: ExtensionCommandContext) => {
+      await toggleMessages(ctx);
+    },
+  });
+
+  // /timing: the gzero timing ring buffer. Nothing prints to the TUI
+  // while you work — the tables land in the buffer instead, and this
+  // command shows the last ones. Args: a count (last N tables,
+  // default 3) or 'clear'. Live stderr streaming stays available via
+  // CX_TRACE=1 (the pi-internal ctrl+t is pi's thinking toggle, so no
+  // key is bound here).
+  pi.registerCommand("timing", {
+    description: "Show recent gzero timing tables (count or 'clear')",
+    handler: async (args: string, ctx: ExtensionCommandContext) => {
+      const sub = args.trim();
+      if (sub === "clear") {
+        clearTimingReport();
+        ctx.ui.notify("timing buffer cleared", "info");
+        return;
+      }
+      const n = Math.min(20, Math.max(1, Number.parseInt(sub, 10) || 3));
+      ctx.ui.notify(timingReport(n), "info");
+    },
   });
 
   // ctrl+q → toggle the task panel (the tasks sidebar, items-pane).
@@ -1027,6 +1084,49 @@ export default function (pi: ExtensionAPI) {
     });
   }
 
+  // Turn-pipeline timing: <enter> → message send. The `input` event is
+  // the first extension-visible step of prompt(); `agent_start` fires
+  // when the agent loop takes over (message handed to the provider).
+  // The root therefore covers pi core's own segments too — input
+  // handlers, skill/template expansion, auth check, compaction check,
+  // image normalization, system-prompt build — with our injection work
+  // nested inside as spans. Printed only when the pipeline was slow
+  // (total > 50ms, the MCP server's CX_SLOW_MS default); CX_TRACE=1
+  // forces every turn. Steered/queued inputs while streaming skip the
+  // pipeline entirely (they only enqueue), so they are not traced.
+  const SLOW_MS = 50;
+  let turnNo = 0;
+  let sendTrace: Trace | null = null;
+  pi.on("input", (event) => {
+    if (event.streamingBehavior !== undefined) return;
+    turnNo++;
+    if (!sendTrace) sendTrace = startTrace(`turn ${turnNo}: enter → send`);
+  });
+  pi.on("agent_start", () => {
+    if (!sendTrace) return;
+    // Ring buffer, not stderr: the TUI stays clean; /timing views it.
+    // CX_TRACE=1 additionally streams each table live.
+    sendTrace.print(`turn ${turnNo}`, process.env.CX_TRACE === "1" ? 0 : SLOW_MS);
+    sendTrace = null;
+  });
+  // Provider timing (etc.): how long after send the first LLM response
+  // of the run arrives. Streaming makes this ≈ time to response, not
+  // time to first token; shown when it is slow or CX_TRACE=1.
+  let providerReported = false;
+  let sentAt = 0;
+  pi.on("agent_start", () => {
+    sentAt = performance.now();
+    providerReported = false;
+  });
+  pi.on("after_provider_response", () => {
+    if (providerReported || !sentAt) return;
+    providerReported = true;
+    const ms = Math.round(performance.now() - sentAt);
+    if (ms > 1000 || process.env.CX_TRACE === "1") {
+      console.error(`gzero timing — turn ${turnNo}: first provider response ${ms}ms after send`);
+    }
+  });
+
   pi.on("before_agent_start", async (event, ctx) => {
     // Workstyle directives enter a turn via ##workstyle.key codes in the
     // prompt; the parenthetical (extra info for this repo/message) stays in
@@ -1036,7 +1136,7 @@ export default function (pi: ExtensionAPI) {
       const cxMcpForCodes = await findGzeroMcp();
       if (cxMcpForCodes) {
         try {
-          const entries = await ensureWorkstyles(cxMcpForCodes, mcpCall);
+          const entries = await span("ensure workstyles", () => ensureWorkstyles(cxMcpForCodes, mcpCall));
           const parts: string[] = [];
           const missing: string[] = [];
           for (const ref of codeRefs) {
@@ -1069,7 +1169,7 @@ export default function (pi: ExtensionAPI) {
       return; // offline degradation: no server, AGENTS.md fallback remains
     }
     if (refs.length > 0 || loaded.length > 0) {
-      const skills = await ensureSkills();
+      const skills = await span("ensure skills", () => ensureSkills());
       const entries = new Map<string, SkillEntry>();
       for (const name of refs) {
         const entry = skills.find((s) => s.name.toLowerCase() === name);
@@ -1086,12 +1186,12 @@ export default function (pi: ExtensionAPI) {
           `<skills>\nThese skills are loaded for this session or were referenced with #skill:<name>; their full instructions are included here.\n\n${parts.join("\n\n")}\n</skills>`;
       }
       if (cxMcp && entries.size > 0) {
-        await ensureInStore(cxMcp, [...entries.values()], ctx.ui);
+        await span("skillbag distill", () => ensureInStore(cxMcp, [...entries.values()], ctx.ui));
       }
     }
     if (cxMcp) {
       try {
-        resolvedBody = await cachedResolved(cxMcp);
+        resolvedBody = await span("resolve context", () => cachedResolved(cxMcp));
         if (resolvedBody !== null) {
           // A fresh normalized copy arrives every turn; the returned options
           // become the turn's system prompt, so the section must be set

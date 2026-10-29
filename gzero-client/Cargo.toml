@@ -1,0 +1,11 @@
+[package]
+name = "gzero-client"
+version = "0.1.0"
+edition = "2021"
+description = "Read-only Rust client for gzero: work items, sections, and atoms from the local automerge doc"
+license = "MIT"
+
+[dependencies]
+# One source of truth: the client is a narrow facade over the gzero
+# library (same doc path, same scope resolution, same types).
+gzero = { path = ".." }

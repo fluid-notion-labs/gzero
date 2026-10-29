@@ -227,48 +227,49 @@ fn startup() {
         seed_on_startup(&mut store);
         reconcile_harvest_on_startup(&mut store);
     } else {
-        let mut atoms = match Atoms::open() {
+        // Startup timing: one nested trace on stderr (see timing.rs),
+        // so a slow session start can be attributed step by step (each
+        // write below also triggers a full hub sync — the gzero-sync
+        // spans inside attribute the hub portion).
+        let t = gzero::timing::Timer::new("gzero-mcp startup");
+        let mut atoms = match t.span("atoms.open", Atoms::open) {
             Ok(a) => a,
             Err(e) => {
                 eprintln!("gzero-mcp: cannot open atom store: {e}");
                 return;
             }
         };
-        // Startup timing: each step's duration lands on stderr, so a
-        // slow session start can be attributed (each write below also
-        // triggers a full hub sync — see gzero-sync lines).
-        let t = std::time::Instant::now();
-        if let Err(e) = atoms.sync() {
+        if let Err(e) = t.span("atoms.sync (hub pull+push)", || atoms.sync()) {
             eprintln!("gzero-mcp: hub sync failed: {e}");
         }
-        eprintln!("gzero-mcp: startup atoms.sync: {}ms", t.elapsed().as_millis());
-        let t = std::time::Instant::now();
-        let mut comms = open_comms();
         // Comms (stream `comms`): pull at session start so unread state
         // and presence from other machines is visible immediately.
-        if let Err(e) = comms.layer().sync() {
+        if let Err(e) = t.span("comms.open+sync", || {
+            let mut comms = open_comms();
+            comms.layer().sync()
+        }) {
             eprintln!("gzero-mcp: comms sync failed: {e}");
         }
-        eprintln!("gzero-mcp: startup comms.sync: {}ms", t.elapsed().as_millis());
-        let t = std::time::Instant::now();
-        if let Err(e) = atoms.write(|s| {
-            gzero::reconcile_seeds(s)
-                .map(|_| ())
-                .map_err(|e| e.to_string())
+        if let Err(e) = t.span("seeds reconcile (writes sync)", || {
+            atoms.write(|s| {
+                gzero::reconcile_seeds(s)
+                    .map(|_| ())
+                    .map_err(|e| e.to_string())
+            })
         }) {
             eprintln!("gzero-mcp: seed sync failed: {e}");
         }
-        eprintln!("gzero-mcp: startup seeds: {}ms", t.elapsed().as_millis());
-        let t = std::time::Instant::now();
-        if let Err(e) = atoms.write(|s| {
-            let dir = std::env::current_dir().map_err(|e| e.to_string())?;
-            gzero::reconcile_harvest(s, &dir, false)
-                .map(|_| ())
-                .map_err(|e| e.to_string())
+        if let Err(e) = t.span("harvest reconcile (writes sync)", || {
+            atoms.write(|s| {
+                let dir = std::env::current_dir().map_err(|e| e.to_string())?;
+                gzero::reconcile_harvest(s, &dir, false)
+                    .map(|_| ())
+                    .map_err(|e| e.to_string())
+            })
         }) {
             eprintln!("gzero-mcp: harvest reconcile failed: {e}");
         }
-        eprintln!("gzero-mcp: startup harvest: {}ms", t.elapsed().as_millis());
+        t.print("gzero-mcp");
     }
 }
 
@@ -457,9 +458,10 @@ fn call_tool(params: &serde_json::Value, app: &mut App) -> Result<serde_json::Va
             let mut ws = ws_store()?;
             tool_session_handoff(&args, &mut ws)?
         }
-        "msg_send" | "msg_read" | "broadcast" => match name {
+        "msg_send" | "msg_read" | "msg_inbox" | "broadcast" => match name {
             "msg_send" => tool_msg_send(&args, &mut *app.comms.layer())?,
             "msg_read" => tool_msg_read(&mut *app.comms.layer())?,
+            "msg_inbox" => tool_msg_inbox(&mut *app.comms.layer())?,
             _ => tool_broadcast(&args, &mut *app.comms.layer())?,
         },
         "item_add" | "item_list" | "item_ready" | "item_get" | "item_edit" | "item_note"
@@ -1236,6 +1238,15 @@ fn tool_msg_read(store: &mut dyn gzero::comms::CommsLayer) -> Result<String, Str
     Ok(out)
 }
 
+/// msg_inbox: this session's full inbox as JSON for UI clients (the pi
+/// plugin's traffic bar). Read-only — drains nothing; msg_read does
+/// that, and resolve delivery drains broadcasts.
+fn tool_msg_inbox(store: &mut dyn gzero::comms::CommsLayer) -> Result<String, String> {
+    let (me, _) = gzero::sessions::session_identity();
+    let inbox = store.inbox(&me).map_err(|e| e.to_string())?;
+    serde_json::to_string(&inbox).map_err(|e| e.to_string())
+}
+
 /// broadcast (S3b): post to the shared board. One-to-all, information
 /// not demand; sessions see it once (drained per-session).
 fn tool_broadcast(
@@ -1940,6 +1951,11 @@ const TOOLS: &str = r#"[
   {
     "name": "msg_read",
     "description": "Read (and mark read) this session's unread messages from other sessions. Resolve already shows unread counts; use this to drain them.",
+    "inputSchema": { "type": "object", "properties": {} }
+  },
+  {
+    "name": "msg_inbox",
+    "description": "This session's full inbox as JSON for UI clients (the pi plugin's traffic bar): every live message addressed to this session with its read state, plus every live broadcast with this session's seen time (seen_at 0 = unseen). Read-only — drains nothing; use msg_read to drain messages.",
     "inputSchema": { "type": "object", "properties": {} }
   },
   {
