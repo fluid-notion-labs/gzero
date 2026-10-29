@@ -2,6 +2,8 @@ target
 vendor/
 node_modules
 tmp/
+# convenience symlink to the dev workspace checkout (.jj/workspaces/dev)
+/dev
 # native lib is a build artifact: rebuild with
 # systems/clients/flutter/tool/build-ffi.sh
 systems/clients/flutter/android/app/src/main/jniLibs/

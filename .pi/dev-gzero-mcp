@@ -1,19 +1,29 @@
 #!/bin/sh
-# Dev gzero-mcp: execs this repo's locally built gzero-mcp instead of the
+# Dev gzero-mcp: execs the locally built gzero-mcp instead of the
 # installed ~/.local/share/gzero/bin one, so dev sessions ("moving fast
 # and breaking stuff") always talk to the current source.
 #
 # Wired up via .pi/mcp.json ("context" -> this shim). The plugin prefers
 # <cwd>/.pi/dev-gzero-mcp for its own calls too.
 #
+# The binary lives in the MAIN checkout's target/ — cargo builds there,
+# and workspace checkouts (.jj/workspaces/*) have no target/ of their
+# own. Resolve it by walking up to the nearest ancestor with one, which
+# lands on the main checkout whether this runs from it or from a
+# workspace.
+#
 # Prefers the release build when it is current: MCP startup is on pi's
 # critical path and a debug build costs ~5s extra (automerge load + seed
 # reconcile are ~10x slower unoptimized). Falls back to debug when the
 # release binary is missing or older than any file under src/, so dev
 # sessions still never talk to stale code.
-bin_release="$PWD/target/release/gzero-mcp"
-bin_debug="$PWD/target/debug/gzero-mcp"
-if [ -x "$bin_release" ] && [ -z "$(find "$PWD/src" -type f -newer "$bin_release" -print -quit 2>/dev/null)" ]; then
+root="$PWD"
+while [ "$root" != "/" ] && [ ! -x "$root/target/release/gzero-mcp" ]; do
+    root=$(dirname "$root")
+done
+bin_release="$root/target/release/gzero-mcp"
+bin_debug="$root/target/debug/gzero-mcp"
+if [ -x "$bin_release" ] && [ -z "$(find "$root/src" -type f -newer "$bin_release" -print -quit 2>/dev/null)" ]; then
     exec "$bin_release" "$@"
 fi
 if [ -n "$CX_TRACE" ]; then

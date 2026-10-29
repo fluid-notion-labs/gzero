@@ -417,7 +417,6 @@ impl AutomergeStore {
     /// full-document save would clobber them — with it, every flush is
     /// a merge, and co-writers converge instead of racing.
     pub(crate) fn flush(&mut self) -> Result<()> {
-        use crate::timing::with;
         let Some(p) = self.path.clone() else {
             return Ok(());
         };
