@@ -1,33 +1,15 @@
-[package]
-name = "gzero"
-version = "0.1.0"
-edition = "2021"
-description = "Gzero: multiset of tagged agent instructions, pluggable storage"
-license = "MIT"
-readme = "README.md"
+[workspace]
+resolver = "2"
+members = [
+    "systems/crates/gzero",
+    "systems/crates/gzero-client",
+    "systems/crates/gzero-ffi",
+]
 
-[[bin]]
-name = "gzero"
-path = "src/main.rs"
+# Shared profile tuning can live here later; the crates keep their own
+# package metadata. Target/ and Cargo.lock are shared at this root —
+# relocating into the workspace dedupes dependency compilation that
+# gzero-client/target and gzero-ffi/target used to repeat.
 
-[lib]
-name = "gzero"
-path = "src/lib.rs"
-
-[dependencies]
-automerge = "0.12"
-rusqlite = { version = "0.32", features = ["bundled"] }
-base64 = "0.22"
-hex = "0.4"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-ureq = { version = "2", features = ["json"] }
-libc = "0.2"
-
-[[bin]]
-name = "gzero-mcp"
-path = "src/bin/mcp.rs"
-
-[[bin]]
-name = "gzero-syncd"
-path = "src/bin/gzero-syncd.rs"
+[profile.release]
+# defaults are fine for now; no need to diverge from the old crate build

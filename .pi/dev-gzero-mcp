@@ -23,7 +23,7 @@ while [ "$root" != "/" ] && [ ! -x "$root/target/release/gzero-mcp" ]; do
 done
 bin_release="$root/target/release/gzero-mcp"
 bin_debug="$root/target/debug/gzero-mcp"
-if [ -x "$bin_release" ] && [ -z "$(find "$root/src" -type f -newer "$bin_release" -print -quit 2>/dev/null)" ]; then
+if [ -x "$bin_release" ] && [ -z "$(find "$root/systems/crates/gzero/src" "$root/systems/crates/gzero-mcp" -type f -newer "$bin_release" -print -quit 2>/dev/null)" ]; then
     exec "$bin_release" "$@"
 fi
 if [ -n "$CX_TRACE" ]; then

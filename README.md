@@ -83,7 +83,7 @@ hub. `--no-plugin` and `--no-migrate` narrow the run.
 
 ## Repo map
 
-- `src/` — the Rust core: atom store, workflow store, MCP server, CLI
+- `systems/crates/` — the Rust crates, one subdir each: `gzero` (core lib: atom store, workflow store; bins: gzero CLI, gzero-mcp, gzero-syncd — planned to split into their own crates), `gzero-client`, `gzero-ffi`
 - `systems/hub/` — the Cloudflare hub worker + Durable Objects
   (gzero-hub v0, brought in from `fluid-notion-labs/gzero-hub`)
 - `systems/clients/flutter/` — the Flutter client (tablet/phone)
@@ -91,7 +91,7 @@ hub. `--no-plugin` and `--no-migrate` narrow the run.
   `~/.pi/agent/extensions/gzero`; plain pi runs that snapshot)
 - `sync/` — hub sync setup and exported atom snapshots
 - `tools/` — skills pipeline, session tooling, dev helpers
-- `packs/`, `seeds/` — generated atom packs and seed atoms
+- `packs/` — generated atom packs; `systems/crates/gzero/seeds/` — seed atoms compiled into the crate
 - `research/` — design docs and history; `research/old/` is archival
   and never rewritten. Live documentation lives in the workflow
   system, not here.

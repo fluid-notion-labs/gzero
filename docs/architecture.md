@@ -46,7 +46,7 @@ flowchart TB
     end
 
     subgraph gh["🐙 GitHub"]
-        repoGzero["fluid-notion-labs/gzero<br/>(monorepo: systems/* + gzero-ffi)"]
+        repoGzero["fluid-notion-labs/gzero<br/>(monorepo: systems/*)"]
         repoHub["fluid-notion-labs/gzero-hub<br/>(archive)"]
     end
 

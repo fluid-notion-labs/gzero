@@ -1078,7 +1078,7 @@ mod tests {
     #[test]
     fn resolve_preserves_authored_order_within_node() {
         let mut store = mem();
-        add_doc(
+        let _ = add_doc(
             &mut store,
             "s.md",
             "# Context — global\n\n## usage\n- zeta line\n- alpha line\n- middle line\n",

@@ -1,3 +1,5 @@
+#![cfg(feature = "diagnostics")]
+
 // Diagnostic: how many changes does a saved doc's history contain?
 #[cfg(feature = "diagnostics")]
 use gzero_ffi::gz_doc_changes_test;

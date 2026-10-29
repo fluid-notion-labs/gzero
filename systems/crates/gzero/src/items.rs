@@ -1407,7 +1407,7 @@ mod tests {
         n.labels = vec!["x".into()];
         let it = s.item_add("sc", n).unwrap();
         s.item_note("sc", &it.id, "note").unwrap();
-        let mut t = AutomergeStore::from_bytes(&s.save_bytes()).unwrap();
+        let t = AutomergeStore::from_bytes(&s.save_bytes()).unwrap();
         let got = t.item_get("sc", &it.id).unwrap().unwrap();
         assert_eq!(got.title, "persisted");
         assert_eq!(got.priority, 2);
@@ -1483,7 +1483,7 @@ mod tests {
     #[test]
     fn queue_rebalance_on_exhausted_gap() {
         let mut s = AutomergeStore::in_memory().unwrap();
-        let a = s.item_add("sc", new("a")).unwrap();
+        s.item_add("sc", new("a")).unwrap();
         let b = s.item_add("sc", new("b")).unwrap();
         // Repeatedly move c between a and b: gaps shrink until a
         // rebalance fires, which must keep the order valid.

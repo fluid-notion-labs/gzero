@@ -8,4 +8,4 @@ license = "MIT"
 [dependencies]
 # One source of truth: the client is a narrow facade over the gzero
 # library (same doc path, same scope resolution, same types).
-gzero = { path = ".." }
+gzero = { path = "../gzero" }
