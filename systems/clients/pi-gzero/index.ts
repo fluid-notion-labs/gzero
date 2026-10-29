@@ -811,15 +811,16 @@ export default function (pi: ExtensionAPI) {
     inboxBar.shutdown();
   });
 
-  // ctrl+m toggles the message view panel; /messages does the same.
-  // The bar itself is always on. alt+m is deliberately NOT bound: pi's
-  // TUI decodes legacy ESC+key as alt+key, so Escape-then-m (closing a
-  // panel, aborting autocomplete, then typing) fired it constantly.
+  // /messages toggles the message view panel; the bar itself is
+  // always on. NO key is bound — both candidates proved to be
+  // false-positive magnets in legacy terminal input:
+  //   alt+m: pi's TUI decodes ESC+key as alt+key, so Escape-then-m
+  //          (closing a panel, then typing) fired it constantly.
+  //   ctrl+m: in legacy input ctrl+m IS enter (both 0x0d) — only
+  //          Kitty-protocol terminals can tell them apart, and this
+  //          user's terminal can't, so every <enter> send opened the
+  //          panel. ctrl+shift/m aren't reliably representable either.
   const toggleMessages = (ctx: ExtensionContext) => inboxBar.toggleView(ctx);
-  pi.registerShortcut(Key.ctrl("m"), {
-    description: "Toggle the message view (incoming messages and traffic)",
-    handler: toggleMessages,
-  });
   pi.registerCommand("messages", {
     description: "Toggle the message view (incoming messages, read queue, traffic)",
     handler: async (_args: string, ctx: ExtensionCommandContext) => {
