@@ -1,5 +1,8 @@
 # Context — global
 
+## jj
+- jj workflow (Nick's standing rule): ALL work runs in a jj workspace at .jj/workspaces/<feature> — never the default checkout; branch, build, test in the workspace, then ask the user before merging to main.
+
 ## usage
 - gzero is a persistent store of terse, tagged instruction atoms that replaces AGENTS.md-style files, injected into every session and synced across machines via hub sync.
 - Long-lived documents and tasks live in the workflow system, not in repo files: ws_* tools store named sections (vision, plans, decisions); item_* tools store work items; plan_next lists what's next; item_pin puts a task into injected context.
