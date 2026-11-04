@@ -85,6 +85,13 @@ function record(label: string | undefined, table: string): void {
   }
 }
 
+/** A one-line timing note with no trace: records into the ring buffer
+ * (/timing views it) and streams to stderr only under CX_TRACE=1 —
+ * never unconditionally, so the TUI stays clean. */
+export function noteTiming(label: string | undefined, text: string): void {
+  record(label, text);
+}
+
 /** The last `n` recorded tables (most recent last), /timing's body. */
 export function timingReport(n = 3): string {
   if (log.length === 0) return "no timings recorded yet";

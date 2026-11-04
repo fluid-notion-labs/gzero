@@ -1,7 +1,7 @@
 // timing.ts — nested span traces render as a table, merge repeats.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { startTrace, span, timingReport, clearTimingReport } from "../timing.ts";
+import { startTrace, span, timingReport, clearTimingReport, noteTiming } from "../timing.ts";
 
 test("nested spans render as an indented table", async () => {
   const t = startTrace("startup");
@@ -53,6 +53,15 @@ test("print records into the ring buffer; report shows the last N", () => {
   assert.match(timingReport(5), /first label/);
   clearTimingReport();
   assert.equal(timingReport(), "no timings recorded yet");
+});
+
+test("noteTiming records a one-line note into the ring buffer", () => {
+  clearTimingReport();
+  noteTiming("turn 1", "first provider response 1553ms after send");
+  const report = timingReport(1);
+  assert.match(report, /turn 1/);
+  assert.match(report, /first provider response 1553ms after send/);
+  clearTimingReport();
 });
 
 test("async spans measure to settlement", async () => {

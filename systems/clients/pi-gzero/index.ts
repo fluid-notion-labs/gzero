@@ -62,7 +62,7 @@ import { messageText, registerReview, type ReviewDeps } from "./review.ts";
 import routerSetup from "./router/index.ts";
 import { loadHistory, type PromptEntry } from "./history/history.ts";
 import historySetup from "./history/index.ts";
-import { startTrace, span, timingReport, clearTimingReport, type Trace } from "./timing.ts";
+import { startTrace, span, timingReport, clearTimingReport, noteTiming, type Trace } from "./timing.ts";
 import { routerSnapshot } from "./router/state.ts";
 import { summarizeLedger } from "./router/ledger.ts";
 import {
@@ -1123,8 +1123,10 @@ export default function (pi: ExtensionAPI) {
     if (providerReported || !sentAt) return;
     providerReported = true;
     const ms = Math.round(performance.now() - sentAt);
+    // Ring buffer, not stderr: the TUI stays clean; /timing views it.
+    // CX_TRACE=1 additionally streams the note live.
     if (ms > 1000 || process.env.CX_TRACE === "1") {
-      console.error(`gzero timing — turn ${turnNo}: first provider response ${ms}ms after send`);
+      noteTiming(`turn ${turnNo}`, `first provider response ${ms}ms after send`);
     }
   });
 
