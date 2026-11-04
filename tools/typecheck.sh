@@ -38,5 +38,18 @@ cat > "$tmp" <<EOF
   }
 }
 EOF
+# The recall engine's runtime deps (@lancedb/lancedb, apache-arrow,
+# fastembed) live in the plugin's package.json but only get installed
+# in blessed snapshots — a fresh checkout types them as missing
+# modules. Install them into the checkout on demand (idempotent, and
+# node_modules is gitignored), so a fresh clone typechecks cleanly.
+if ! grep -q '"@lancedb/lancedb"' "$plugin/package.json" 2>/dev/null; then
+  echo "no plugin dependencies in package.json — skipping dep install" >&2
+elif [ ! -d "$plugin/node_modules/@lancedb" ]; then
+  echo "installing recall-engine deps into $plugin/node_modules (first run only)" >&2
+  ( cd "$plugin" && npm install --omit=dev --no-audit --no-fund >/dev/null 2>&1 ) \
+    || echo "WARNING: npm install failed — recall.ts will report missing modules" >&2
+fi
+
 "$tsc" --noEmit -p "$tmp"
 echo "typecheck ok"
