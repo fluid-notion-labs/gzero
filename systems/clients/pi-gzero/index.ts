@@ -49,6 +49,7 @@ import {
 } from "./gzero-panel.ts";
 import { ItemsPaneController, setItemsProvider } from "./items-pane.ts";
 import { InboxBarController } from "./inbox-bar.ts";
+import { sessionIdentity } from "./session-identity.ts";
 import {
   collectEntries,
   parseQuery as parseQueryText,
@@ -568,33 +569,6 @@ async function openGzeroPanel(
       overlayOptions: { width: "100%", maxHeight: "100%", anchor: "center" },
     },
   );
-}
-
-/**
- * Session + machine identity (S1 presence).
- *
- * The session id is generated fresh per factory call — one per pi
- * session. Machine id is a stable UUID file so presence rows can
- * distinguish local sessions from other machines' sessions.
- */
-function sessionIdentity(): { sessionId: string; machineId: string } {
-  const sessionId = crypto.randomUUID();
-  const machineFile = path.join(os.homedir(), ".pi", "agent", "machine-id");
-  let machineId: string;
-  try {
-    machineId = readFileSync(machineFile, "utf8").trim();
-    if (!machineId) throw new Error("empty");
-  } catch {
-    machineId = crypto.randomUUID();
-    try {
-      mkdirSync(path.dirname(machineFile), { recursive: true });
-      writeFileSync(machineFile, machineId + "\n");
-    } catch {
-      // best-effort; an ephemeral id still distinguishes machines poorly
-      // but works locally
-    }
-  }
-  return { sessionId, machineId };
 }
 
 export default function (pi: ExtensionAPI) {
