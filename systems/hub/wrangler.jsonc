@@ -13,6 +13,10 @@
       {
         "name": "STREAM",
         "class_name": "Stream"
+      },
+      {
+        "name": "INBOX",
+        "class_name": "Inbox"
       }
     ]
   },
@@ -28,6 +32,10 @@
     {
       "tag": "v3",
       "deleted_classes": ["Bag"]
+    },
+    {
+      "tag": "v4",
+      "new_sqlite_classes": ["Inbox"]
     }
   ]
 }

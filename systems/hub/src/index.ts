@@ -1,10 +1,12 @@
+import { Inbox } from "./inbox";
 import { Stream } from "./stream";
 
 // Wrangler resolves the Durable Object class from the main module.
-export { Stream } from "./stream";
+export { Inbox, Stream };
 
 export interface Env {
   STREAM: DurableObjectNamespace;
+  INBOX: DurableObjectNamespace;
   TOKEN: string;
 }
 
@@ -44,6 +46,13 @@ export default {
       return stubFor(env, stream).fetch(internal);
     }
 
+    // Comms transport B: addressed mailbox, broadcasts, presence — one
+    // SQLite-backed DO, server-side dest filtering (gzero item 64cd).
+    if (/^\/(inbox|broadcasts?|presence)/.test(url.pathname)) {
+      const internal = new Request(`https://do${url.pathname}${url.search}`, req);
+      return stubFor(env, "inbox:global").fetch(internal);
+    }
+
     return json({ error: "not found" }, 404);
   },
 };
@@ -55,7 +64,8 @@ export function streamFromPath(path: string): string | null {
 }
 
 function stubFor(env: Env, stream: string): DurableObjectStub {
-  return env.STREAM.get(env.STREAM.idFromName(stream));
+  const ns = stream.startsWith("inbox:") ? env.INBOX : env.STREAM;
+  return ns.get(ns.idFromName(stream));
 }
 
 function auth(req: Request, env: Env): Response | null {
