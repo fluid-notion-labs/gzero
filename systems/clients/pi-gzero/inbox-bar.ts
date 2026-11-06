@@ -451,6 +451,7 @@ export class MessagesView implements Component {
 // ---- persistent MCP poller ----
 
 import { type ChildProcess, spawn } from "node:child_process";
+import { HubPoller } from "./hub-client.ts";
 
 /**
  * A long-lived gzero-mcp stdio session: one spawn, many requests. The
@@ -610,6 +611,8 @@ export function initialInboxMode(env: NodeJS.ProcessEnv = process.env): "bar" | 
 export class InboxBarController {
   private model = new InboxModel();
   private poller: McpPoller | null = null;
+  /** Transport-B data source (CX_COMMS_TRANSPORT=inbox); null = MCP. */
+  private hub: HubPoller | null = null;
   private pollTimer: NodeJS.Timeout | null = null;
   private tickTimer: NodeJS.Timeout | null = null;
   private bar: InboxBar | null = null;
@@ -631,8 +634,24 @@ export class InboxBarController {
   /** Session start: open the always-on overlay and begin polling. */
   async start(ctx: ExtensionContext, cxMcp: string): Promise<void> {
     if (initialInboxMode() === "off") return;
-    if (this.poller || ctx.mode !== "tui" || !ctx.hasUI) return;
-    this.poller = new McpPoller(cxMcp);
+    if (this.poller || this.hub || ctx.mode !== "tui" || !ctx.hasUI) return;
+    // Transport B (addressed pull from the hub) is opt-in and probe-gated:
+    // reads must come from the same store the msg tools write to, so the
+    // flag flips both together. Probe failure falls back to MCP quietly.
+    if (
+      process.env.CX_COMMS_TRANSPORT === "inbox" &&
+      process.env.CX_HUB_URL &&
+      process.env.CX_TOKEN &&
+      process.env.CX_SESSION_ID
+    ) {
+      const hub = new HubPoller(
+        process.env.CX_HUB_URL,
+        process.env.CX_TOKEN,
+        process.env.CX_SESSION_ID,
+      );
+      if (await hub.supported()) this.hub = hub;
+    }
+    if (!this.hub) this.poller = new McpPoller(cxMcp);
     // The overlay's custom() promise stays pending by design (the bar
     // lives until shutdown) — open fire-and-forget, poll immediately.
     // A failed open (races at session start) must not reject unhandled.
@@ -673,7 +692,15 @@ export class InboxBarController {
 
   /** One msg_inbox poll: apply to the model, re-render on change. */
   async poll(): Promise<void> {
-    if (!this.poller || this.unsupported) return;
+    if (this.unsupported) return;
+    if (this.hub) {
+      const snap = await this.hub.poll();
+      if (!snap) return; // transient hub failure — next tick retries
+      const snapshot = parseInbox(JSON.stringify(snap));
+      if (snapshot && this.model.apply(snapshot, Date.now())) this.repaint();
+      return;
+    }
+    if (!this.poller) return;
     let text: string;
     try {
       text = await this.poller.call("msg_inbox");
