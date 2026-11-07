@@ -282,6 +282,30 @@ impl CommsStore {
     }
 
     /// Epoch number (0 before the first roll).
+    /// Debug: every broadcast record (id, sender, text, created) with no
+    /// TTL filter and no sender exclusion. Inspection aid for the board.
+    pub fn debug_broadcasts(&self) -> Result<Vec<(String, String, String, i64)>> {
+        let Some(b) = self.root_map("broadcasts") else {
+            return Ok(Vec::new());
+        };
+        let mut out = Vec::new();
+        for id in self.store.doc.keys(&b) {
+            let Some(rec) = Self::rec_of(&b, &self.store.doc, &id) else {
+                continue;
+            };
+            out.push((
+                id,
+                Self::sval(&rec, "sender", &self.store.doc),
+                Self::sval(&rec, "text", &self.store.doc),
+                Self::ival(&rec, "created", &self.store.doc),
+            ));
+        }
+        out.sort_by_key(|b| b.3);
+        Ok(out)
+    }
+
+    /// Epoch number (0 before the first roll).
+
     pub fn epoch_n(&self) -> u64 {
         match self.root_map("epoch") {
             Some(id) => Self::ival(&id, "n", &self.store.doc) as u64,
